@@ -1,0 +1,6 @@
+# AxisForge itself is not on PyPI yet -- install it separately, see README.md#setup:
+#   pip install -e ../axisforge
+numpy
+scipy
+matplotlib
+pytest

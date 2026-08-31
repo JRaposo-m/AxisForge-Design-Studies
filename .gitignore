@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+.DS_Store
+*.egg-info/
+build/
+dist/
+
+# generated per-run reports outside sample_outputs/ (that folder is checked in on purpose)
+/studies/**/report.txt
+/studies/**/results.csv
