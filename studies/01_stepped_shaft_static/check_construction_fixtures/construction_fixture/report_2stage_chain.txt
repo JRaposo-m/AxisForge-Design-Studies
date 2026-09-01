@@ -65,10 +65,11 @@ SHAFT: shaft1
   axis offset   : (y=0.000, z=0.000) mm   origin_x=0.000 mm
   bearings      : 2  @ ['10.0', '190.0']
   gears         : 1  @ ['100.0']
-  loads         : 3  (user=0, gear_mesh=3)
+  loads         : 4  (user=0, gear_mesh=4)
 ──────────────────────────────────────────────────────────
 
-  loads (3 total):
+  loads (4 total):
+    [gear_mesh] TorqueLoad(position=0.00 mm, T=-32.93 N·m, source='gear_mesh', label='shaft1:T_in')
     [gear_mesh] RadialLoad(position=100.00 mm, F=599.25 N, theta=0.0°, Fy=599.25 N, Fz=0.00 N, source='gear_mesh', label='g1_driver:Fr')
     [gear_mesh] RadialLoad(position=100.00 mm, F=1646.43 N, theta=90.0°, Fy=0.00 N, Fz=1646.43 N, source='gear_mesh', label='g1_driver:Ft')
     [gear_mesh] TorqueLoad(position=100.00 mm, T=32.93 N·m, source='gear_mesh', label='g1_driver:T')
