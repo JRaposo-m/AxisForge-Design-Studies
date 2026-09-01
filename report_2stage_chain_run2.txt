@@ -1,0 +1,245 @@
+========================================================================
+               2-stage linear chain -- Construction check               
+========================================================================
+
+TOPOLOGY / RESOLVED STATE
+------------------------------------------------------------------------
+── 2stage_chain ──────────────────────────────────────────────
+  shafts: 3   links: 2   source: shaft1
+    shaft1       T_out=32.929 N·m     rot=1   pos=(y=0.00, z=0.00) mm
+    shaft2       T_out=65.857 N·m     rot=-1.0 pos=(y=60.00, z=0.00) mm
+    shaft3       T_out=131.714 N·m    rot=1.0 pos=(y=0.00, z=0.00) mm
+────────────────────────────────────────────────────────
+
+========================================================================
+SHAFT: shaft1
+========================================================================
+── ShaftSystem 'shaft1' ─────────────────────────────
+  length        : 200.00 mm
+  speed         : 1450.00 rpm
+  design life   : 20000 h
+  axis offset   : (y=0.000, z=0.000) mm   origin_x=0.000 mm
+  bearings      : 2  @ ['10.0', '190.0']
+  gears         : 1  @ ['100.0']
+  loads         : 3  (user=0, gear_mesh=3)
+──────────────────────────────────────────────────────────
+
+  geometry (3 sections, total_length=200.00 mm):
+    [0] (shaft1_seat_A) z=[0.0, 30.0] mm  d=30.0 mm  L=30.0 mm  mat=AISI_1045  Ra=0.8 um
+    [1] (shaft1_body) z=[30.0, 170.0] mm  d=50.0 mm  L=140.0 mm  mat=AISI_1045  Ra=0.8 um
+    [2] (shaft1_seat_B) z=[170.0, 200.0] mm  d=30.0 mm  L=30.0 mm  mat=AISI_1045  Ra=0.8 um
+  shoulders:
+    z=30.0 mm  r=2.00 mm  d 30.0->50.0  r/d=0.0667  D/d=1.6667
+    z=170.0 mm  r=2.00 mm  d 30.0->50.0  r/d=0.0667  D/d=1.6667
+
+  bearings (2):
+-- shaft1_brg_A ----------------------------
+  family      : deep_groove_ball
+  bearing_type: BearingType.DEEP_GROOVE_BALL
+  duty        : radial
+  position    : 10.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 0.0 mm
+  C / C0      : 0 N / 0 N
+  geometry    : assembled
+  analyses    : ['point_contact']
+--------------------------------------------
+-- shaft1_brg_B ----------------------------
+  family      : deep_groove_ball
+  bearing_type: BearingType.DEEP_GROOVE_BALL
+  duty        : radial
+  position    : 190.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 0.0 mm
+  C / C0      : 0 N / 0 N
+  geometry    : assembled
+  analyses    : ['point_contact']
+--------------------------------------------
+
+  gears (1):
+  -- g1_driver (spur, role=driver) -------------------------
+    rotation_dir   : 1
+    position       : 100.00 mm
+    mn / z / x     : 2.000 mm / 20 / 0.0000
+    alpha_n / beta_n: 20.00 deg / 0.00 deg
+    b (face width) : 15.00 mm
+    d / da / df    : 40.000 / 45.000 / 35.000 mm
+    material_id    : (none)
+
+  loads (3 total):
+    [gear_mesh] RadialLoad(position=100.00 mm, F=599.25 N, theta=0.0°, Fy=599.25 N, Fz=0.00 N, source='gear_mesh', label='g1_driver:Fr')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=1646.43 N, theta=90.0°, Fy=0.00 N, Fz=1646.43 N, source='gear_mesh', label='g1_driver:Ft')
+    [gear_mesh] TorqueLoad(position=100.00 mm, T=32.93 N·m, source='gear_mesh', label='g1_driver:T')
+
+========================================================================
+SHAFT: shaft2
+========================================================================
+── ShaftSystem 'shaft2' ─────────────────────────────
+  length        : 200.00 mm
+  speed         : 725.00 rpm
+  design life   : 20000 h
+  axis offset   : (y=60.000, z=0.000) mm   origin_x=0.000 mm
+  bearings      : 2  @ ['10.0', '190.0']
+  gears         : 2  @ ['100.0', '150.0']
+  loads         : 6  (user=0, gear_mesh=6)
+──────────────────────────────────────────────────────────
+
+  geometry (3 sections, total_length=200.00 mm):
+    [0] (shaft2_seat_A) z=[0.0, 30.0] mm  d=30.0 mm  L=30.0 mm  mat=AISI_1045  Ra=0.8 um
+    [1] (shaft2_body) z=[30.0, 170.0] mm  d=50.0 mm  L=140.0 mm  mat=AISI_1045  Ra=0.8 um
+    [2] (shaft2_seat_B) z=[170.0, 200.0] mm  d=30.0 mm  L=30.0 mm  mat=AISI_1045  Ra=0.8 um
+  shoulders:
+    z=30.0 mm  r=2.00 mm  d 30.0->50.0  r/d=0.0667  D/d=1.6667
+    z=170.0 mm  r=2.00 mm  d 30.0->50.0  r/d=0.0667  D/d=1.6667
+
+  bearings (2):
+-- shaft2_brg_A ----------------------------
+  family      : deep_groove_ball
+  bearing_type: BearingType.DEEP_GROOVE_BALL
+  duty        : radial
+  position    : 10.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 0.0 mm
+  C / C0      : 0 N / 0 N
+  geometry    : assembled
+  analyses    : ['point_contact']
+--------------------------------------------
+-- shaft2_brg_B ----------------------------
+  family      : deep_groove_ball
+  bearing_type: BearingType.DEEP_GROOVE_BALL
+  duty        : radial
+  position    : 190.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 0.0 mm
+  C / C0      : 0 N / 0 N
+  geometry    : assembled
+  analyses    : ['point_contact']
+--------------------------------------------
+
+  gears (2):
+  -- g2_driven (spur, role=driven) -------------------------
+    rotation_dir   : None
+    position       : 100.00 mm
+    mn / z / x     : 2.000 mm / 40 / 0.0000
+    alpha_n / beta_n: 20.00 deg / 0.00 deg
+    b (face width) : 15.00 mm
+    d / da / df    : 80.000 / 85.000 / 75.000 mm
+    material_id    : (none)
+  -- g3_driver (spur, role=driver) -------------------------
+    rotation_dir   : None
+    position       : 150.00 mm
+    mn / z / x     : 2.000 mm / 20 / 0.0000
+    alpha_n / beta_n: 20.00 deg / 0.00 deg
+    b (face width) : 15.00 mm
+    d / da / df    : 40.000 / 45.000 / 35.000 mm
+    material_id    : (none)
+
+  loads (6 total):
+    [gear_mesh] RadialLoad(position=100.00 mm, F=599.25 N, theta=180.0°, Fy=-599.25 N, Fz=0.00 N, source='gear_mesh', label='g2_driven:Fr')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=1646.43 N, theta=90.0°, Fy=0.00 N, Fz=1646.43 N, source='gear_mesh', label='g2_driven:Ft')
+    [gear_mesh] TorqueLoad(position=100.00 mm, T=-65.86 N·m, source='gear_mesh', label='g2_driven:T')
+    [gear_mesh] RadialLoad(position=150.00 mm, F=1198.50 N, theta=180.0°, Fy=-1198.50 N, Fz=0.00 N, source='gear_mesh', label='g3_driver:Fr')
+    [gear_mesh] RadialLoad(position=150.00 mm, F=3292.86 N, theta=90.0°, Fy=0.00 N, Fz=3292.86 N, source='gear_mesh', label='g3_driver:Ft')
+    [gear_mesh] TorqueLoad(position=150.00 mm, T=65.86 N·m, source='gear_mesh', label='g3_driver:T')
+
+========================================================================
+SHAFT: shaft3
+========================================================================
+── ShaftSystem 'shaft3' ─────────────────────────────
+  length        : 200.00 mm
+  speed         : 362.50 rpm
+  design life   : 20000 h
+  axis offset   : (y=0.000, z=0.000) mm   origin_x=0.000 mm
+  bearings      : 2  @ ['10.0', '190.0']
+  gears         : 1  @ ['150.0']
+  loads         : 4  (user=1, gear_mesh=3)
+──────────────────────────────────────────────────────────
+
+  geometry (3 sections, total_length=200.00 mm):
+    [0] (shaft3_seat_A) z=[0.0, 30.0] mm  d=30.0 mm  L=30.0 mm  mat=AISI_1045  Ra=0.8 um
+    [1] (shaft3_body) z=[30.0, 170.0] mm  d=50.0 mm  L=140.0 mm  mat=AISI_1045  Ra=0.8 um
+    [2] (shaft3_seat_B) z=[170.0, 200.0] mm  d=30.0 mm  L=30.0 mm  mat=AISI_1045  Ra=0.8 um
+  shoulders:
+    z=30.0 mm  r=2.00 mm  d 30.0->50.0  r/d=0.0667  D/d=1.6667
+    z=170.0 mm  r=2.00 mm  d 30.0->50.0  r/d=0.0667  D/d=1.6667
+
+  bearings (2):
+-- shaft3_brg_A ----------------------------
+  family      : deep_groove_ball
+  bearing_type: BearingType.DEEP_GROOVE_BALL
+  duty        : radial
+  position    : 10.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 0.0 mm
+  C / C0      : 0 N / 0 N
+  geometry    : assembled
+  analyses    : ['point_contact']
+--------------------------------------------
+-- shaft3_brg_B ----------------------------
+  family      : deep_groove_ball
+  bearing_type: BearingType.DEEP_GROOVE_BALL
+  duty        : radial
+  position    : 190.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 0.0 mm
+  C / C0      : 0 N / 0 N
+  geometry    : assembled
+  analyses    : ['point_contact']
+--------------------------------------------
+
+  gears (1):
+  -- g4_driven (spur, role=driven) -------------------------
+    rotation_dir   : None
+    position       : 150.00 mm
+    mn / z / x     : 2.000 mm / 40 / 0.0000
+    alpha_n / beta_n: 20.00 deg / 0.00 deg
+    b (face width) : 15.00 mm
+    d / da / df    : 80.000 / 85.000 / 75.000 mm
+    material_id    : (none)
+
+  loads (4 total):
+    [gear_mesh] RadialLoad(position=150.00 mm, F=1198.50 N, theta=0.0°, Fy=1198.50 N, Fz=0.00 N, source='gear_mesh', label='g4_driven:Fr')
+    [gear_mesh] RadialLoad(position=150.00 mm, F=3292.86 N, theta=90.0°, Fy=0.00 N, Fz=3292.86 N, source='gear_mesh', label='g4_driven:Ft')
+    [gear_mesh] TorqueLoad(position=150.00 mm, T=-131.71 N·m, source='gear_mesh', label='g4_driven:T')
+    [user] RadialLoad(position=190.00 mm, F=500.00 N, theta=270.0°, Fy=-0.00 N, Fz=-500.00 N, source='user', label='sprocket_pull')
+
+========================================================================
+MESHES (2)
+========================================================================
+  shaft1 -> shaft2   phi_deg=0.00   torque_split=None   distribute_loads=False   label='stage1'
+── stage1 ─────────────────────────────────
+  gear1 : z=20, mn=2.0, x=0.0, β=0.0°
+  gear2 : z=40, mn=2.0, x=0.0, β=0.0°
+  u     : 2.0000
+  a     : 60.0000 mm   (reference centre distance)
+  al    : 60.0000 mm   (working centre distance)
+  αtw   : 20.0000°
+  dl1   : 40.0000 mm
+  dl2   : 80.0000 mm
+  εα    : 1.9790
+  εβ    : 0.0000
+  εγ    : 1.9790
+────────────────────────────────────────────────────
+
+  shaft2 -> shaft3   phi_deg=180.00   torque_split=None   distribute_loads=False   label='stage2'
+── stage2 ─────────────────────────────────
+  gear1 : z=20, mn=2.0, x=0.0, β=0.0°
+  gear2 : z=40, mn=2.0, x=0.0, β=0.0°
+  u     : 2.0000
+  a     : 60.0000 mm   (reference centre distance)
+  al    : 60.0000 mm   (working centre distance)
+  αtw   : 20.0000°
+  dl1   : 40.0000 mm
+  dl2   : 80.0000 mm
+  εα    : 1.9790
+  εβ    : 0.0000
+  εγ    : 1.9790
+────────────────────────────────────────────────────
+
+========================================================================
