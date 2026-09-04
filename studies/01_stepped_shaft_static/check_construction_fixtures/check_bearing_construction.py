@@ -16,7 +16,7 @@ except where noted.
 """
 from __future__ import annotations
 
-from axisforge.fixtures.capabilities import ConstructionCapabilities
+from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
 
 
 ALL_BEARINGS_CAPS = (

@@ -4,8 +4,8 @@ check_resolution_fem.py
 Exploratory script (not pytest). Builds the same 2-stage linear chain
 as check_linear_system_construction.py / check_outputs_text_report.py
 (already-resolved via build_linear_system(), gear-mesh loads + shaft
-positions present), then runs it through the new Resolution stage:
-ResolutionCapabilities -> solve_system() -> SimpleFEMResultsLibrary.
+positions present), then runs it through the Studies stage:
+StudyCapabilities -> solve_system() -> RigidBearingFEMResultsLibrary.
 
 build_system() now returns (construction, system) -- solve_system()
 takes both: `construction` (the ConstructionCapabilities that built
@@ -22,8 +22,8 @@ as check_outputs_text_report.py): one summary line per shaft, the
 handful of numbers worth eyeballing (max bending stress, max
 deflection, bearing reactions), not a full dump.
 
-Also writes the Resolution text report (fixtures.outputs.resolution.
-text_report.write_resolution_report()) from the REAL `library` this
+Also writes the Studies text report (fixtures.studies.text_report.
+write_resolution_report()) from the REAL `library` this
 script's own solve_system() call produces -- no stand-in/fabricated
 ShaftResults anywhere in this script. An earlier version of this check
 (check_outputs_resolution_report.py, now removed) tested
@@ -40,8 +40,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from axisforge.core.loads import RadialLoad
-from axisforge.fixtures.capabilities import ConstructionCapabilities, ResolutionCapabilities
-from axisforge.fixtures.outputs.resolution.text_report import write_resolution_report
+from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
+from axisforge.fixtures.studies.study_capabilities import StudyCapabilities
+from axisforge.fixtures.studies.text_report import write_resolution_report
 
 HERE = Path(__file__).resolve().parent
 
@@ -120,8 +121,11 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
 def main() -> None:
     construction, system = build_system()
 
-    resolution = ResolutionCapabilities(shaft_fem=("shaft_fem.timoshenko_rigid",))
-    objs = resolution.resolve()
+    study = StudyCapabilities(
+        construction=construction,
+        shaft_fem=("shaft_fem.timoshenko_rigid",),
+    )
+    objs = study.resolve()
     solve_system = objs["solve_system"]
 
     print(f"  construction.has_capability('systems.parallel_axis_linear'): "

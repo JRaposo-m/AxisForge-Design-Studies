@@ -28,7 +28,7 @@ other domain observes. Verifies:
 from __future__ import annotations
 
 from axisforge.core.loads import RadialLoad
-from axisforge.fixtures.capabilities import ConstructionCapabilities
+from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
 
 
 def main() -> None:

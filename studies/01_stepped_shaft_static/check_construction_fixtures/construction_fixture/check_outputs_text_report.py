@@ -3,7 +3,7 @@ check_outputs_text_report.py
 
 Exploratory script (not pytest). Builds the same 2-stage linear chain
 as check_linear_system_construction.py, writes its report via
-fixtures.outputs.construction.text_report.write_construction_report(),
+fixtures.construction.outputs.text_report.write_construction_report(),
 and does a quick sanity check on the result.
 
 ONE combined .txt file for the whole Construction domain -- topology,
@@ -24,8 +24,8 @@ import tempfile
 from pathlib import Path
 
 from axisforge.core.loads import RadialLoad
-from axisforge.fixtures.capabilities import ConstructionCapabilities
-from axisforge.fixtures.outputs.construction.text_report import (
+from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
+from axisforge.fixtures.construction.outputs.text_report import (
     write_construction_report,
 )
 

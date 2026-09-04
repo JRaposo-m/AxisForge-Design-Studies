@@ -4,8 +4,8 @@ check_resolution_fem.py
 Exploratory script (not pytest). Builds the same 2-stage linear chain
 as check_linear_system_construction.py / check_outputs_text_report.py
 (already-resolved via build_linear_system(), gear-mesh loads + shaft
-positions present), then runs it through the new Resolution stage:
-ResolutionCapabilities -> solve_system() -> SimpleFEMResultsLibrary.
+positions present), then runs it through the Studies stage:
+StudyCapabilities -> solve_system() -> RigidBearingFEMResultsLibrary.
 
 build_system() now returns (construction, system) -- solve_system()
 takes both: `construction` (the ConstructionCapabilities that built
@@ -27,7 +27,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from axisforge.core.loads import RadialLoad
-from axisforge.fixtures.capabilities import ConstructionCapabilities, ResolutionCapabilities
+from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
+from axisforge.fixtures.studies.study_capabilities import StudyCapabilities
 
 HERE = Path(__file__).resolve().parent
 
@@ -106,8 +107,11 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
 def main() -> None:
     construction, system = build_system()
 
-    resolution = ResolutionCapabilities(shaft_fem=("shaft_fem.timoshenko_rigid",))
-    objs = resolution.resolve()
+    study = StudyCapabilities(
+        construction=construction,
+        shaft_fem=("shaft_fem.timoshenko_rigid",),
+    )
+    objs = study.resolve()
     solve_system = objs["solve_system"]
 
     print(f"  construction.has_capability('systems.parallel_axis_linear'): "
