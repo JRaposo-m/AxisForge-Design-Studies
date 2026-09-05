@@ -36,6 +36,18 @@ aggregator, passed `shaft_fem_library=library` and nothing for
 `library` this script's own solve_system() call produces -- no
 stand-in/fabricated ShaftResults, same reasoning as
 check_resolution_fem.py's own docstring.
+
+Also writes the per-shaft PNG figure set via
+fem_studies.outputs.plots.write_resolution_plots() -- identical call to
+check_resolution_fem.py's own, same module, same
+HERE/plots/<shaft_name>/ layout, same "from the real library, no
+fabricated data" discipline; the only difference is this script's
+`library` was solved with theory="euler" rather than "timoshenko".
+This script already lives in its own directory, separate from
+check_resolution_fem.py's, so there is no HERE/plots/ collision between
+the two Resolution checks to design around -- unlike the two text
+reports, which DO sit in the same directory and so keep their own
+distinct filenames (report_..._euler.txt vs report_....txt).
 """
 from __future__ import annotations
 
@@ -45,6 +57,7 @@ from axisforge.core.loads import RadialLoad
 from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
 from axisforge.fixtures.studies.study_capabilities import StudyCapabilities
 from axisforge.fixtures.studies.outputs.text_report import write_studies_report
+from axisforge.fixtures.studies.shafts.fem_studies.outputs.plots import write_resolution_plots
 
 HERE = Path(__file__).resolve().parent
 
@@ -176,6 +189,12 @@ def main() -> None:
     )
     print(f"[OK] {out_path.name} written ({len(system.shafts)} shafts, "
           f"from the real solve_system() library above -- no fabricated data)")
+
+    written = write_resolution_plots(library, system, HERE)
+    n_files = sum(len(paths) for paths in written.values())
+    print(f"[OK] {n_files} plot(s) written under {(HERE / 'plots').name}/ "
+          f"for {len(written)}/{len(system.shafts)} shaft(s) (Euler-Bernoulli) "
+          f"-- from the same library above, no second solve")
 
 
 if __name__ == "__main__":

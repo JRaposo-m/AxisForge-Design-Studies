@@ -42,6 +42,17 @@ both the shaft_fem content blocks and the writer; it is now the
 Studies-wide aggregator only -- see fem_studies/outputs/
 resolution_report.py's own docstring for that split's full history)
 without changing any of this reasoning.
+
+Also writes the per-shaft PNG figure set via
+fem_studies.outputs.plots.write_resolution_plots() -- one PNG per
+physical quantity per shaft (bending moment, shear, deflection,
+torsion, section geometry/stress, bearing reactions -- see that
+module's own top docstring for the full list and why it is one chart
+per figure, not multi-panel composites), written under
+HERE/plots/<shaft_name>/. Same "from the real library, no fabricated
+data" discipline as the text report above -- write_resolution_plots()
+reads the SAME `library` write_studies_report() just wrote from, not a
+second solve or a stand-in.
 """
 from __future__ import annotations
 
@@ -51,6 +62,7 @@ from axisforge.core.loads import RadialLoad
 from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
 from axisforge.fixtures.studies.study_capabilities import StudyCapabilities
 from axisforge.fixtures.studies.outputs.text_report import write_studies_report
+from axisforge.fixtures.studies.shafts.fem_studies.outputs.plots import write_resolution_plots
 
 HERE = Path(__file__).resolve().parent
 
@@ -181,6 +193,12 @@ def main() -> None:
     )
     print(f"[OK] {out_path.name} written ({len(system.shafts)} shafts, "
           f"from the real solve_system() library above -- no fabricated data)")
+
+    written = write_resolution_plots(library, system, HERE)
+    n_files = sum(len(paths) for paths in written.values())
+    print(f"[OK] {n_files} plot(s) written under {(HERE / 'plots').name}/ "
+          f"for {len(written)}/{len(system.shafts)} shaft(s) "
+          f"-- from the same library above, no second solve")
 
 
 if __name__ == "__main__":
