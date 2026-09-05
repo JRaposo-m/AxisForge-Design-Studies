@@ -22,18 +22,26 @@ as check_outputs_text_report.py): one summary line per shaft, the
 handful of numbers worth eyeballing (max bending stress, max
 deflection, bearing reactions), not a full dump.
 
-Also writes the Studies text report (fixtures.studies.text_report.
-write_resolution_report()) from the REAL `library` this
-script's own solve_system() call produces -- no stand-in/fabricated
-ShaftResults anywhere in this script. An earlier version of this check
-(check_outputs_resolution_report.py, now removed) tested
-write_resolution_report()'s table/block formatting against hand-built
-stub ShaftResults objects; that produced numbers that looked like real
-engineering results but were not (arbitrary ramps, made-up bearing
-loads), which read as confusing/misleading next to the genuinely
-solver-derived numbers already used elsewhere in this check --
-dropped, on that explicit feedback, in favour of running the actual
-solve here and reporting on ITS output only.
+Also writes the Studies text report via
+fixtures.studies.text_report.write_studies_report() -- the Studies-wide
+aggregator (mirrors write_construction_report()'s own role), passed
+`shaft_fem_library=library` and nothing for `comparison=` since this
+script only ran ONE theory. From the REAL `library` this script's own
+solve_system() call produces -- no stand-in/fabricated ShaftResults
+anywhere in this script. An earlier version of this check
+(check_outputs_resolution_report.py, now removed) tested the report's
+table/block formatting against hand-built stub ShaftResults objects;
+that produced numbers that looked like real engineering results but
+were not (arbitrary ramps, made-up bearing loads), which read as
+confusing/misleading next to the genuinely solver-derived numbers
+already used elsewhere in this check -- dropped, on that explicit
+feedback, in favour of running the actual solve here and reporting on
+ITS output only. write_studies_report() replaced the old
+write_resolution_report() (fixtures.studies.text_report used to hold
+both the shaft_fem content blocks and the writer; it is now the
+Studies-wide aggregator only -- see fem_studies/outputs/
+resolution_report.py's own docstring for that split's full history)
+without changing any of this reasoning.
 """
 from __future__ import annotations
 
@@ -42,7 +50,7 @@ from pathlib import Path
 from axisforge.core.loads import RadialLoad
 from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
 from axisforge.fixtures.studies.study_capabilities import StudyCapabilities
-from axisforge.fixtures.studies.text_report import write_resolution_report
+from axisforge.fixtures.studies.outputs.text_report import write_studies_report
 
 HERE = Path(__file__).resolve().parent
 
@@ -166,9 +174,10 @@ def main() -> None:
               f"v_max={r.v_max:7.4f} mm @ x={r.x_v_max:6.1f} mm  [{brg_str}]")
 
     out_path = HERE / "report_2stage_chain_resolution.txt"
-    write_resolution_report(
-        library, system, out_path,
-        title="2-stage linear chain -- Resolution report",
+    write_studies_report(
+        system, out_path,
+        title="2-stage linear chain -- Studies report (Timoshenko)",
+        shaft_fem_library=library,
     )
     print(f"[OK] {out_path.name} written ({len(system.shafts)} shafts, "
           f"from the real solve_system() library above -- no fabricated data)")

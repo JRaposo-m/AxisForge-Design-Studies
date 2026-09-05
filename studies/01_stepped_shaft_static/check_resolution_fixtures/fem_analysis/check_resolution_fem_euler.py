@@ -1,34 +1,41 @@
 """
-check_resolution_fem.py
+check_resolution_fem_euler.py
 
-Exploratory script (not pytest). Builds the same 2-stage linear chain
-as check_linear_system_construction.py / check_outputs_text_report.py
-(already-resolved via build_linear_system(), gear-mesh loads + shaft
-positions present), then runs it through the Studies stage:
-StudyCapabilities -> solve_system() -> RigidBearingFEMResultsLibrary.
+Exploratory script (not pytest). Mirrors check_resolution_fem.py exactly
+-- same 2-stage linear chain (build_linear_system(), already resolved,
+gear-mesh loads + shaft positions present) -- but drives the Studies
+stage through "shaft_fem.euler_bernoulli_rigid" instead of
+"shaft_fem.timoshenko_rigid": StudyCapabilities -> solve_system() ->
+RigidBearingFEMResultsLibrary, backed by RigidBearingFEMSolver's own
+theory="euler" dispatch (StiffnessMatrixBuilder -> EulerBernoulliBeam:
+cubic Hermite shape functions, closed-form 6x6 element stiffness, no
+independent shear-strain field) rather than theory="timoshenko".
 
-build_system() now returns (construction, system) -- solve_system()
-takes both: `construction` (the ConstructionCapabilities that built
-`system`) is checked via construction.has_capability(
-"systems.parallel_axis_linear") to confirm Resolution's prerequisite --
-Construction must have been asked to produce an already-resolved
-system -- before the FEM solve runs at all. Also exercises the guard
-rail: a ConstructionCapabilities() that never requested
-"systems.parallel_axis_linear" makes solve_system() raise ValueError,
-even when handed the same, perfectly-resolved `system`.
+build_system() is byte-for-byte the same construction as
+check_resolution_fem.py's own -- duplicated here rather than imported,
+same convention that script itself follows relative to
+check_linear_system_construction.py -- so the two Resolution checks
+(Timoshenko vs Euler-Bernoulli) can be read and run independently, and
+so check_resolution_fem_compare.py can solve the SAME system through
+both physics in one process rather than trusting two separate scripts'
+output to line up.
 
-Console output stays terse (fail-loud/succeed-quiet, same convention
-as check_outputs_text_report.py): one summary line per shaft, the
-handful of numbers worth eyeballing (max bending stress, max
-deflection, bearing reactions), not a full dump.
+Same guard rail as check_resolution_fem.py: a ConstructionCapabilities()
+that never requested "systems.parallel_axis_linear" makes solve_system()
+raise ValueError even when handed the same, perfectly-resolved `system`
+-- the check is physics-agnostic, so it is re-run here unchanged rather
+than assumed already covered by the Timoshenko script.
 
-Also writes the Studies text report via
+Console output stays terse (fail-loud/succeed-quiet, same convention as
+check_resolution_fem.py): one summary line per shaft, the handful of
+numbers worth eyeballing (max bending stress, max deflection, bearing
+reactions), not a full dump. Also writes the Studies text report via
 fixtures.studies.text_report.write_studies_report() -- the Studies-wide
-aggregator (mirrors write_construction_report()'s own role), passed
-`shaft_fem_library=library` and nothing for `comparison=` since this
-script only ran ONE theory. From the REAL `library` this script's own
-solve_system() call produces -- no stand-in/fabricated ShaftResults
-anywhere in this script.
+aggregator, passed `shaft_fem_library=library` and nothing for
+`comparison=` since this script only ran ONE theory -- from the REAL
+`library` this script's own solve_system() call produces -- no
+stand-in/fabricated ShaftResults, same reasoning as
+check_resolution_fem.py's own docstring.
 """
 from __future__ import annotations
 
@@ -37,7 +44,7 @@ from pathlib import Path
 from axisforge.core.loads import RadialLoad
 from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
 from axisforge.fixtures.studies.study_capabilities import StudyCapabilities
-from axisforge.fixtures.studies.text_report import write_studies_report
+from axisforge.fixtures.studies.outputs.text_report import write_studies_report
 
 HERE = Path(__file__).resolve().parent
 
@@ -118,7 +125,7 @@ def main() -> None:
 
     study = StudyCapabilities(
         construction=construction,
-        shaft_fem=("shaft_fem.timoshenko_rigid",),
+        shaft_fem=("shaft_fem.euler_bernoulli_rigid",),
     )
     objs = study.resolve()
     solve_system = objs["solve_system"]
@@ -127,7 +134,8 @@ def main() -> None:
           f"{construction.has_capability('systems.parallel_axis_linear')} (expect True)")
 
     # Guard rail -- solve_system() refuses a construction that never
-    # requested 'systems.parallel_axis_linear'.
+    # requested 'systems.parallel_axis_linear'. Physics-agnostic check,
+    # re-run here (not assumed covered by check_resolution_fem.py).
     bad_construction = ConstructionCapabilities()
     try:
         solve_system(system, bad_construction)
@@ -144,7 +152,7 @@ def main() -> None:
 
     ok = not missing
     print(f"[{'OK' if ok else 'FAIL'}] solved {len(library)}/{len(system.shafts)} shafts "
-          f"-- {library!r}")
+          f"(Euler-Bernoulli) -- {library!r}")
     if missing:
         print(f"    missing from library: {missing}")
 
@@ -160,10 +168,10 @@ def main() -> None:
               f"sigma_b_max={r.sigma_b_max:8.2f} MPa @ x={r.x_sigma_b_max:6.1f} mm  "
               f"v_max={r.v_max:7.4f} mm @ x={r.x_v_max:6.1f} mm  [{brg_str}]")
 
-    out_path = HERE / "report_2stage_chain_resolution.txt"
+    out_path = HERE / "report_2stage_chain_resolution_euler.txt"
     write_studies_report(
         system, out_path,
-        title="2-stage linear chain -- Studies report (Timoshenko)",
+        title="2-stage linear chain -- Studies report (Euler-Bernoulli)",
         shaft_fem_library=library,
     )
     print(f"[OK] {out_path.name} written ({len(system.shafts)} shafts, "
