@@ -6,15 +6,15 @@ TOPOLOGY / RESOLVED STATE
 ------------------------------------------------------------------------
 ── uniform_point_load_radial_single_position ──────────────────────────────────────────────
   shafts: 2   links: 1   source: shaft1
-    shaft1       T_out=6.586 N·m      rot=1   pos=(y=0.00, z=0.00) mm
-    shaft2       T_out=13.171 N·m     rot=-1.0 pos=(y=60.00, z=0.00) mm
+    shaft1       T_out=65.857 N·m     rot=1   pos=(y=0.00, z=0.00) mm
+    shaft2       T_out=131.714 N·m    rot=-1.0 pos=(y=60.00, z=0.00) mm
 ────────────────────────────────────────────────────────
 
 ========================================================================
 SHAFT: shaft1
 ========================================================================
   geometry (1 sections, total_length=200.00 mm):
-    [0] (shaft1) z=[0.0, 200.0] mm  d=40.0 mm  L=200.0 mm  mat=AISI_1045  Ra=0.8 um
+    [0] (shaft1) z=[0.0, 200.0] mm  d=20.0 mm  L=200.0 mm  mat=AISI_1045  Ra=0.8 um
 
   bearings (2):
 -- shaft1_ball_locating --------------------
@@ -63,17 +63,17 @@ SHAFT: shaft1
 ──────────────────────────────────────────────────────────
 
   loads (5 total):
-    [gear_mesh] TorqueLoad(position=0.00 mm, T=-6.59 N·m, source='gear_mesh', label='shaft1:T_in')
+    [gear_mesh] TorqueLoad(position=0.00 mm, T=-65.86 N·m, source='gear_mesh', label='shaft1:T_in')
     [user] RadialLoad(position=60.00 mm, F=500.00 N, theta=270.0°, Fy=-0.00 N, Fz=-500.00 N, source='user', label='radial_test_load')
-    [gear_mesh] RadialLoad(position=100.00 mm, F=119.85 N, theta=0.0°, Fy=119.85 N, Fz=0.00 N, source='gear_mesh', label='g_driver:Fr')
-    [gear_mesh] RadialLoad(position=100.00 mm, F=329.29 N, theta=90.0°, Fy=0.00 N, Fz=329.29 N, source='gear_mesh', label='g_driver:Ft')
-    [gear_mesh] TorqueLoad(position=100.00 mm, T=6.59 N·m, source='gear_mesh', label='g_driver:T')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=1198.50 N, theta=0.0°, Fy=1198.50 N, Fz=0.00 N, source='gear_mesh', label='g_driver:Fr')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=3292.86 N, theta=90.0°, Fy=0.00 N, Fz=3292.86 N, source='gear_mesh', label='g_driver:Ft')
+    [gear_mesh] TorqueLoad(position=100.00 mm, T=65.86 N·m, source='gear_mesh', label='g_driver:T')
 
 ========================================================================
 SHAFT: shaft2
 ========================================================================
   geometry (1 sections, total_length=200.00 mm):
-    [0] (shaft2) z=[0.0, 200.0] mm  d=40.0 mm  L=200.0 mm  mat=AISI_1045  Ra=0.8 um
+    [0] (shaft2) z=[0.0, 200.0] mm  d=20.0 mm  L=200.0 mm  mat=AISI_1045  Ra=0.8 um
 
   bearings (2):
 -- shaft2_ball_locating --------------------
@@ -122,9 +122,9 @@ SHAFT: shaft2
 ──────────────────────────────────────────────────────────
 
   loads (4 total):
-    [gear_mesh] RadialLoad(position=100.00 mm, F=119.85 N, theta=180.0°, Fy=-119.85 N, Fz=0.00 N, source='gear_mesh', label='g_driven:Fr')
-    [gear_mesh] RadialLoad(position=100.00 mm, F=329.29 N, theta=90.0°, Fy=0.00 N, Fz=329.29 N, source='gear_mesh', label='g_driven:Ft')
-    [gear_mesh] TorqueLoad(position=100.00 mm, T=-13.17 N·m, source='gear_mesh', label='g_driven:T')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=1198.50 N, theta=180.0°, Fy=-1198.50 N, Fz=0.00 N, source='gear_mesh', label='g_driven:Fr')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=3292.86 N, theta=90.0°, Fy=0.00 N, Fz=3292.86 N, source='gear_mesh', label='g_driven:Ft')
+    [gear_mesh] TorqueLoad(position=100.00 mm, T=-131.71 N·m, source='gear_mesh', label='g_driven:T')
     [user] RadialLoad(position=140.00 mm, F=500.00 N, theta=270.0°, Fy=-0.00 N, Fz=-500.00 N, source='user', label='radial_test_load')
 
 ========================================================================
