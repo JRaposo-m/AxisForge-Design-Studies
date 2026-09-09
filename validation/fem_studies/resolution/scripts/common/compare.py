@@ -435,20 +435,9 @@ def compare_shaft(
     near_zero_fraction: float = NEAR_ZERO_FRACTION_DEFAULT,
     abaqus_loader: Callable[[Path], pd.DataFrame] = load_abaqus_csv,
 ) -> Path:
-    """
-    Runs the full pipeline for one shaft: load both CSVs, align+diff,
-    write <shaft_name>_comparison.csv, _report.txt, and one overlay PNG
-    per compared column into `out_dir` (created if missing). Returns
-    the path to the written comparison CSV.
-
-    `abaqus_loader` picks how `abaqus_csv` is parsed -- defaults to
-    load_abaqus_csv (clean, header, comma-separated). Pass
-    load_abaqus_raw_paired_csv instead to read the raw, no-cleanup
-    export straight out of Abaqus (';' separator, ',' decimal, x
-    repeated per curve) -- both return the same shape, so nothing else
-    in this function needs to know which one was used.
-    """
     out_dir.mkdir(parents=True, exist_ok=True)
+    plots_dir = out_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
 
     af = load_axisforge_csv(axisforge_csv)
     abq = abaqus_loader(abaqus_csv)
@@ -464,6 +453,6 @@ def compare_shaft(
         diff_df, column_map, out_dir / f"{shaft_name}_comparison_report.txt",
         title=title or f"{shaft_name} -- AxisForge vs Abaqus",
     )
-    write_comparison_plots(diff_df, column_map, out_dir, shaft_name)
+    write_comparison_plots(diff_df, column_map, plots_dir, shaft_name)
 
     return csv_path
