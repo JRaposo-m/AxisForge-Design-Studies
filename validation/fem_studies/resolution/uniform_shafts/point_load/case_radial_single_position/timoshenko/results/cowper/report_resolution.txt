@@ -1,5 +1,5 @@
 ========================================================================
-uniform_shafts/point_load/timoshenko -- radial load, position sweep (cowper)
+uniform_shafts/point_load/case_radial_single_position -- radial load, position sweep (timoshenko/cowper)
 ========================================================================
 
 ========================================================================

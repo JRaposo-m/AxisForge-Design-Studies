@@ -1,0 +1,27 @@
+shaft1 -- analytical (closed-form Macaulay) -- timoshenko/hutchinson
+==============================================================================
+
+Method: Macaulay's method (shear-corrected for Timoshenko), true pin
+supports (v=0 only, no moment reaction -- confirmed against
+solvers/.../constraints/boundary_conditions.py). See this script's
+own module docstring for the full derivation and assumptions.
+
+M/V sign convention: M follows the standard SUM_k Fk*<x-xk>
+Macaulay convention; V = -dM/dx (Q=-dM/dx, matching the
+reference textbook's Eq 1.24), confirmed against AxisForge's
+own EulerBernoulliPostProcessing/TimoshenkoPostProcessing
+shear_force() -- see solve_plane()'s own V() docstring.
+
+XY plane -- x_A=10.000 mm, x_B=190.000 mm
+  R_A =   -909.926 N   R_B =   -909.926 N
+  applied loads: -0.00 N @ x=60.00 mm, 1819.85 N @ x=100.00 mm, 0.00 N @ x=100.00 mm
+  v_max = 0.132479 mm @ x=99.00 mm
+  M_max = -81893.30 N.mm @ x=100.00 mm
+  V_max = 909.93 N @ x=60.00 mm
+
+XZ plane -- x_A=10.000 mm, x_B=190.000 mm
+  R_A =  -2138.889 N   R_B =  -2361.111 N
+  applied loads: -500.00 N @ x=60.00 mm, 5000.00 N @ x=100.00 mm
+  v_max = 0.336676 mm @ x=101.50 mm
+  M_max = -212500.00 N.mm @ x=100.00 mm
+  V_max = 2638.89 N @ x=60.00 mm

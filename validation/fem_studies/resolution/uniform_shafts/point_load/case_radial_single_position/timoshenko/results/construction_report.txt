@@ -1,5 +1,5 @@
 ========================================================================
-uniform_shafts/point_load/timoshenko/case_radial_single_position -- Construction
+uniform_shafts/point_load/case_radial_single_position -- Construction (timoshenko)
 ========================================================================
 
 TOPOLOGY / RESOLVED STATE

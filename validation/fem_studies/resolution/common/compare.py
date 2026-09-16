@@ -420,14 +420,25 @@ def write_comparison_report(
     column_map: dict[str, str],
     out_path: Path,
     title: str = "",
+    reference_label: str = "Abaqus",
 ) -> None:
     """
-    Writes a per-point table FIRST -- x_mm, AxisForge value, Abaqus
+    Writes a per-point table FIRST -- x_mm, AxisForge value, reference
     value, absolute deviation, relative deviation (%) -- one table per
     compared column, so every point can be checked by eye against the
     two source values rather than only against a summary statistic.
     The max/mean/RMS summary block still follows each table (useful for
     a one-line verdict), but the table is the primary content now.
+
+    `reference_label` names whatever the second CSV actually is (e.g.
+    "Abaqus" for a real Abaqus export, "Analytical" for a closed-form
+    reference like case_radial_single_position/analytical/'s own
+    Macaulay solution) -- purely a label for the report/plot text, does
+    NOT affect any numeric column name (those stay "*_abaqus" for
+    backward compatibility with every existing *_comparison.csv reader,
+    e.g. compare_refined_mesh_*.py). Defaults to "Abaqus" so every
+    existing call site that doesn't pass this keeps producing the exact
+    same text it always has.
     """
     lines = [title, "=" * len(title)] if title else []
     lines.append("")
@@ -448,10 +459,10 @@ def write_comparison_report(
         n_valid = int(np.sum(~np.isnan(pct_vals)))
         n_flagged = n_total - n_valid
 
-        lines.append(f"{af_col}  (vs Abaqus '{abaqus_col_label}')")
+        lines.append(f"{af_col}  (vs {reference_label} '{abaqus_col_label}')")
         lines.append("=" * 78)
         header = (
-            f"{'x_mm':>10} | {'AxisForge':>14} | {'Abaqus':>14} | "
+            f"{'x_mm':>10} | {'AxisForge':>14} | {reference_label:>14} | "
             f"{'abs diff':>14} | {'rel diff [%]':>13}"
         )
         lines.append(header)
@@ -477,7 +488,7 @@ def write_comparison_report(
             lines.append("  pct diff        : n/a (every point near zero)")
         lines.append(
             f"  points          : {n_valid}/{n_total} usados no pct diff "
-            f"({n_flagged} marcados near-zero-Abaqus, excluídos)"
+            f"({n_flagged} marcados near-zero-{reference_label}, excluídos)"
         )
         lines.append("")
 
@@ -489,15 +500,16 @@ def write_comparison_plots(
     column_map: dict[str, str],
     out_dir: Path,
     shaft_name: str,
+    reference_label: str = "Abaqus",
 ) -> None:
     x = diff_df["x_mm"].to_numpy()
     for af_col, abq_col in column_map.items():
         fig, ax = plt.subplots(figsize=(7, 4))
         ax.plot(x, diff_df[af_col], "o-", label=f"AxisForge {af_col}", ms=3)
-        ax.plot(x, diff_df[f"{af_col}_abaqus"], "s--", label=f"Abaqus {abq_col}", ms=3)
+        ax.plot(x, diff_df[f"{af_col}_abaqus"], "s--", label=f"{reference_label} {abq_col}", ms=3)
         ax.set_xlabel("x [mm]")
         ax.set_ylabel(af_col)
-        ax.set_title(f"{shaft_name} -- {af_col} vs Abaqus {abq_col}")
+        ax.set_title(f"{shaft_name} -- {af_col} vs {reference_label} {abq_col}")
         ax.legend()
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
@@ -519,7 +531,19 @@ def compare_shaft(
     title: str = "",
     near_zero_fraction: float = NEAR_ZERO_FRACTION_DEFAULT,
     abaqus_loader: Callable[[Path], pd.DataFrame] = load_abaqus_csv,
+    reference_label: str = "Abaqus",
 ) -> Path:
+    """
+    `reference_label` (default "Abaqus", unchanged from every existing
+    call site) is threaded into the report/plot TEXT only -- see
+    write_comparison_report()'s own docstring. Pass e.g.
+    reference_label="Analytical" when `abaqus_csv` is actually a
+    closed-form/analytical CSV rather than a real Abaqus export (the
+    "abaqus_*" parameter/column names themselves are kept as-is for
+    backward compatibility with every downstream reader of
+    *_comparison.csv, this only changes what the human-readable
+    report/plots call the second curve).
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     plots_dir = out_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
@@ -536,8 +560,10 @@ def compare_shaft(
 
     write_comparison_report(
         diff_df, column_map, out_dir / f"{shaft_name}_comparison_report.txt",
-        title=title or f"{shaft_name} -- AxisForge vs Abaqus",
+        title=title or f"{shaft_name} -- AxisForge vs {reference_label}",
+        reference_label=reference_label,
     )
-    write_comparison_plots(diff_df, column_map, plots_dir, shaft_name)
+    write_comparison_plots(diff_df, column_map, plots_dir, shaft_name,
+                            reference_label=reference_label)
 
     return csv_path

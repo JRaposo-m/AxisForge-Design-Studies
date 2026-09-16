@@ -1,15 +1,20 @@
 """
-validation/abaqus_comparison/uniform_shafts/point_load/timoshenko/case_radial_single_position/comparison/compare_case_radial_single_position.py
+validation/fem_studies/resolution/uniform_shafts/point_load/case_radial_single_position/timoshenko/comparison/compare_case_radial_single_position.py
 
 Comparison runner for case_radial_single_position.py -- diffs every
 shaft's AxisForge resolution CSV (both shear theories) against the
-matching hand-exported Abaqus CSV. Uses scripts/common/compare.py for
-the actual diff/report/plot work; this script only knows WHICH files
-belong to THIS case, via scripts/common/paths.py.
+matching hand-exported Abaqus CSV. Uses common/compare.py for the
+actual diff/report/plot work; this script only knows WHICH files
+belong to THIS case, via common/paths.py. The closed-form analytical
+comparison is a SEPARATE script,
+analytical/comparison/compare_analytical_case_radial_single_position.py
+-- kept out of this file since analytical/ is its own sibling folder,
+not nested under timoshenko/, and diffs against a different reference
+entirely (closed-form, not Abaqus).
 
 Lives inside case_radial_single_position/comparison/, next to the
 comparison/ output it produces and one level below case_radial_single_position.py
-itself. scripts/common/paths.py's case_dir() knows this: a script found
+itself. common/paths.py's case_dir() knows this: a script found
 directly inside a folder named "comparison" resolves its case root one
 level further up (see case_dir()'s own docstring) -- so results_dir(),
 abaqus_results_dir() and comparison_dir() all resolve correctly from
@@ -52,15 +57,15 @@ from pathlib import Path
 _p = Path(__file__).resolve()
 _root = None
 for _ancestor in _p.parents:
-    if (_ancestor / "scripts" / "common").is_dir():
+    if (_ancestor / "common").is_dir():
         _root = _ancestor
         break
 if _root is None:
     raise RuntimeError(
-        f"{__file__}: no ancestor directory containing 'scripts/common/' "
+        f"{__file__}: no ancestor directory containing 'common/' "
         f"found -- this file must live somewhere inside the suite tree."
     )
-sys.path.insert(0, str(_root / "scripts"))
+sys.path.insert(0, str(_root))
 from common.paths import results_dir, abaqus_results_dir, comparison_dir  # noqa: E402
 from common.compare import (  # noqa: E402
     compare_shaft, DEFAULT_COLUMN_MAP, load_abaqus_raw_paired_csv,

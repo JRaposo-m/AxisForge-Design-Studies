@@ -1,10 +1,28 @@
 """
-validation/abaqus_comparison/uniform_shafts/point_load/timoshenko/case_radial_single_position/case_radial_single_position.py
+validation/fem_studies/resolution/uniform_shafts/point_load/case_radial_single_position/case_radial_single_position.py
 
-Case group: uniform shaft, Timoshenko beam theory, ONE extra point
-RadialLoad, position varied. See the suite's top-level README.md for the
-scripts/ vs results/ vs abaqus_results/ vs comparison/ split, and for the
-"vehicle, not mechanism" discipline shared by every case script.
+Case group: uniform shaft, ONE extra point RadialLoad, position varied,
+solved under BOTH beam theories (Euler-Bernoulli and Timoshenko). See
+the suite's top-level README.md for the euler_bernoulli/ vs
+timoshenko/ vs analytical_solution/ split, and for the "vehicle, not
+mechanism" discipline shared by every case script.
+
+REORG NOTE (this pass): previously this file only solved Timoshenko
+(shaft_fem=("shaft_fem.timoshenko_rigid",)) and wrote into
+results_dir(__file__)/<shear_theory>/ with NO theory segment in the
+path -- which never actually matched the on-disk layout
+(case_radial_single_position/{euler_bernoulli,timoshenko}/results/...,
+theory as a real folder). Whatever previously populated
+euler_bernoulli/results/ was NOT this script (there was no code path
+here that ever called shaft_fem.euler_bernoulli_rigid), and the
+timoshenko/results/ output on disk predates this rewrite -- both are
+now regenerated correctly by the loop in main() below, each branch
+building its own case_dir(__file__) / "<theory>" / "results" path
+directly (NOT results_dir(__file__, theory) -- that helper joins its
+extra segments AFTER "results", by design, matching how
+compare_case_x.py already relies on it; here <theory>/ sits ABOVE
+results/ instead, the opposite nesting -- see common/paths.py's own
+docstring, and the inline comment at the first case_dir() call below).
 
 A single 1-stage gear chain (2 shafts) is built purely to get two
 independent, individually-resolved ShaftSystem objects out of one script
@@ -25,16 +43,29 @@ isolates the effect of load position on v(x)/M(x)/bearing reactions,
 with everything else (BC, section, gear-mesh background load) held fixed.
 
 BC: fixed for this whole suite -- ball (locating) @10mm, roller
-(non-locating) @190mm -- see scripts/common/bearings.py.
+(non-locating) @190mm -- see common/bearings.py. Both bearings
+constrain v=0 only (u=0 additionally at the locating one); NEITHER ever
+constrains theta -- see solvers/.../constraints/boundary_conditions.py.
+That makes both supports true pins with no moment reaction, which is
+exactly what analytical_solution/'s closed-form beam formulas assume --
+see that script's own docstring.
 
-integration_method="exact" fixed for this whole case group -- full
-Gauss integration, no reduced/selective integration -- chosen for
-validation runs specifically to remove shear-locking mitigation as a
-variable when diffing against Abaqus; only shear_theory (cowper vs
-hutchinson) is swept.
+integration_method="single_point" (selective/reduced integration) for
+the Timoshenko branch -- this is a resolution study, not the
+locking-demonstration integration_method="exact" used by the mesh
+convergence group. Euler-Bernoulli has no shear term, so
+integration_method does not apply to that branch at all.
 
-Outputs: results/<shear_theory>/ (report .txt, plots/*.png, csv/*.csv),
-relative to this case's own folder -- see scripts/common/paths.py.
+Outputs, per theory:
+  euler_bernoulli/results/               (report .txt, plots/*.png, csv/*.csv)
+                                          -- no <shear_theory>/ subfolder:
+                                          Euler-Bernoulli has no shear
+                                          correction to sweep, exactly
+                                          one AxisForge solve per shaft.
+  timoshenko/results/<shear_theory>/     (report .txt, plots/*.png, csv/*.csv)
+                                          -- one subfolder per shear_theory
+                                          swept (cowper, hutchinson).
+Both relative to this case's own folder -- see common/paths.py.
 """
 from __future__ import annotations
 
@@ -44,17 +75,17 @@ from pathlib import Path
 _p = Path(__file__).resolve()
 _root = None
 for _ancestor in _p.parents:
-    if (_ancestor / "scripts" / "common").is_dir():
+    if (_ancestor / "common").is_dir():
         _root = _ancestor
         break
 if _root is None:
     raise RuntimeError(
-        f"{__file__}: no ancestor directory containing 'scripts/common/' "
+        f"{__file__}: no ancestor directory containing 'common/' "
         f"found -- this file must live somewhere inside the suite tree."
     )
-sys.path.insert(0, str(_root / "scripts"))
+sys.path.insert(0, str(_root))
 from common.bearings import build_case_bearings  # noqa: E402
-from common.paths import results_dir  # noqa: E402
+from common.paths import case_dir  # noqa: E402
 
 from axisforge.core.loads import RadialLoad, TorqueLoad  # noqa: E402
 from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities  # noqa: E402
@@ -65,8 +96,6 @@ from axisforge.fixtures.studies.shafts.fem_studies.outputs.plots import write_re
 from axisforge.fixtures.studies.shafts.fem_studies.outputs.resolution_csv import resolution_csv  # noqa: E402
 
 
-RESULTS_DIR = results_dir(__file__)
-
 SHAFT_LENGTH_MM = 200.0
 SHAFT_DIAMETER_MM = 20.0
 
@@ -75,10 +104,31 @@ LOAD_THETA_DEG = 270.0
 LOAD_X_SHAFT1_MM = 60.0
 LOAD_X_SHAFT2_MM = 140.0
 
-INTEGRATION_METHOD = "single_point"  # "exact" is the other option, but this is a resolution study
+# Timoshenko-branch integration method -- "exact" is the other option,
+# but this is a resolution study, not the locking-demonstration group.
+# Not used at all by the Euler-Bernoulli branch (no shear term).
+TIMOSHENKO_INTEGRATION_METHOD = "single_point"
+
+# Shear theories swept for the Timoshenko branch only.
+SHEAR_THEORIES = ("cowper", "hutchinson")
 
 
 def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]:
+    """
+    Builds and RESOLVES the ShaftSystem for this case -- geometry,
+    bearings, gear mesh, and every load (user + gear_mesh-sourced),
+    independent of which beam theory will later solve it (bending
+    theory is a Studies-stage choice, made in main() below, not here).
+
+    Exposed (not just called from main()) specifically so that
+    analytical_solution/analytical_case_radial_single_position.py can
+    import and call this SAME function to get the identical, already-
+    resolved ShaftSystem -- same geometry, same bearing positions, same
+    gear-mesh Ft/Fr (a core-level statics computation, not FEM) -- for
+    its own closed-form (non-FEM) solve, rather than re-deriving any of
+    those numbers by hand and risking a second, independently-wrong
+    source of truth.
+    """
     construction = ConstructionCapabilities(
         shaft=("shafts.generic",),
         bearings=("bearings.deep_groove_ball", "bearings.cylindrical_roller"),
@@ -151,65 +201,120 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
     return construction, system
 
 
+def _write_theory_outputs(system, out_dir: Path, library, title: str) -> None:
+    """Report + plots + csv for one already-solved library, shared by
+    both theory branches in main() below (the only thing that differs
+    between them is which capability solved `library` and where
+    `out_dir` points)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write_studies_report(
+        system, out_dir / "report_resolution.txt",
+        title=title, shaft_fem_library=library,
+    )
+    write_resolution_plots(library, system, out_dir)
+
+    csv_dir = out_dir / "csv"
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    for ss in system.shafts:
+        r = library.get_or_none(ss.name)
+        if r is None:
+            continue
+        (csv_dir / f"{ss.name}_resolution.csv").write_text(
+            resolution_csv(r, decimals=10), encoding="utf-8",
+        )
+    print(f"[OK] report + plots + csv written under {out_dir}")
+
+
 def main() -> None:
     construction, system = build_system()
 
-    # Construction report FIRST, once per case (geometry/bearings/gears/
-    # loads don't depend on shear theory) -- this is the file to build
-    # the equivalent Abaqus model FROM: exact shaft sections, bearing
-    # positions/types/arrangement, gear positions, and every load
-    # (tagged "user" vs "gear_mesh" via loads_block()) with its own
-    # position/magnitude/direction. Written at the case root, not inside
-    # a <shear_theory>/ subfolder.
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    write_construction_report(
-        system, RESULTS_DIR / "construction_report.txt",
-        title="uniform_shafts/point_load/timoshenko/case_radial_single_position -- Construction",
-    )
-    print(f"[OK] construction_report.txt written under {RESULTS_DIR} "
-          f"-- use this to build the equivalent Abaqus model")
-
-    study = StudyCapabilities(construction=construction, shaft_fem=("shaft_fem.timoshenko_rigid",))
-    solve_system = study.resolve()["solve_system"]
-
-    print("uniform_shafts/point_load/timoshenko/case_radial_single_position")
+    print("uniform_shafts/point_load/case_radial_single_position")
     print(f"  shaft1: RadialLoad {LOAD_N:.0f} N @ x={LOAD_X_SHAFT1_MM:.1f} mm")
     print(f"  shaft2: RadialLoad {LOAD_N:.0f} N @ x={LOAD_X_SHAFT2_MM:.1f} mm")
 
-    for shear_theory in ("cowper", "hutchinson"):
-        library = solve_system(
+    # ------------------------------------------------------------------
+    # Euler-Bernoulli branch -- one solve per shaft, no shear sweep.
+    # ------------------------------------------------------------------
+    # NOTE: NOT results_dir(__file__, "euler_bernoulli") -- that helper
+    # joins its extra segments AFTER "results" (case_dir()/results/<extra>),
+    # by design, matching how compare_case_x.py already uses it
+    # (comparison_dir(__file__, shear_theory) -> comparison/<shear_theory>).
+    # On disk here, <theory>/ sits ABOVE results/ (a sibling of
+    # abaqus_results/ and comparison/ under euler_bernoulli/ or
+    # timoshenko/), the opposite nesting -- so the theory folder is
+    # built directly off case_dir() instead.
+    eb_dir = case_dir(__file__) / "euler_bernoulli" / "results"
+    eb_dir.mkdir(parents=True, exist_ok=True)
+    write_construction_report(
+        system, eb_dir / "construction_report.txt",
+        title="uniform_shafts/point_load/case_radial_single_position -- Construction (Euler-Bernoulli)",
+    )
+
+    eb_study = StudyCapabilities(construction=construction, shaft_fem=("shaft_fem.euler_bernoulli_rigid",))
+    eb_solve_system = eb_study.resolve()["solve_system"]
+    # solve_system() has ONE uniform signature across both theories --
+    # shear_theory/integration_method are required keyword-only args
+    # even on the Euler-Bernoulli branch (confirmed by running this:
+    # TypeError without them). CORRECTED (this was wrong on the first
+    # attempt): they are NOT silently ignored/inert for euler_bernoulli
+    # the way kGA_override is -- BeamModelSettings.__post_init__()
+    # actively VALIDATES and REJECTS a non-None shear_theory when
+    # beam_theory="euler_bernoulli" ("does not use shear_theory ...
+    # pass None"), confirmed by running this with shear_theory="cowper"
+    # here. Both are therefore explicitly None for this branch -- not
+    # an arbitrary placeholder value, the ONLY value BeamModelSettings
+    # accepts here.
+    eb_library = eb_solve_system(
+        system, construction,
+        shear_theory=None,
+        integration_method=None,
+    )
+
+    for ss in system.shafts:
+        r = eb_library.get_or_none(ss.name)
+        if r is None:
+            continue
+        print(f"    [euler_bernoulli] {ss.name:8s} "
+              f"v_max={r.v_max:7.4f} mm @ x={r.x_v_max:6.1f} mm  "
+              f"sigma_b_max={r.sigma_b_max:8.2f} MPa @ x={r.x_sigma_b_max:6.1f} mm")
+
+    _write_theory_outputs(
+        system, eb_dir, eb_library,
+        title="uniform_shafts/point_load/case_radial_single_position -- radial load, position sweep (euler_bernoulli)",
+    )
+
+    # ------------------------------------------------------------------
+    # Timoshenko branch -- swept over shear_theory, as before.
+    # ------------------------------------------------------------------
+    ts_root = case_dir(__file__) / "timoshenko" / "results"
+    ts_root.mkdir(parents=True, exist_ok=True)
+    write_construction_report(
+        system, ts_root / "construction_report.txt",
+        title="uniform_shafts/point_load/case_radial_single_position -- Construction (timoshenko)",
+    )
+
+    ts_study = StudyCapabilities(construction=construction, shaft_fem=("shaft_fem.timoshenko_rigid",))
+    ts_solve_system = ts_study.resolve()["solve_system"]
+
+    for shear_theory in SHEAR_THEORIES:
+        ts_library = ts_solve_system(
             system, construction,
             shear_theory=shear_theory,
-            integration_method=INTEGRATION_METHOD,
+            integration_method=TIMOSHENKO_INTEGRATION_METHOD,
         )
 
         for ss in system.shafts:
-            r = library.get_or_none(ss.name)
+            r = ts_library.get_or_none(ss.name)
             if r is None:
                 continue
-            print(f"    [{shear_theory}] {ss.name:8s} "
+            print(f"    [timoshenko/{shear_theory}] {ss.name:8s} "
                   f"v_max={r.v_max:7.4f} mm @ x={r.x_v_max:6.1f} mm  "
                   f"sigma_b_max={r.sigma_b_max:8.2f} MPa @ x={r.x_sigma_b_max:6.1f} mm")
 
-        out_dir = RESULTS_DIR / shear_theory
-        out_dir.mkdir(parents=True, exist_ok=True)
-        write_studies_report(
-            system, out_dir / f"report_resolution_{shear_theory}.txt",
-            title=f"uniform_shafts/point_load/timoshenko -- radial load, position sweep ({shear_theory})",
-            shaft_fem_library=library,
+        _write_theory_outputs(
+            system, ts_root / shear_theory, ts_library,
+            title=f"uniform_shafts/point_load/case_radial_single_position -- radial load, position sweep (timoshenko/{shear_theory})",
         )
-        write_resolution_plots(library, system, out_dir)
-
-        csv_dir = out_dir / "csv"
-        csv_dir.mkdir(parents=True, exist_ok=True)
-        for ss in system.shafts:
-            r = library.get_or_none(ss.name)
-            if r is None:
-                continue
-            (csv_dir / f"{ss.name}_resolution.csv").write_text(
-                resolution_csv(r, decimals=10), encoding="utf-8",
-            )
-        print(f"[OK] [{shear_theory}] report + plots + csv written under {out_dir}")
 
 
 if __name__ == "__main__":
