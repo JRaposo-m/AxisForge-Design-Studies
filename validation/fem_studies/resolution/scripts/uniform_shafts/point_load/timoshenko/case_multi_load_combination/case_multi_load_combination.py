@@ -58,7 +58,7 @@ from axisforge.fixtures.studies.shafts.fem_studies.outputs.resolution_csv import
 RESULTS_DIR = results_dir(__file__)
 
 SHAFT_LENGTH_MM = 200.0
-SHAFT_DIAMETER_MM = 40.0
+SHAFT_DIAMETER_MM = 20.0
 
 
 def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]:
@@ -118,7 +118,7 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
     ]
 
     system = build_linear_system(
-        shaft_specs, stage_specs, P=1000.0, rotation_dir_source=1,
+        shaft_specs, stage_specs, P=10000.0, rotation_dir_source=1,
         label="uniform_point_load_multi_combination",
     )
     return construction, system

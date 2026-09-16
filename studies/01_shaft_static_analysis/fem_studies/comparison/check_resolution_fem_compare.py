@@ -1,170 +1,351 @@
 """
-check_resolution_fem_compare.py
+check_cantilever_lambda_sweep.py
 
-Exploratory script (not pytest). Builds the SAME 2-stage linear chain as
-check_resolution_fem.py / check_resolution_fem_euler.py exactly once
-(build_linear_system(), already resolved -- gear-mesh loads + shaft
-positions present, one `system` object), then requests the
-"shaft_fem.comparison" capability -- comparison_study.run_comparison()
-solves THAT SAME `system` twice ("timoshenko" vs "euler"), and
-print_comparison()/write_studies_report() report the difference.
+Standalone verification rig -- NOT part of the AxisForge repo, NOT going
+through ShaftSystem/Mesh1D/RigidSupportFEMSolver at all. Two UNIFORM
+(single-diameter) cantilever "shafts", swept over a range of slenderness,
+built directly from Elem + StiffnessMatrixBuilder, to check AxisForge's
+own Timoshenko element against closed-form beam theory -- specifically
+the Ferreira/Fantuzzi-style cantilever benchmark (Fig 2.6 in the
+reference you posted): a 2-node Timoshenko element loaded as a
+cantilever, r_w = w_tip(Timoshenko FEM) / w_tip(exact Euler-Bernoulli),
+plotted against the beam slenderness ratio lambda.
 
-This script no longer builds two StudyCapabilities or calls
-solve_system() itself -- that duplicated comparison_study.py's own
-run_comparison(), and comparison_report.py's own shaft_comparison_block()
-table logic was duplicated a second time as an inline print loop here.
-Both duplications are gone: this script only resolves ONE capability
-("shaft_fem.comparison") and calls the three functions it returns.
-Solving the same `system` object twice (rather than trusting two
-separate scripts' printed numbers to correspond to "the same shaft")
-is still the whole point structurally -- it just now lives inside
-run_comparison() instead of in this script.
+WHY THIS BYPASSES ShaftSystem ENTIRELY
+---------------------------------------
+A true cantilever needs u=v=theta=0 at the fixed end. boundary_dofs()
+in constraints/boundary_conditions.py can only ever set v=0 (always)
+and u=0 (locating bearing only) at bearing nodes -- no bearing
+arrangement can ever produce theta=0. So a rigid cantilever BC is
+structurally inexpressible through the bearing-based path, regardless
+of how many/how stiff the bearings are made. Rather than bend
+RigidSupportFEMSolver into a second mode (which its own docstring
+explicitly argues against -- "not one of several modes... a sibling
+module, not a flag"), this script talks to Elem/StiffnessMatrixBuilder
+directly:
 
-Compared per shaft: sigma_b_max [MPa], v_max [mm], and each bearing's
-Fr/Fa [N] -- unchanged content, now produced by
-comparison_report.comparison_table() instead of an inline loop. Bearing
-reactions are expected to match closely between the two physics (they
-come from static equilibrium on the same loads/positions, not from beam
-theory); sigma_b_max and v_max are where Euler-Bernoulli's "no shear
-flexibility" assumption is expected to show up as a difference, larger
-the shorter/stubbier the span.
+  - Elem has a plain public constructor (length, E, I, A, v,
+    idx_node_1, idx_node_2, x_a, x_b, settings) -- confirmed from
+    elem.py, no Mesh1D/ShaftSystem required to build one.
+  - StiffnessMatrixBuilder(mesh, elements, frame) only ever reads
+    mesh.x_nodes / mesh.n_nodes from its `mesh` argument (confirmed
+    from build_stiffness_matrix.py) -- so a tiny local duck-typed
+    stand-in (_FlatMesh below) is enough, no real Mesh1D needed.
+  - _explicit_boundary_dofs() below is a local mirror of the
+    `boundary_dofs_explicit()` function proposed (not yet applied) as
+    an addition to constraints/boundary_conditions.py in this same
+    conversation -- same contract (raw DOF indices in, (free,
+    constrained) out), kept local here so this script runs today
+    without requiring that repo change first. If you do add it to the
+    repo, swap the import in and delete the local copy.
 
-Console output stays terse (fail-loud/succeed-quiet, same convention as
-the other two scripts): one block per shaft, absolute delta and delta%
-for the two physics-dependent quantities, no full dump. Also writes the
-Studies text report via write_studies_report(comparison=...) -- passing
-BOTH libraries and their labels so the SHAFT_FEM COMPARISON section
-appears in the same combined .txt shape the single-theory scripts
-produce, rather than a separate comparison-only file.
+frame=False is used throughout (pure bending/shear, no axial): the
+cantilever test never applies or reads an axial load, and frame=False
+simply leaves axial DOFs uncoupled at zero in K -- fine here because
+free_dofs below excludes every axial DOF outright (never solved for,
+never singular).
+
+THEORY -- closed form, derived independently in this conversation via
+sympy directly from AxisForge's own B_b/B_s matrices (two_noded.py),
+confirmed to reduce EXACTLY to the formula you quoted earlier this
+session (r_w=(3*lambda**2+3)/(4*lambda**2)) under the substitution
+Phi = 3/lambda**2, and confirmed AGAIN against the two asymptotes
+labelled on your reference figure (0.75 and 0.938 as lambda -> inf):
+
+    Phi = 12*E*I/(kGA*L**2)              (AxisForge's own shear param)
+    lambda = sqrt(3/Phi) = (L/2)*sqrt(kGA/EI)   (the reference's param)
+
+    single_point (= the reference's "reduced integration, 1 point"),
+    1 element:  r_w(Phi) = (Phi+3)/4              -> Phi->0: r_w->3/4
+    2 elements: r_w(Phi) = Phi/4 + 15/16          -> Phi->0: r_w->15/16 = 0.9375
+
+    exact (= the reference's "exact integration, 2 points") --
+    the LOCKING case, not a good-behaviour case:
+    1 element:  r_w(Phi) = Phi*(Phi+4)/(4*(Phi+1))  -> Phi->0: r_w->0
+    2 elements: r_w(Phi) = Phi*(Phi+4)/(4*Phi+1)    -> Phi->0: r_w->0
+
+0.75 and 0.9375 match the figure's "(r_w=0.75; lambda->inf)" and
+"(r_w=0.938; lambda->inf)" labels to the precision the figure prints
+them at -- this is why we're confident in the Phi<->lambda mapping
+above, not just asserting it.
+
+WHAT THIS SCRIPT ACTUALLY CHECKS
+----------------------------------
+For two independently-chosen uniform "shafts" (different diameter AND
+material -- deliberately, so a match is not an accident of one
+particular cross-section), sweep lambda across a wide range, and for
+each point:
+  1. Solve the 1-element and 2-element cantilever FEM directly
+     (single_point AND exact integration_method), read v_tip.
+  2. Compute numeric r_w = v_tip / (P*L**3/(3*EI)) (the closed-form
+     exact Euler-Bernoulli deflection is the denominator, matching the
+     reference's own definition -- not an EB FEM solve).
+  3. Compare against the four closed forms above. Report max error --
+     this should be at machine precision (~1e-12) if AxisForge's
+     stiffness_element() truly implements the matrices it documents.
+     A large error here would mean the code and its own documented
+     formulas have diverged -- flag it, don't explain it away.
+
+Also writes a CSV + PNG plot (r_w vs lambda, log-x) so you can eyeball
+it directly against your reference figure.
 """
 from __future__ import annotations
 
+import csv
+import math
 from pathlib import Path
 
-from axisforge.core.loads import RadialLoad
-from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
-from axisforge.fixtures.studies.study_capabilities import StudyCapabilities
-from axisforge.fixtures.studies.outputs.text_report import write_studies_report
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from axisforge.mesh.shaft.beam_model_settings import BeamModelSettings
+from axisforge.mesh.shaft.element_type.elem import Elem
+from axisforge.mesh.shaft.element_type.timoshenko.two_noded import TimoshenkoBeam
+from axisforge.mesh.shaft.element_type.timoshenko.shear_factor import ShearFactor
+from axisforge.solvers.machine_elements.shaft.fem_solvers.assembly.build_stiffness_matrix import (
+    StiffnessMatrixBuilder,
+)
 
 HERE = Path(__file__).resolve().parent
 
+SHEAR_THEORY = "cowper"
+P_TIP = 1000.0  # N -- arbitrary, r_w is load-independent (linear system)
 
-def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]:
-    construction = ConstructionCapabilities(
-        shaft=("shafts.stepped",),
-        bearings=("bearings.deep_groove_ball",),
-        gears=("gears.spur",),
-        system=("systems.parallel_axis_linear",),
-    )
-    objs = construction.resolve()
 
-    make_stepped_shaft = objs["factory"]
-    SectionSpec = objs["SectionSpec"]
-    make_deep_groove_ball_bearing = objs["make_deep_groove_ball_bearing"]
-    make_spur_gear = objs["make_spur_gear"]
-    ShaftSpec = objs["ShaftSpec"]
-    StageSpec = objs["StageSpec"]
-    build_linear_system = objs["build_linear_system"]
+# ---------------------------------------------------------------------------
+# Minimal stand-ins so we never need ShaftSystem/Mesh1D/RigidSupportFEMSolver
+# ---------------------------------------------------------------------------
 
-    def make_shaft_geometry(name: str):
-        return make_stepped_shaft(
-            sections=[
-                SectionSpec(length=30.0, diameter=30.0, label=f"{name}_seat_A"),
-                SectionSpec(length=140.0, diameter=50.0, label=f"{name}_body"),
-                SectionSpec(length=30.0, diameter=30.0, label=f"{name}_seat_B"),
-            ],
-            fillet_radii=[2.0, 2.0],
-            name=name,
-        ).shaft
+class _FlatMesh:
+    """Duck-types the two attributes StiffnessMatrixBuilder actually reads
+    off its `mesh` argument (mesh.x_nodes, mesh.n_nodes) -- confirmed from
+    build_stiffness_matrix.py. Nothing Mesh1D-specific is used."""
 
-    def make_shaft_bearings(name: str):
-        return (
-            make_deep_groove_ball_bearing(
-                d=20.0, D=42.0, Dw=7.0, Dpw=31.0, Z=9, E=25.0, s=0.02,
-                position=10.0, label=f"{name}_brg_A",
-            ),
-            make_deep_groove_ball_bearing(
-                d=20.0, D=42.0, Dw=7.0, Dpw=31.0, Z=9, E=25.0, s=0.02,
-                position=190.0, label=f"{name}_brg_B",
-            ),
+    def __init__(self, x_nodes: list[float]):
+        self.x_nodes = x_nodes
+        self.n_nodes = len(x_nodes)
+
+
+def _explicit_boundary_dofs(n_nodes: int, constrained: list[int]) -> tuple[list[int], list[int]]:
+    """
+    Local mirror of the proposed `boundary_dofs_explicit()` addition to
+    constraints/boundary_conditions.py (not yet applied to the repo --
+    see this script's module docstring). Same contract: raw global DOF
+    indices in (3*i, 3*i+1, 3*i+2 = u,v,theta for node i), (free,
+    constrained) out. No bearing/ShaftSystem logic at all.
+    """
+    n_dofs = 3 * n_nodes
+    constrained = sorted(set(constrained))
+    invalid = [d for d in constrained if d < 0 or d >= n_dofs]
+    if invalid:
+        raise ValueError(
+            f"_explicit_boundary_dofs: DOF index/indices {invalid} out of "
+            f"range for {n_nodes} nodes (0..{n_dofs - 1})."
         )
+    free = [d for d in range(n_dofs) if d not in constrained]
+    return free, constrained
 
-    shaft1 = make_shaft_geometry("shaft1")
-    shaft2 = make_shaft_geometry("shaft2")
-    shaft3 = make_shaft_geometry("shaft3")
-    bearings1 = make_shaft_bearings("shaft1")
-    bearings2 = make_shaft_bearings("shaft2")
-    bearings3 = make_shaft_bearings("shaft3")
 
-    g1_driver = make_spur_gear(mn=2.0, z=20, b=15.0, position=100.0, label="g1_driver")
-    g2_driven = make_spur_gear(mn=2.0, z=40, b=15.0, position=100.0, label="g2_driven")
-    g3_driver = make_spur_gear(mn=2.0, z=20, b=15.0, position=150.0, label="g3_driver")
-    g4_driven = make_spur_gear(mn=2.0, z=40, b=15.0, position=150.0, label="g4_driven")
+# ---------------------------------------------------------------------------
+# Cantilever rig
+# ---------------------------------------------------------------------------
 
-    sprocket_load = RadialLoad(190.0, 500.0, theta_deg=270.0, label="sprocket_pull")
-
-    shaft_specs = [
-        ShaftSpec(shaft=shaft1, bearings=bearings1, speed_rpm=1450.0, name="shaft1"),
-        ShaftSpec(shaft=shaft2, bearings=bearings2, speed_rpm=725.0, name="shaft2"),
-        ShaftSpec(shaft=shaft3, bearings=bearings3, speed_rpm=362.5,
-                  loads=(sprocket_load,), name="shaft3"),
-    ]
-    stage_specs = [
-        StageSpec(gear_driver=g1_driver, gear_driven=g2_driven, phi_deg=0.0, label="stage1"),
-        StageSpec(gear_driver=g3_driver, gear_driven=g4_driven, phi_deg=90.0, label="stage2"),
-    ]
-
-    system = build_linear_system(
-        shaft_specs, stage_specs, P=5000.0, rotation_dir_source=1, label="2stage_chain",
+def kGA_for(E: float, poisson: float, A: float, shear_theory: str) -> float:
+    """Uses AxisForge's own shear_factor() so kGA here matches exactly
+    what stiffness_element() itself will use -- no re-derivation of the
+    Cowper factor by hand."""
+    G = E / (2.0 * (1.0 + poisson))
+    dummy_settings = BeamModelSettings(
+        beam_theory="timoshenko", shear_theory=shear_theory, integration_method="single_point",
     )
-    return construction, system
+    dummy_elem = Elem(length=1.0, E=E, I=1.0, A=A, v=poisson,
+                       idx_node_1=0, idx_node_2=1, x_a=0.0, x_b=1.0, settings=dummy_settings)
+    k = TimoshenkoBeam().shear_factor(dummy_elem, ShearFactor(), shear_theory)
+    return k * G * A
 
 
-def main() -> None:
-    construction, system = build_system()
-
-    study = StudyCapabilities(
-        construction=construction,
-        shaft_fem=("shaft_fem.comparison",),
+def solve_cantilever_tip(L: float, E: float, I: float, A: float, poisson: float,
+                          n_elem: int, integration_method: str, P: float = P_TIP) -> float:
+    """Builds a uniform n_elem-element cantilever directly from Elem +
+    StiffnessMatrixBuilder, fixes node 0 fully (u=v=theta=0), applies a
+    transverse tip load, solves, returns v_tip."""
+    settings = BeamModelSettings(
+        beam_theory="timoshenko", shear_theory=SHEAR_THEORY, integration_method=integration_method,
     )
-    objs = study.resolve()
-    run_comparison = objs["run_comparison"]
-    print_comparison = objs["print_comparison"]
+    x_nodes = list(np.linspace(0.0, L, n_elem + 1))
+    elements = [
+        Elem(length=x_nodes[i + 1] - x_nodes[i], E=E, I=I, A=A, v=poisson,
+             idx_node_1=i, idx_node_2=i + 1, x_a=x_nodes[i], x_b=x_nodes[i + 1], settings=settings)
+        for i in range(n_elem)
+    ]
 
-    label_a, label_b = "timoshenko", "euler"
-    library_a, library_b = run_comparison(system, construction, theory_a=label_a, theory_b=label_b)
+    mesh = _FlatMesh(x_nodes)
+    builder = StiffnessMatrixBuilder(mesh, elements, frame=False)
+    K = builder.build()
 
-    expected_names = {ss.name for ss in system.shafts}
-    missing_a = expected_names - set(library_a.names())
-    missing_b = expected_names - set(library_b.names())
-    ok = not missing_a and not missing_b
+    n_nodes = len(x_nodes)
+    free_dofs, _ = _explicit_boundary_dofs(n_nodes, [0, 1, 2])
+    # frame=False leaves every axial DOF uncoupled/zero in K -- this rig
+    # never applies or reads an axial load, so drop them from free_dofs
+    # outright (never solved for, never a source of singularity).
+    free_dofs = [d for d in free_dofs if d % 3 != 0]
 
-    print(f"[{'OK' if ok else 'FAIL'}] {label_a} solved {len(library_a)}/"
-          f"{len(system.shafts)} shafts, {label_b} solved "
-          f"{len(library_b)}/{len(system.shafts)} shafts")
-    if missing_a:
-        print(f"    missing from {label_a} library: {missing_a}")
-    if missing_b:
-        print(f"    missing from {label_b} library: {missing_b}")
+    K_red = K[np.ix_(free_dofs, free_dofs)]
+
+    n_dofs = 3 * n_nodes
+    f = np.zeros(n_dofs)
+    tip_node = n_nodes - 1
+    f[3 * tip_node + 1] = P
+
+    d_full = np.zeros(n_dofs)
+    d_full[free_dofs] = np.linalg.solve(K_red, f[free_dofs])
+    return d_full[3 * tip_node + 1]
+
+
+# ---------------------------------------------------------------------------
+# Closed-form theory (see module docstring for the derivation/validation)
+# ---------------------------------------------------------------------------
+
+def theory_rw(Phi: float, n_elem: int, integration_method: str) -> float:
+    if integration_method == "single_point":
+        if n_elem == 1:
+            return (Phi + 3.0) / 4.0
+        elif n_elem == 2:
+            return Phi / 4.0 + 15.0 / 16.0
+    elif integration_method == "exact":
+        if n_elem == 1:
+            return Phi * (Phi + 4.0) / (4.0 * (Phi + 1.0))
+        elif n_elem == 2:
+            return Phi * (Phi + 4.0) / (4.0 * Phi + 1.0)
+    raise ValueError(f"theory_rw: no closed form for n_elem={n_elem}, integration_method={integration_method!r}")
+
+
+def lambda_from_Phi(Phi: float) -> float:
+    return math.sqrt(3.0 / Phi)
+
+
+# ---------------------------------------------------------------------------
+# Two independent uniform "shafts" -- different diameter AND material, so
+# agreement isn't an accident of one specific cross-section. Both swept
+# over the SAME lambda range: if r_w truly depends only on Phi (hence only
+# on lambda), the two shafts' r_w(lambda) curves must be indistinguishable
+# even though their (L, d, E) values never coincide.
+# ---------------------------------------------------------------------------
+
+SHAFTS = {
+    "shaft_A_steel_d20": dict(d=20.0, E=210000.0, poisson=0.30),   # steel
+    "shaft_B_alu_d55":   dict(d=55.0, E=71000.0,  poisson=0.33),   # aluminium, different d and E
+}
+
+# Sweep target: Phi from very slender (1e-4) to very stubby (50) -- lambda
+# from ~5477 down to ~0.24 via lambda=sqrt(3/Phi).
+PHI_TARGETS = np.geomspace(1e-4, 50.0, 24)
+
+
+def run() -> None:
+    rows = []
+    for shaft_name, geo in SHAFTS.items():
+        d = geo["d"]
+        E = geo["E"]
+        poisson = geo["poisson"]
+        I = math.pi * d ** 4 / 64.0
+        A = math.pi * d ** 2 / 4.0
+        kGA = kGA_for(E, poisson, A, SHEAR_THEORY)
+
+        for Phi_target in PHI_TARGETS:
+            # Phi = 12EI/(kGA*L^2)  =>  L = sqrt(12EI/(kGA*Phi_target))
+            L = math.sqrt(12.0 * E * I / (kGA * Phi_target))
+            Phi_actual = 12.0 * E * I / (kGA * L ** 2)  # sanity round-trip
+            lam = lambda_from_Phi(Phi_actual)
+            v_euler = P_TIP * L ** 3 / (3.0 * E * I)
+
+            for n_elem in (1, 2):
+                for integ in ("single_point", "exact"):
+                    v_tip = solve_cantilever_tip(L, E, I, A, poisson, n_elem, integ)
+                    rw_numeric = v_tip / v_euler
+                    rw_theory = theory_rw(Phi_actual, n_elem, integ)
+                    err = abs(rw_numeric - rw_theory)
+                    rel_err = err / abs(rw_theory) if rw_theory else err
+                    rows.append(dict(
+                        shaft=shaft_name, d=d, E=E, L=L, Phi=Phi_actual, lam=lam,
+                        n_elem=n_elem, integration_method=integ,
+                        rw_numeric=rw_numeric, rw_theory=rw_theory,
+                        abs_err=err, rel_err=rel_err,
+                    ))
+
+    # -------------------------------------------------------------
+    # Console summary: worst-case error per (n_elem, integration_method)
+    # -- this is the actual pass/fail signal. Should be ~machine precision.
+    # -------------------------------------------------------------
+    print("=" * 92)
+    print("Cantilever lambda-sweep -- AxisForge FEM vs closed-form theory")
+    print("=" * 92)
+    combos = sorted(set((r["n_elem"], r["integration_method"]) for r in rows))
+    for n_elem, integ in combos:
+        subset = [r for r in rows if r["n_elem"] == n_elem and r["integration_method"] == integ]
+        worst = max(subset, key=lambda r: r["rel_err"])
+        print(f"  n_elem={n_elem}  integration_method={integ:13s}  "
+              f"max rel. error = {worst['rel_err']:.3e}  "
+              f"(at shaft={worst['shaft']}, lambda={worst['lam']:.3g})")
+
     print()
+    print("Asymptotic check (most slender point in the sweep, Phi -> 0):")
+    for n_elem, integ in combos:
+        subset = [r for r in rows if r["n_elem"] == n_elem and r["integration_method"] == integ]
+        most_slender = min(subset, key=lambda r: r["Phi"])
+        print(f"  n_elem={n_elem}  {integ:13s}  lambda={most_slender['lam']:.1f}  "
+              f"r_w_numeric={most_slender['rw_numeric']:.6f}  "
+              f"r_w_theory={most_slender['rw_theory']:.6f}")
 
-    print_comparison(library_a, library_b, system, label_a, label_b)
+    # -------------------------------------------------------------
+    # CSV
+    # -------------------------------------------------------------
+    csv_path = HERE / "cantilever_lambda_sweep.csv"
+    with open(csv_path, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"\n[OK] {csv_path.name} written ({len(rows)} rows)")
 
-    print("Note: bearing reactions (Fr/Fa) come from static equilibrium on the "
-          "same loads/positions in both physics and are expected to match "
-          "closely -- sigma_b_max/v_max differences are where Euler-Bernoulli's "
-          "no-shear-flexibility assumption is expected to show up, growing as "
-          "spans get shorter/stubbier relative to their diameter.")
-
-    out_path = HERE / "report_2stage_chain_comparison.txt"
-    write_studies_report(
-        system, out_path,
-        title=f"2-stage linear chain -- Studies report ({label_a} vs {label_b})",
-        comparison=(library_a, library_b, label_a, label_b),
-    )
-    print(f"\n[OK] {out_path.name} written ({len(system.shafts)} shafts, "
-          f"from the real run_comparison() libraries above -- no fabricated data)")
+    # -------------------------------------------------------------
+    # Plot: r_w vs lambda (log-x), one panel per n_elem, both shafts
+    # overlaid per integration_method to show shaft-independence.
+    # -------------------------------------------------------------
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+    for ax, n_elem in zip(axes, (1, 2)):
+        for integ, style in (("single_point", "-"), ("exact", "--")):
+            for shaft_name, marker in zip(SHAFTS, ("o", "x")):
+                subset = sorted(
+                    (r for r in rows if r["n_elem"] == n_elem and r["integration_method"] == integ
+                     and r["shaft"] == shaft_name),
+                    key=lambda r: r["lam"],
+                )
+                lams = [r["lam"] for r in subset]
+                rws = [r["rw_numeric"] for r in subset]
+                ax.plot(lams, rws, style, marker=marker, markersize=4,
+                        label=f"{integ} ({shaft_name})", alpha=0.8)
+        # theory overlay (shaft-independent, function of Phi/lambda only)
+        lam_dense = np.geomspace(min(r["lam"] for r in rows), max(r["lam"] for r in rows), 200)
+        for integ, style in (("single_point", "-"), ("exact", "--")):
+            phi_dense = 3.0 / lam_dense ** 2
+            rw_dense = [theory_rw(p, n_elem, integ) for p in phi_dense]
+            ax.plot(lam_dense, rw_dense, style, color="black", linewidth=1,
+                    label=f"{integ} theory")
+        ax.set_xscale("log")
+        ax.set_xlabel("lambda = sqrt(3/Phi)")
+        ax.set_title(f"{n_elem} element(s)")
+        ax.axhline(1.0, color="gray", linewidth=0.5)
+        ax.grid(True, which="both", alpha=0.3)
+    axes[0].set_ylabel("r_w = w_tip(Timoshenko) / w_tip(exact Euler-Bernoulli)")
+    axes[0].legend(fontsize=7, loc="upper right")
+    fig.suptitle("Cantilever benchmark -- AxisForge vs closed-form theory (two independent uniform shafts)")
+    fig.tight_layout()
+    png_path = HERE / "cantilever_lambda_sweep.png"
+    fig.savefig(png_path, dpi=150)
+    print(f"[OK] {png_path.name} written")
 
 
 if __name__ == "__main__":
-    main()
+    run()

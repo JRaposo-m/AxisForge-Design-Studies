@@ -27,6 +27,12 @@ with everything else (BC, section, gear-mesh background load) held fixed.
 BC: fixed for this whole suite -- ball (locating) @10mm, roller
 (non-locating) @190mm -- see scripts/common/bearings.py.
 
+integration_method="exact" fixed for this whole case group -- full
+Gauss integration, no reduced/selective integration -- chosen for
+validation runs specifically to remove shear-locking mitigation as a
+variable when diffing against Abaqus; only shear_theory (cowper vs
+hutchinson) is swept.
+
 Outputs: results/<shear_theory>/ (report .txt, plots/*.png, csv/*.csv),
 relative to this case's own folder -- see scripts/common/paths.py.
 """
@@ -69,6 +75,8 @@ LOAD_THETA_DEG = 270.0
 LOAD_X_SHAFT1_MM = 60.0
 LOAD_X_SHAFT2_MM = 140.0
 
+INTEGRATION_METHOD = "single_point"  # "exact" is the other option, but this is a resolution study
+
 
 def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]:
     construction = ConstructionCapabilities(
@@ -107,9 +115,9 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
     load2 = RadialLoad(LOAD_X_SHAFT2_MM, LOAD_N, theta_deg=LOAD_THETA_DEG, label="radial_test_load")
 
     shaft_specs = [
-        ShaftSpec(shaft=shaft1, bearings=bearings1, speed_rpm=1450.0,
+        ShaftSpec(shaft=shaft1, bearings=bearings1, speed_rpm=1000,
                   loads=(load1,), name="shaft1"),
-        ShaftSpec(shaft=shaft2, bearings=bearings2, speed_rpm=725.0,
+        ShaftSpec(shaft=shaft2, bearings=bearings2, speed_rpm=500,
                   loads=(load2,), name="shaft2"),
     ]
     stage_specs = [
@@ -117,7 +125,7 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
     ]
 
     system = build_linear_system(
-        shaft_specs, stage_specs, P=10000.0, rotation_dir_source=1,
+        shaft_specs, stage_specs, P=10471.9755, rotation_dir_source=1,
         label="uniform_point_load_radial_single_position",
     )
 
@@ -129,7 +137,7 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
     #
     # Driven-machine torque sink, placed on the far side of the gear
     # (x=200mm > 100mm, so AxisForge's own T(x) closes back to zero past
-    # the application point -- see _solve_torsion). Magnitude is derived
+    # the application point -- see solve_torsion). Magnitude is derived
     # from the net already present rather than hand-copied.
     shaft2_sys = system.shafts[-1]
     net_before = sum(ld.magnitude for ld in shaft2_sys.torque_loads)
@@ -169,7 +177,11 @@ def main() -> None:
     print(f"  shaft2: RadialLoad {LOAD_N:.0f} N @ x={LOAD_X_SHAFT2_MM:.1f} mm")
 
     for shear_theory in ("cowper", "hutchinson"):
-        library = solve_system(system, construction, shear_theory=shear_theory)
+        library = solve_system(
+            system, construction,
+            shear_theory=shear_theory,
+            integration_method=INTEGRATION_METHOD,
+        )
 
         for ss in system.shafts:
             r = library.get_or_none(ss.name)

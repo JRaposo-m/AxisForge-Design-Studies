@@ -43,6 +43,17 @@ compare bending moment or section force, extend the map (and make sure
 the Abaqus report actually exported that field -- SF1/SF2/SM1/SM2 for
 a beam-element Abaqus model, if that's what you're building it as).
 
+EXTENDED_COLUMN_MAP/EXTENDED_COLUMN_SCALE (below DEFAULT_COLUMN_MAP)
+cover the fuller 5-field Abaqus export (U1, U2, U3, UR2, UR3) that
+compares axial displacement and both bending rotations too, not just
+the two transverse deflections -- see that constant's own comment for
+the full derivation, including the sign flip theta_xz needs against
+UR2 (empirically confirmed, not just derived from theory). Kept
+separate from DEFAULT_COLUMN_MAP rather than folded into it, so any
+case whose Abaqus export only has U2/U3 keeps working unchanged --
+align_and_diff() raises if a mapped column is missing from the Abaqus
+CSV, so silently widening the default would break those cases.
+
 Units: AxisForge works in mm throughout (see resolution_csv's own
 column names). Abaqus models are commonly built in SI (m, N, Pa)
 instead, so a raw Abaqus displacement column is typically 1000x an
@@ -109,6 +120,51 @@ DEFAULT_COLUMN_SCALE: dict[str, float] = {
     "v_xz_mm": 1.0,
 }
 
+# Extended set, for cases that export U1/U2/U3/UR2/UR3 from Abaqus
+# (axial displacement + both bending rotations, alongside the two
+# transverse deflections DEFAULT_COLUMN_MAP already covers). Kept as a
+# SEPARATE constant rather than folded into DEFAULT_COLUMN_MAP, so
+# existing compare_shaft() calls that only have a 2-curve Abaqus export
+# (U2/U3) keep working unchanged -- align_and_diff() raises if a mapped
+# column is missing from the Abaqus CSV, so silently widening the
+# default would break any case that hasn't (yet) re-exported with the
+# extra curves.
+#
+# theta_xz_rad maps to UR2 with scale = -1.0, NOT +1.0 -- confirmed
+# empirically against case_radial_single_position's own data (see this
+# suite's own validation conversation): AxisForge theta_xz and Abaqus
+# UR2 track the same magnitude but with OPPOSITE sign at every
+# non-near-zero station checked (e.g. x=183mm: theta_xz=-0.004015 vs
+# UR2=+0.004060). theta_xy_rad <-> UR3 agrees in sign with no
+# adjustment. This is a sign-convention difference between Abaqus's
+# global right-hand rule about Y and AxisForge's own internal rotation
+# DOF sign for the XZ-plane bending rotation -- not a bug on either
+# side, and not to be re-derived from theory alone without checking
+# against real numbers again if the Abaqus model's node/orientation
+# setup ever changes.
+#
+# Column names here drop the "_m" suffix DEFAULT_COLUMN_MAP uses (U2_m,
+# U3_m) in favour of Abaqus's own plain field-variable names (U1, U2,
+# U3, UR2, UR3, matching the XYData-* names Abaqus itself shows) -- the
+# "_m" suffix was already documented above as not meaning meters, and
+# carrying it into a 5-column export invites the same confusion again
+# for no benefit.
+EXTENDED_COLUMN_MAP: dict[str, str] = {
+    "u_mm":         "U1",
+    "v_xy_mm":      "U2",
+    "v_xz_mm":      "U3",
+    "theta_xy_rad": "UR3",
+    "theta_xz_rad": "UR2",
+}
+
+EXTENDED_COLUMN_SCALE: dict[str, float] = {
+    "u_mm":         1.0,
+    "v_xy_mm":      1.0,
+    "v_xz_mm":      1.0,
+    "theta_xy_rad": 1.0,
+    "theta_xz_rad": -1.0,
+}
+
 # Fraction of a column's own max |Abaqus value| below which pct_diff is
 # reported as NaN (flagged) rather than a huge/meaningless percentage
 # near a zero-crossing. RELATIVE, not an absolute mm/MPa/whatever value
@@ -167,9 +223,9 @@ def load_abaqus_csv(path: Path, x_col: str = "x_mm") -> pd.DataFrame:
 
 def load_abaqus_raw_paired_csv(
     path: Path,
-    x_indices: tuple[int, int] = (0, 2),
-    value_indices: tuple[int, int] = (1, 3),
-    value_names: tuple[str, str] = ("U2_m", "U3_m"),
+    x_indices: tuple[int, ...] | None = None,
+    value_indices: tuple[int, ...] | None = None,
+    value_names: tuple[str, ...] = ("U2_m", "U3_m"),
     x_col: str = "x_mm",
     sep: str = ";",
     decimal: str = ",",
@@ -177,39 +233,68 @@ def load_abaqus_raw_paired_csv(
 ) -> pd.DataFrame:
     """
     Reads the RAW shape Abaqus gives you straight out of an XY Data
-    report export with two curves side by side -- no header, ';'
-    separator, ',' decimal, 4 columns: x, curve_1, x (repeated), curve_2
-    (e.g. "60;0,000441783;60;-0,00044919"). No manual cleanup needed --
-    save the export exactly as Abaqus writes it and point this at it.
+    report export with N curves side by side -- no header, ';'
+    separator, ',' decimal, 2*N columns: x, curve_1, x (repeated),
+    curve_2, x (repeated), curve_3, ... (e.g. for 5 curves:
+    "0;1,98747E-33;0;-0,014988233;0;-0,041179936;0;-0,004117994;
+    0;0,001498823"). No manual cleanup needed -- save the export
+    exactly as Abaqus writes it and point this at it.
+
+    N is taken from len(value_names) -- pass as many names as curves
+    you exported, in the SAME ORDER Abaqus wrote them (the order the
+    curves were selected in the XYData list -- e.g. U1, U2, U3, UR2,
+    UR3). x_indices/value_indices default to the standard "x repeated
+    once per curve" layout (0,2,4,... for x; 1,3,5,... for values) --
+    only pass them explicitly if your export has a different column
+    order. BACKWARD COMPATIBLE: the original 2-curve call
+    (value_names=("U2_m","U3_m"), no x_indices/value_indices) still
+    resolves to x_indices=(0,2), value_indices=(1,3), unchanged from
+    before this function supported N curves.
 
     Returns the SAME shape load_abaqus_csv() would from a clean file:
     a DataFrame with `x_col` plus one column per `value_names` entry --
     so it's a drop-in for compare_shaft(..., abaqus_loader=this).
 
-    Validates the two x columns (`x_indices`) agree within `x_tol` mm --
-    Abaqus repeating x per curve is only safe to collapse into one
-    column if they're actually the same points; a mismatch here usually
-    means the export mixed two different result sets and raises rather
-    than silently picking one.
+    Validates EVERY x column agrees with the first one within `x_tol`
+    mm (generalizes the original 2-column-only check) -- Abaqus
+    repeating x per curve is only safe to collapse into one column if
+    they're actually the same points; a mismatch here usually means
+    the export mixed two different result sets and raises rather than
+    silently picking one.
 
-    If your export has a different column count/order (e.g. 3 curves,
-    or curve/x swapped), pass `x_indices`/`value_indices`/`value_names`
-    to match -- this function never guesses the layout, it only assumes
-    that layout is consistent from run to run once you've told it once.
+    If your export has a different column count/order (e.g. curve/x
+    swapped), pass `x_indices`/`value_indices`/`value_names` explicitly
+    to match -- this function never guesses the layout, it only
+    assumes that layout is consistent from run to run once you've told
+    it once.
     """
     raw = pd.read_csv(path, sep=sep, decimal=decimal, header=None)
 
-    x_a = raw.iloc[:, x_indices[0]].to_numpy()
-    x_b = raw.iloc[:, x_indices[1]].to_numpy()
-    if np.max(np.abs(x_a - x_b)) > x_tol:
+    n_curves = len(value_names)
+    if x_indices is None:
+        x_indices = tuple(2 * i for i in range(n_curves))
+    if value_indices is None:
+        value_indices = tuple(2 * i + 1 for i in range(n_curves))
+    if len(x_indices) != n_curves or len(value_indices) != n_curves:
         raise ValueError(
-            f"{path}: x columns {x_indices} disagree by more than "
-            f"{x_tol} -- expected both to be the same station grid "
-            f"(Abaqus repeats x once per exported curve). Got x[{x_indices[0]}]="
-            f"{x_a.tolist()} vs x[{x_indices[1]}]={x_b.tolist()}."
+            f"{path}: x_indices ({len(x_indices)}), value_indices "
+            f"({len(value_indices)}) and value_names ({n_curves}) must "
+            f"all have the same length -- one x/value pair per curve."
         )
 
-    out = {x_col: x_a}
+    x_ref = raw.iloc[:, x_indices[0]].to_numpy()
+    for idx in x_indices[1:]:
+        x_i = raw.iloc[:, idx].to_numpy()
+        if np.max(np.abs(x_i - x_ref)) > x_tol:
+            raise ValueError(
+                f"{path}: x column {idx} disagrees with x column "
+                f"{x_indices[0]} by more than {x_tol} -- expected every "
+                f"curve to share the same station grid (Abaqus repeats x "
+                f"once per exported curve). Got x[{idx}]={x_i.tolist()} "
+                f"vs x[{x_indices[0]}]={x_ref.tolist()}."
+            )
+
+    out = {x_col: x_ref}
     for idx, name in zip(value_indices, value_names):
         out[name] = raw.iloc[:, idx].to_numpy()
     return pd.DataFrame(out)
