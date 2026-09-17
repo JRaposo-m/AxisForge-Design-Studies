@@ -1,40 +1,49 @@
 """
-check_resolution_fem_convergence_total.py
+check_resolution_fem_convergence_global_bearing_to_bearing.py
 
-Exploratory script (not pytest). Same fixture as
-check_resolution_fem_convergence_external_distributed.py (shaft3's
-extra "bushing_process_load" DistributedRadialLoad included -- see that
-script's own docstring for exactly why/where it was placed).
+Exploratory script (not pytest). Same fixture/geometry as
+check_resolution_fem_convergence_total.py (build_system() duplicated
+here rather than imported -- same convention every check_*.py script in
+this family already follows: each is self-contained, sharing a fixture
+DESCRIPTION with its siblings' docstrings, not a shared import).
 
-Exercises "shaft_fem.convergence.total.timoshenko": runs
-convergence_study.run_convergence() with regions={"gears",
-"external_distributed"} (pinned by the capability), Timoshenko theory.
+## NEW (this pass, confirmed with erg 2026-09-17): the GLOBAL half of
+## what used to be a single displacement-vs-moment comparison script
+## (check_resolution_fem_convergence_total.py). Per erg's own split:
+## "quero entao aqui o local para o deslocamento e depois num outro
+## ficheiro o global de bearing a bearing" -- LOCAL/per-interval stayed
+## in that file (displacement only now); THIS file is the GLOBAL study,
+## scoped to domain="bearing_to_bearing" (see
+## global_convergence_study.py's own top docstring for the full
+## reasoning): refines and tracks convergence only within
+## [min(bearing position), max(bearing position)] on each shaft -- the
+## main supported span -- rather than the shaft's full extent
+## (including any overhang beyond the outermost bearing, e.g. shaft3's
+## sprocket_load sitting right at brg_B here). The FEM model solved at
+## every grade is still the WHOLE shaft (all loads/BCs included, so
+## reactions and the M/v field everywhere are correct) -- only what
+## gets refined and sampled for the GCI criterion is scoped to the
+## bearing span.
 
-## CHANGED (this pass, confirmed with erg 2026-09-17): this script is
-## now LOCAL/DISPLACEMENT ONLY -- study_kind="displacement"
-## (per-interval submodels, v_xz/v_xy/v_res, one fixed point per
-## interval). The moment run (study_kind="moment") and the v-vs-M
-## comparison block this script used to also print are REMOVED --
-## moved to a dedicated file per erg's own split: "quero entao aqui o
-## local para o deslocamento e depois num outro ficheiro o global de
-## bearing a bearing". This file keeps exactly the LOCAL/displacement
-## half of what used to be here; there is no longer any
-## MomentConvergenceStudy dependency, no default_moment_metrics import,
-## and no _compare() helper. The GLOBAL, bearing-to-bearing study
-## (both v and M, over the main span between bearings, not per feature)
-## now lives in check_resolution_fem_convergence_global_bearing_to_bearing.py.
-##
-## ## ASSUMPTIONS FLAGGED, not verified against real code:
-##   1. `objs["run_convergence"]` (resolved through StudyCapabilities)
-##      is assumed to accept `study_kind=`/`metrics=` kwarg passthrough
-##      unchanged from a direct convergence_study.run_convergence() call
-##      -- study_capabilities.py's `_convergence_require()` only pins
-##      `beam_theory`/`regions` via functools.partial, so this should
-##      hold, but hasn't been re-run against the real capability
-##      resolution since this pass.
-##   2. ShaftResultsReader().read(global_solver)'s exact signature --
-##      see convergence_study.py's own flagged assumption, inherited
-##      here since this script now depends on it transitively.
+## ASSUMPTION FLAGGED, not confirmed with erg: "bearing a bearing" was
+## read as "restrict the refinement/tracking DOMAIN to the span between
+## the two bearings", not "evaluate the tracked criterion exactly AT
+## each bearing position". If the latter was actually meant, that's a
+## `GlobalMetricSpec(..., criterion="node", node_x=<bearing.position>)`
+## per bearing instead of (or in addition to) the domain restriction
+## below -- straightforward to add once confirmed; left out for now to
+## avoid guessing a second design decision on top of the domain one.
+
+Tracks BOTH v and M (components=("res",) -- resultant only, per the
+same "resultant unless told otherwise" convention the per-interval
+moment study already uses), each with its own default
+GlobalMetricSpec thresholds (v: 1%/Fs=1.25; M: 2%/Fs=3.0 -- looser,
+same reasoning as everywhere else in this platform: M is a derived,
+one-order-lower-accuracy quantity). criterion="max" (the library
+default) for both -- the peak response over the bearing span is what
+this script reports; see global_convergence_study.py's
+GlobalMetricSpec docstring for the other criteria ("mean", "rms",
+"max_minus_mean", "node") if a different question is wanted later.
 
 Console output and report-writing follow the same shape as the other
 convergence checks -- see check_resolution_fem_convergence_gears.py
@@ -48,7 +57,9 @@ from axisforge.core.loads import RadialLoad, DistributedRadialLoad
 from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities
 from axisforge.fixtures.studies.study_capabilities import StudyCapabilities
 from axisforge.fixtures.studies.outputs.text_report import write_studies_report
-from axisforge.solvers.mesh.metric_spec import default_displacement_metrics
+from axisforge.fixtures.studies.shafts.convergence_studies.global_convergence_study import (
+    default_global_metrics,
+)
 
 HERE = Path(__file__).resolve().parent
 
@@ -130,6 +141,13 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
 
 
 def _summarize(library, system) -> None:
+    """
+    Same shape as check_resolution_fem_convergence_total.py's own
+    _summarize() -- reused unmodified. A "global" study only ever has
+    one entry in .per_load (label="global"), so n_total is always 1
+    per shaft here; kept generic rather than hardcoded to 1, in case a
+    future caller merges a global and a per-interval library together.
+    """
     expected_names = {ss.name for ss in system.shafts}
     got_names = set(library.names())
     missing = expected_names - got_names
@@ -145,8 +163,11 @@ def _summarize(library, system) -> None:
             continue
         n_total = len(r.per_load)
         n_conv = sum(1 for rec in r.per_load.values() if rec.converged)
-        labels = ", ".join(r.per_load.keys()) or "(none)"
-        print(f"        {ss.name:8s} intervals=[{labels}]  converged={n_conv}/{n_total}")
+        for label, rec in r.per_load.items():
+            print(f"        {ss.name:8s} [{label}] span=[{rec.x_lo:.2f}, "
+                  f"{rec.x_hi:.2f}] mm  converged={rec.converged}  "
+                  f"levels={len(rec.levels)}")
+        print(f"        {ss.name:8s} -- {n_conv}/{n_total} converged")
 
 
 def main() -> None:
@@ -158,30 +179,33 @@ def main() -> None:
     )
     objs = study.resolve()
     run_convergence = objs["run_convergence"]
-    # ## NOTE: beam_theory is expected to already be PINNED to "timoshenko"
-    # by study_capabilities.py's partial application for this capability
-    # string (same convention solve_system() uses) -- not passed here.
-    # shear_theory/integration_method are passed at call time, same as
-    # case_radial_single_position.py's solve_system() usage.
+    # ## NOTE: same assumption as check_resolution_fem_convergence_total.py
+    # -- beam_theory is expected to already be PINNED to "timoshenko" by
+    # study_capabilities.py's partial application for this capability
+    # string; `regions` (also pinned by that capability) has NO EFFECT
+    # for study_kind="global" -- see convergence_study.run_convergence()'s
+    # own docstring -- there are no per-interval regions in a global
+    # study, the domain is set by `domain=` below instead.
 
-    print("[RUN] displacement convergence, LOCAL per-interval "
-          "(study_kind='displacement', v_xz/v_xy/v_res)")
-    library_v = run_convergence(
+    print("[RUN] GLOBAL convergence, bearing-to-bearing "
+          "(study_kind='global', domain='bearing_to_bearing', v_res + M_res)")
+    library_global = run_convergence(
         system, construction,
         shear_theory="cowper", integration_method="exact",
-        study_kind="displacement",
-        metrics=default_displacement_metrics(),
+        study_kind="global",
+        global_metrics=default_global_metrics(components=("res",), criterion="max"),
+        domain="bearing_to_bearing",
     )
-    _summarize(library_v, system)
+    _summarize(library_global, system)
 
-    out_v = HERE / "report_2stage_chain_convergence_total_v.txt"
+    out_global = HERE / "report_2stage_chain_convergence_global_bearing_to_bearing.txt"
     write_studies_report(
-        system, out_v,
-        title="2-stage linear chain -- Mesh convergence, LOCAL DISPLACEMENT "
-              "(gears + external distributed, Timoshenko)",
-        convergence_library=library_v,
+        system, out_global,
+        title="2-stage linear chain -- Mesh convergence, GLOBAL bearing-to-bearing "
+              "(v_res + M_res, Timoshenko)",
+        convergence_library=library_global,
     )
-    print(f"\n[OK] {out_v.name} written")
+    print(f"\n[OK] {out_global.name} written")
 
 
 if __name__ == "__main__":

@@ -1,56 +1,63 @@
 """
 refine_mesh_case_radial_single_position.py
 
-Runs the ACTUAL mesh-convergence study (MeshConvergenceStudy, displacement
-metric -- unmodified from convergence_solver.py) for each shaft in this
-case, collects MeshRefinementResult.all_extra_nodes per shaft, then
-re-solves the PRODUCTION Timoshenko path (case_radial_single_position.py's
-own ts_solve_system, via StudyCapabilities/shaft_fem.timoshenko_rigid)
-with those nodes forced into the mesh via extra_mandatory -- so the CSV
-this writes comes out of the SAME resolution_csv.py pipeline every other
-result in this suite does, not a hand-rolled M reconstruction (that
-approach in plot_bearing_span_M_field.py had a sign-convention bug and
-is being abandoned in favor of this).
+Mesh-convergence study for every shaft in this case, GLOBAL/bearing-to-
+bearing (v_res + M_res together, over the whole supported span -- see
+axisforge/fixtures/studies/shafts/convergence_studies/global_convergence_study.py's
+own docstring), plus an optional manual node-forcing step for known
+AxisForge-vs-Abaqus divergence spots, then re-solves the production
+Timoshenko path (StudyCapabilities -> shaft_fem.timoshenko_rigid) with
+the union of both.
 
-Written to timoshenko/refined_mesh/results/<shear_theory>/csv/ -- one
-level below timoshenko/refined_mesh/ itself, mirroring the
-timoshenko/results/<shear_theory>/ convention the un-refined case uses.
+## CHANGED (this pass, confirmed with erg 2026-09-17): "refaz o codigo
+## no mesmo sentido do global bearing to bearing" -- the whole
+## per-interval REGIONS study (displacement AND moment, run
+## separately), the load-free-gap detection (_shaft_gaps()/
+## _anchor_interval()), and the "gaps get no GCI, here's a warning
+## instead" workaround are REMOVED. That machinery existed specifically
+## because MeshConvergenceStudy/MomentConvergenceStudy only ever
+## studied REGIONS intervals (gear face widths, distributed-load
+## spans) and had no way to say anything meaningful about the plain
+## shaft material between them -- which is exactly the domain
+## restriction that motivated bypassing convergence_study.run_convergence()
+## in the first place ("custom gap intervals aren't expressible
+## through intervals_from_shaft_system() yet", see this module's
+## previous top docstring).
+##
+## study_kind="global", domain="bearing_to_bearing" removes that
+## limitation structurally rather than by adding more special-casing:
+## it refines and tracks GCI over the WHOLE bearing-to-bearing span at
+## once (v_res and M_res, each aggregated as max(|.|) over that span --
+## see GlobalMetricSpec's own docstring in global_convergence_study.py),
+## so a load-free stretch is no longer a blind spot that needs its own
+## detection/warning/manual-override machinery -- it's just part of
+## the one domain being refined. This script can now go straight
+## through convergence_study.run_convergence() instead of hand-rolling
+## its own RigidSupportFEMSolver/ShaftResultsReader/
+## MeshConvergenceStudy loop.
+##
+## What's KEPT: DIVERGENCE_POINTS_MM / _manual_divergence_nodes() --
+## that mechanism addresses a DIFFERENT problem (a known
+## AxisForge-vs-Abaqus mismatch at a specific spot, found by external
+## comparison, not something a GCI mesh-convergence criterion measures
+## by definition) and stays as an independent, still-manual override on
+## top of whatever the global study already converges to.
+##
+## The v-vs-M "does one converge without the other" comparison
+## (_compare()) is also removed -- the single GLOBAL study now reports
+## v_res and M_res side by side per grade level in one table (see
+## global_convergence_study.py's report shape via convergence_report.py),
+## so there is no longer a separate library per metric to diff;
+## write_studies_report()'s own table already shows that comparison
+## directly.
 
-TODO -- one guess I could not confirm without fem_simple.py's own
-solve_system() signature: extra_mandatory is passed as a dict keyed by
-shaft name ({shaft_name: [x1, x2, ...]}), per convergence_study.py's own
-docstring ("Per-shaft extra_mandatory ... consumed downstream by
-fem_simple.solve_system()'s own extra_mandatory dict"). If solve_system()
-rejects this shape, paste its signature and I'll fix the call.
-
-Bypasses convergence_study.py's own run_convergence() fixture entirely --
-that file still imports the wrong class name (RigidBearingFEMSolver,
-same bug rigid_support.py had) and constructs it with theory=theory
-(also wrong -- needs a BeamModelSettings, not a bare string), so it
-cannot run as-is. Calling MeshConvergenceStudy directly here sidesteps
-that without touching the fixture file; worth fixing convergence_study.py
-itself separately once this path is validated. Deliberately NOT fixed
-here -- run_convergence()/check_resolution_fem_convergence_total.py are
-left outdated/bypassed on purpose, same reasoning as above.
-
-Also writes a SHAFT MESH CONVERGENCE report, same
-write_studies_report(..., convergence_library=...) call
-check_resolution_fem_convergence_total.py uses -- but built from a
-ConvergenceResultsLibrary assembled BY HAND here (one MeshRefinementResult
-per shaft, its per_load merged from BOTH the REGIONS study `result` and
-the gap study `gap_result` computed below), not from run_convergence()
-itself (bypassed, see above). MeshRefinementResult.per_load is a plain
-mutable dict, so this merge is a straight dict.update() -- both `result`
-and `gap_result` already share the same shaft_name (built from the same
-`ss`), so nothing needs re-keying.
+Written to timoshenko/refined_mesh/results/<shear_theory>/csv/.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# case_radial_single_position.py lives two levels up from here
-# (timoshenko/refined_mesh/ -> timoshenko/ -> case_radial_single_position/)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from case_radial_single_position import build_system, _write_theory_outputs  # noqa: E402
 
@@ -64,250 +71,135 @@ if _root is None:
     raise RuntimeError(f"{__file__}: no ancestor directory containing 'common/' found.")
 sys.path.insert(0, str(_root))
 
-from axisforge.mesh.shaft.beam_model_settings import BeamModelSettings  # noqa: E402
-from axisforge.solvers.machine_elements.shaft.fem_solvers.rigid_support import (  # noqa: E402
-    RigidSupportFEMSolver,
-)
-from axisforge.solvers.mesh.convergence_solver import MeshConvergenceStudy  # noqa: E402
 from axisforge.fixtures.studies.study_capabilities import StudyCapabilities  # noqa: E402
-from axisforge.fixtures.studies.shafts.convergence_studies.convergence_library import (  # noqa: E402
-    ConvergenceResultsLibrary,
-)
 from axisforge.fixtures.studies.outputs.text_report import write_studies_report  # noqa: E402
+from axisforge.fixtures.studies.shafts.convergence_studies.convergence_study import (  # noqa: E402
+    run_convergence,
+)
+from axisforge.fixtures.studies.shafts.convergence_studies.global_convergence_study import (  # noqa: E402
+    default_global_metrics,
+)
 
 
 SHEAR_THEORY = "cowper"
 INTEGRATION_METHOD = "single_point"
-GCI_THRESHOLD = 0.01
-SAFETY_FACTOR = 1.25
-MAX_LEVELS = 8
-REGIONS = {"gears", "external_distributed"}  # matches run_convergence()'s own default
 
-# intervals_from_shaft_system()'s VALID_REGIONS is {"gears",
-# "external_distributed", "bearings"} -- there is no region for a plain
-# point RadialLoad, so LOAD_X_SHAFT1_MM=60.0 / LOAD_X_SHAFT2_MM=140.0
-# never get refined by REGIONS alone. Their position IS always an exact
-# FEM node (Mesh1D nodes exactly at point-load positions -- confirmed in
-# axisforge_validation_and_roadmap.md), so displacement there is already
-# nodally exact regardless of mesh. M is not: this Timoshenko element's
-# bending_strain_matrix() has a B_b independent of zeta, so M is
-# reconstructed as a piecewise-CONSTANT field per element, and its
-# accuracy anywhere along the shaft still depends on how small the
-# elements are THERE, not just near a load.
+V_GCI_THRESHOLD = 0.01
+V_SAFETY_FACTOR = 1.25
+M_GCI_THRESHOLD = 0.02
+M_SAFETY_FACTOR = 3.0
+MAX_LEVELS = 8
+
+# ---------------------------------------------------------------------
+# Manual node forcing at known AxisForge-vs-analytical divergence spots
+# (per erg: "gera 5 nodes em cada lado dos que estao a divergir, mas de
+# forma manual" -- NOT GCI-driven, just prescribed extra density. This
+# addresses a DIFFERENT question than the global convergence study
+# below -- an external AxisForge-vs-Abaqus mismatch, not mesh GCI --
+# so it stays independent and manual, unioned in afterwards.
 #
-# First attempt only added a custom interval around each point load's own
-# position -- wrong scope: shaft1's only point load sits at x=60, to the
-# LEFT of the gear, so the whole span to the RIGHT of the gear
-# (x=107.5..190, nothing but the right bearing in it) never got a single
-# custom interval and stayed at whatever coarse baseline mesh
-# intervals_from_shaft_system() produced -- confirmed by the pasted
-# comparison plot: AxisForge M tracks the analytical curve closely up to
-# the gear, then diverges hard from ~107.5 to 190. So this now refines
-# EVERY remaining gap along the shaft's own bearing-to-bearing span (see
-# _shaft_gaps() below), not just the ones that happen to contain a point
-# load -- matching "avaliar sempre o meio de cada elemento de cada
-# seccao", not just around explicit loads.
-#
-# Every such gap has at least one bearing on one of its two sides (bearings
-# are the domain's own ends) -- so one interval boundary always has to
-# rest on a bearing. This makes the GCI signal on that interval
-# structurally degenerate: displacement AT a rigid bearing is an exact
-# v=0 Dirichlet BC at every mesh grade, so f_coarse=f_medium=f_fine=0
-# always, GCI is a 0/0 that can never report "converged", and
-# _converge_one_load() then blindly bisects all the way to max_levels
-# every time (confirmed: 8 levels => 2**8 subdivisions => 265 nodes just
-# for shaft1's left gap alone, far more than an M convergence check
-# actually needs). So these gap intervals get their OWN
-# MeshConvergenceStudy instance with a deliberately small max_levels
-# (GAP_MAX_LEVELS below) instead of reusing MAX_LEVELS -- a fixed, modest
-# amount of uniform refinement per gap, not a GCI-driven search that
-# can't ever succeed here.
-GAP_MAX_LEVELS = 4  # 2**4 = 16x subdivision of each gap -- enough to
-                     # meaningfully shrink element size for the
-                     # piecewise-constant M field without exploding node
-                     # count the way MAX_LEVELS=8 did
+# x-locations below are a best guess from the pasted M_Nmm comparison
+# plot for shaft1 (visible divergence around x~180-190mm, in the bare
+# gear->bearing gap with no load in it). Adjust freely -- these are
+# plain numbers, not derived from anything.
+DIVERGENCE_POINTS_MM: dict[str, list[float]] = {
+    "shaft1": [185.0],
+}
+N_MANUAL_NODES_PER_SIDE = 5
+MANUAL_NODE_SPACING_MM = 2.0
 
 CASE_ROOT = Path(__file__).resolve().parents[2]  # .../case_radial_single_position/
 
 
-def _anchor_interval(ss, x0: float) -> tuple[float, float] | None:
+def _manual_divergence_nodes(ss) -> list[float]:
+    """N_MANUAL_NODES_PER_SIDE extra nodes on each side of every point in
+    DIVERGENCE_POINTS_MM[ss.name], spaced MANUAL_NODE_SPACING_MM apart,
+    clipped to the shaft's own span.
+
+    ## FIXED (this pass): was `ss.length` -- ShaftSystem has no such
+    ## attribute (confirmed by the AttributeError this raised at
+    ## runtime). Mesh1D._mandatory_positions() computes the shaft's own
+    ## extent the same way every other module in this codebase does --
+    ## shaft.axial_start(0) (always 0.0) to
+    ## shaft.axial_end(shaft.n_sections - 1) -- so that's what this now
+    ## reads too, off ss.shaft (the actual geometry object), not off
+    ## ShaftSystem itself.
     """
-    Bounds for a custom convergence interval straddling x0 (a point load
-    position, or a bare gap's own midpoint -- this doesn't care which).
+    points = DIVERGENCE_POINTS_MM.get(ss.name, [])
+    if not points:
+        return []
+    x_min = ss.shaft.axial_start(0)
+    x_max = ss.shaft.axial_end(ss.shaft.n_sections - 1)
+    nodes: set[float] = set()
+    for x0 in points:
+        for i in range(1, N_MANUAL_NODES_PER_SIDE + 1):
+            for x in (x0 - i * MANUAL_NODE_SPACING_MM, x0 + i * MANUAL_NODE_SPACING_MM):
+                if x_min <= x <= x_max:
+                    nodes.add(round(x, 6))
+    return sorted(nodes)
 
-    A bearing anchor uses the FAR edge of its own extent (the edge away
-    from x0) so the whole bearing -- extent AND position -- ends up fully
-    INSIDE the interval: this is required both to satisfy
-    _eval_points_for_interval()'s "does not fully contain bearing '...'"
-    check, and to guarantee bearing.position itself becomes a recognized
-    eval point (the check only ever adds bearing.position, never an
-    extent edge, to the point list).
 
-    A gear/distributed-load anchor instead uses the NEAR edge (the edge
-    closest to x0), which keeps that gear/load entirely OUTSIDE the
-    interval -- no containment check applies to a feature that isn't
-    inside at all, and this avoids re-refining the region REGIONS already
-    covers via "gears"/"external_distributed".
-
-    Returns None if there's no anchor on one side (x0 sits at a shaft
-    end past every bearing/gear/distributed load).
+def _summarize(library, system) -> None:
     """
-    left_candidates: list[float] = []
-    right_candidates: list[float] = []
-
-    for b in ss.bearings:
-        lo_b, hi_b = ss.bearing_extent(b)
-        if b.position < x0 - 1e-6:
-            left_candidates.append(lo_b)     # far edge -- bearing ends up inside
-        elif b.position > x0 + 1e-6:
-            right_candidates.append(hi_b)    # far edge -- bearing ends up inside
-
-    for ge in ss.gears:
-        lo_g, hi_g = ss.gear_extent(ge)
-        if ge.position < x0 - 1e-6:
-            left_candidates.append(hi_g)     # near edge -- gear stays outside
-        elif ge.position > x0 + 1e-6:
-            right_candidates.append(lo_g)    # near edge -- gear stays outside
-
-    for dl in ss.distributed_radial_loads:
-        centre = (dl.x_lo + dl.x_hi) / 2.0
-        if centre < x0 - 1e-6:
-            left_candidates.append(dl.x_hi)  # near edge -- load stays outside
-        elif centre > x0 + 1e-6:
-            right_candidates.append(dl.x_lo)  # near edge -- load stays outside
-
-    if not left_candidates or not right_candidates:
-        return None
-    return max(left_candidates), min(right_candidates)
-
-
-def _shaft_gaps(ss) -> list[float]:
+    Same generic shape as check_resolution_fem_convergence_global_bearing_to_bearing.py's
+    own _summarize() -- a "global" study has exactly one entry
+    (label="global") in .per_load per shaft.
     """
-    Midpoint of every gap along the shaft's own bearing-to-bearing span
-    that ISN'T already a gear/distributed-load extent covered by REGIONS
-    (that gap gets refined separately, with a real non-degenerate GCI
-    signal, by the main `study` in main()). Everything else -- including
-    a span with NO feature in it at all, like shaft1's bare
-    x=107.5..190 gear-to-bearing span (its only point load sits at x=60,
-    entirely on the OTHER side of the gear, so that whole span was never
-    touched by anything before) -- is returned as a gap to refine.
-    """
-    bearings_sorted = sorted(ss.bearings, key=lambda b: b.position)
-    x_A, x_B = bearings_sorted[0].position, bearings_sorted[-1].position
+    expected_names = {ss.name for ss in system.shafts}
+    got_names = set(library.names())
+    missing = expected_names - got_names
 
-    anchors: set[float] = {round(x_A, 4), round(x_B, 4)}
-    region_spans: list[tuple[float, float]] = []
-    for ge in ss.gears:
-        lo_g, hi_g = ss.gear_extent(ge)
-        anchors.add(round(lo_g, 4))
-        anchors.add(round(hi_g, 4))
-        if "gears" in REGIONS:
-            region_spans.append((lo_g, hi_g))
-    for dl in ss.distributed_radial_loads:
-        anchors.add(round(dl.x_lo, 4))
-        anchors.add(round(dl.x_hi, 4))
-        if "external_distributed" in REGIONS:
-            region_spans.append((dl.x_lo, dl.x_hi))
+    ok = not missing
+    print(f"    [{'OK' if ok else 'FAIL'}] {len(library)}/{len(system.shafts)} shafts")
+    if missing:
+        print(f"        missing from library: {missing}")
 
-    anchors_sorted = sorted(anchors)
-    gap_midpoints: list[float] = []
-    for lo, hi in zip(anchors_sorted[:-1], anchors_sorted[1:]):
-        if hi - lo < 1e-6:
+    for ss in system.shafts:
+        r = library.get_or_none(ss.name)
+        if r is None:
             continue
-        if any(lo >= r_lo - 1e-6 and hi <= r_hi + 1e-6 for r_lo, r_hi in region_spans):
-            continue  # REGIONS already refines this span with a real GCI signal
-        gap_midpoints.append((lo + hi) / 2.0)
-    return gap_midpoints
+        for label, rec in r.per_load.items():
+            print(f"        {ss.name:8s} [{label}] span=[{rec.x_lo:.2f}, {rec.x_hi:.2f}] mm  "
+                  f"converged={rec.converged}  levels={len(rec.levels)}")
 
 
 def main() -> None:
     construction, system = build_system()
 
-    settings = BeamModelSettings(beam_theory="timoshenko",
-                                  shear_theory=SHEAR_THEORY,
-                                  integration_method=INTEGRATION_METHOD)
+    print("[RUN] GLOBAL mesh convergence, bearing-to-bearing "
+          "(study_kind='global', domain='bearing_to_bearing', v_res + M_res)")
+    library_global = run_convergence(
+        system, construction,
+        beam_theory="timoshenko",
+        shear_theory=SHEAR_THEORY,
+        integration_method=INTEGRATION_METHOD,
+        study_kind="global",
+        domain="bearing_to_bearing",
+        global_metrics=default_global_metrics(
+            components=("res",),
+            v_gci_threshold=V_GCI_THRESHOLD, v_safety_factor=V_SAFETY_FACTOR,
+            M_gci_threshold=M_GCI_THRESHOLD, M_safety_factor=M_SAFETY_FACTOR,
+        ),
+        max_levels=MAX_LEVELS,
+    )
+    _summarize(library_global, system)
 
+    # ------------------------------------------------------------------
+    # extra_mandatory for the production solve: union of (a) whatever
+    # node set the global study converged to for this shaft, and (b)
+    # the manual AxisForge-vs-Abaqus divergence nodes above. (a) already
+    # covers BOTH v and M together -- no separate union needed the way
+    # the old per-interval version had to union two libraries.
+    # ------------------------------------------------------------------
     extra_mandatory: dict[str, list[float]] = {}
-    convergence_library = ConvergenceResultsLibrary()
-
     for ss in system.shafts:
-        global_solver = RigidSupportFEMSolver(settings)
-        global_solver.solve(ss)
-
-        study = MeshConvergenceStudy(
-            global_solver,
-            gci_threshold=GCI_THRESHOLD,
-            safety_factor=SAFETY_FACTOR,
-            max_levels=MAX_LEVELS,
-        )
-        intervals, skipped = MeshConvergenceStudy.intervals_from_shaft_system(ss, regions=REGIONS)
-        for reason in skipped:
-            print(f"  [SKIP] {ss.name}: {reason}")
-
-        result = study.run(ss, intervals)
-        nodes = set(result.all_extra_nodes)
-        print(f"  [{ss.name}] convergence study found {len(nodes)} extra node(s) "
-              f"from REGIONS={sorted(REGIONS)}")
-        for label, rec in result.per_load.items():
-            print(f"      interval '{label}': converged={rec.converged}  levels={rec.levels}")
-
-        # custom intervals for every remaining gap along the shaft --
-        # see GAP_MAX_LEVELS / _shaft_gaps() / _anchor_interval() above.
-        # NOT limited to spans that happen to contain a point load: a
-        # span with no feature in it at all still has its own M value
-        # governed by a single large, piecewise-constant element, and
-        # needs the same treatment. Run through a SEPARATE
-        # MeshConvergenceStudy instance with a small, deliberate
-        # max_levels instead of MAX_LEVELS, since the GCI here is
-        # structurally degenerate (see the comment above) and would
-        # otherwise always blindly bisect all the way to MAX_LEVELS.
-        gap_intervals: list[tuple[float, float, str]] = []
-        seen_bounds: set[tuple[float, float]] = set()
-        for x0 in _shaft_gaps(ss):
-            bounds = _anchor_interval(ss, x0)
-            if bounds is None:
-                print(f"  [{ss.name}] gap around x={x0:.1f} has no bearing/gear "
-                      f"anchor on both sides -- skipped")
-                continue
-            lo, hi = bounds
-            key = (round(lo, 4), round(hi, 4))
-            if key in seen_bounds:
-                continue
-            seen_bounds.add(key)
-            label = f"gap@[{lo:.1f},{hi:.1f}]"
-            gap_intervals.append((lo, hi, label))
-            print(f"  [{ss.name}] added custom gap interval '{label}': "
-                  f"[{lo:.2f}, {hi:.2f}]")
-
-        if gap_intervals:
-            gap_study = MeshConvergenceStudy(
-                global_solver,
-                gci_threshold=GCI_THRESHOLD,
-                safety_factor=SAFETY_FACTOR,
-                max_levels=GAP_MAX_LEVELS,
-            )
-            gap_result = gap_study.run(ss, gap_intervals)
-            gap_nodes = set(gap_result.all_extra_nodes)
-            nodes |= gap_nodes
-            print(f"  [{ss.name}] gap refinement added {len(gap_nodes)} "
-                  f"more node(s) (max_levels={GAP_MAX_LEVELS})")
-            for label, rec in gap_result.per_load.items():
-                print(f"      interval '{label}': converged={rec.converged}  levels={rec.levels}")
-
-            # Merge the gap study's intervals into the SAME
-            # MeshRefinementResult the REGIONS study already produced --
-            # both were built off this same `ss`, so result.shaft_name ==
-            # gap_result.shaft_name already; per_load is a plain dict, so
-            # this is just a dict.update() (no key collisions expected,
-            # REGIONS labels are gear/dist-load labels, gap labels are
-            # "gap@[...]").
-            result.per_load.update(gap_result.per_load)
-
-        convergence_library.store(result)
-
-        nodes = sorted(nodes)
+        result = library_global.get_or_none(ss.name)
+        converged_nodes = set(result.all_extra_nodes) if result is not None else set()
+        manual_nodes = _manual_divergence_nodes(ss)
+        nodes = sorted(converged_nodes | set(manual_nodes))
         extra_mandatory[ss.name] = nodes
-        print(f"  [{ss.name}] total extra node(s): {len(nodes)}")
+        print(f"  [{ss.name}] total extra node(s) (global-converged union manual): "
+              f"{len(nodes)} (manual={len(manual_nodes)})")
 
     ts_study = StudyCapabilities(construction=construction, shaft_fem=("shaft_fem.timoshenko_rigid",))
     ts_solve_system = ts_study.resolve()["solve_system"]
@@ -316,7 +208,7 @@ def main() -> None:
         system, construction,
         shear_theory=SHEAR_THEORY,
         integration_method=INTEGRATION_METHOD,
-        extra_mandatory=extra_mandatory,  # TODO: confirm shape against fem_simple.py
+        extra_mandatory=extra_mandatory,
     )
 
     out_dir = CASE_ROOT / "timoshenko" / "refined_mesh" / "results" / SHEAR_THEORY
@@ -325,24 +217,15 @@ def main() -> None:
         title=f"case_radial_single_position -- refined mesh (timoshenko/{SHEAR_THEORY})",
     )
 
-    # SHAFT MESH CONVERGENCE report -- same write_studies_report(...,
-    # convergence_library=...) call check_resolution_fem_convergence_total.py
-    # uses, but fed from `convergence_library` assembled by hand above
-    # (REGIONS + gap studies merged per shaft) instead of run_convergence()
-    # itself, which stays bypassed/outdated for this case (see module
-    # docstring). Written next to this case's own refined-mesh results,
-    # not under results/<shear_theory>/ -- this report is one artifact
-    # covering ALL shafts/intervals studied for the refinement, not a
-    # per-shear-theory resolution output.
-    convergence_report_path = CASE_ROOT / "timoshenko" / "refined_mesh" / "report_mesh_convergence.txt"
+    report_path = CASE_ROOT / "timoshenko" / "refined_mesh" / "report_mesh_convergence_global.txt"
     write_studies_report(
-        system, convergence_report_path,
-        title=f"case_radial_single_position -- refined mesh (timoshenko/{SHEAR_THEORY}) -- mesh convergence",
-        convergence_library=convergence_library,
+        system, report_path,
+        title=f"case_radial_single_position -- refined mesh (timoshenko/{SHEAR_THEORY}) "
+              f"-- GLOBAL bearing-to-bearing convergence (v_res + M_res)",
+        convergence_library=library_global,
     )
-    print(f"[OK] {convergence_report_path.name} written "
-          f"({len(convergence_library)} shaft(s) -- REGIONS={sorted(REGIONS)} "
-          f"intervals + per-gap intervals merged)")
+    print(f"\n[OK] {report_path.name} written ({len(library_global)} shaft(s), "
+          f"domain='bearing_to_bearing')")
 
 
 if __name__ == "__main__":
