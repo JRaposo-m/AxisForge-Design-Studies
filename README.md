@@ -1,51 +1,54 @@
 # AxisForge Design Studies
 
-Ponte entre [AxisForge](https://github.com/JRaposo-m/AxisForge-Shaft-Bearing-Gear-System-Analysis-Platform) — motor CAE determinístico, baseado em normas, para veios, rolamentos e sistemas de engrenagens de eixos paralelos — e [SlipPY](https://github.com/FrictionTribologyEnigma/slippy), uma biblioteca de mecânica de contacto/tribologia. O AxisForge constrói e resolve o sistema mecânico; o SlipPY analisa o contacto local e a lubrificação; este repositório é onde os dois se encontram.
+A bridge between [AxisForge](https://github.com/JRaposo-m/AxisForge-Shaft-Bearing-Gear-System-Analysis-Platform) — a deterministic, standards-based CAE engine for shafts, rolling bearings, and parallel-axis gear systems — and [SlipPY](https://github.com/FrictionTribologyEnigma/slippy), a contact mechanics and tribology library. AxisForge builds and solves the mechanical system; SlipPY analyzes local contact and lubrication; this repository is where the two meet.
 
-Nem o AxisForge nem o SlipPY sabem que este repositório existe — o acoplamento é unidirecional: `axisforge-design-studies` usa os dois como bibliotecas, nunca o inverso.
+Neither AxisForge nor SlipPY is aware that this repository exists. The coupling is unidirectional: `axisforge-design-studies` uses both as libraries, never the other way around.
 
-## Arquitetura
+## Architecture
 
 ```
-axisforge_bridge/       tudo o que fala com o AxisForge
-    construction/          constrói sistemas (veio + rolamentos/engrenagens)
-    extract/               extrai dados de contacto de resultados resolvidos
-    studies/               estudos só-AxisForge (ex. convergência de malha,
-                            comparação de solvers) — validação de um só lado,
-                            muitas vezes input para um estudo conjunto
-    validation/            casos de referência + resultado esperado, para
-                            regressão
+axisforge_bridge/       Everything that talks to AxisForge
+    construction/          Builds systems (shaft + bearings/gears)
+    extract/               Extracts contact-relevant data from solved results
+    studies/               AxisForge-only studies (e.g. mesh convergence,
+                            solver comparison) — single-side validation,
+                            often an input to a joint study rather than a
+                            final product in its own right
+    validation/            Reference cases and expected results, for
+                            regression testing
 
-slippy_bridge/           tudo o que fala com o SlipPY
-    build/                 monta casos SlipPY por elemento de máquina
+slippy_bridge/           Everything that talks to SlipPY
+    build/                 Assembles SlipPY cases per machine element
                             (bearing_case.py, gear_case.py)
-    (sem studies/ interno — validação de SlipPY isolado precisa sempre de
-    dados vindos do AxisForge, logo é sempre um estudo conjunto)
+    (no internal studies/ — validating SlipPY in isolation always requires
+    data originating from AxisForge, so it is, by definition, always a
+    joint study)
 
-results/                 forma do output de uma análise conjunta (pressão de
-                          contacto, espessura de filme, mais tarde λ /
-                          temperatura flash)
+results/                 The shape of a joint study's output (contact
+                          pressure, film thickness, later specific film
+                          thickness ratio λ / flash temperature)
 
-studies/                 só estudos conjuntos AxisForge+SlipPY — a única
-                          camada que pode depender de axisforge_bridge,
-                          slippy_bridge e results (ver a lei completa na
-                          vault, 00_Master/WIRING.md)
-    <domínio>/contract.py   dataclass neutro que liga as duas bridges,
-                            específico de cada domínio de estudo (ex.
-                            studies/contact/contract.py) — não um contrato
-                            universal do repositório
+studies/                 Joint AxisForge+SlipPY analyses only — the only
+                          layer allowed to depend on axisforge_bridge,
+                          slippy_bridge, and results (see the full law in
+                          the vault, 00_Master/WIRING.md)
+    <domain>/contract.py    The neutral dataclass linking the two bridges,
+                            specific to each study domain (e.g.
+                            studies/contact/contract.py) — not a
+                            repository-wide contract
 ```
 
-Decidido em 2026-09-18/19 — ver `40_ADR/ADR-001_folder_organization.md` na
-vault Obsidian deste repositório para o raciocínio completo por decisão.
+Decided on 2026-09-18/19 — see `40_ADR/ADR-001_folder_organization.md` in
+this repository's Obsidian vault for the full reasoning behind each
+decision.
 
-## Estado atual (19/09/2026)
+## Current status (2026-09-19)
 
-- `axisforge_bridge/construction/` e `axisforge_bridge/studies/01_shaft_static_analysis/` — construídos, com validação cruzada contra Abaqus para o FEM do veio (Euler-Bernoulli e Timoshenko, cargas pontuais e distribuídas).
-- `axisforge_bridge/validation/` — migração em curso do conteúdo de convergência/comparação FEM para esta forma mais definitiva (casos de referência + `results_library`).
-- `axisforge_bridge/studies/{02_deep_groove_bearing_life,03_helical_gearbox_drivetrain}` — ainda por construir.
-- `slippy_bridge/` — vazio. Nada foi ainda escrito do lado SlipPY.
-- `results/` e `studies/` (topo) — ainda por criar. O primeiro conteúdo real de `studies/` vai ser o spike descrito no doc de arquitetura: um rolamento, um ponto de contacto, dados extraídos "à bruta" do AxisForge, alimentando o SlipPY.
+- `axisforge_bridge/construction/` and `axisforge_bridge/studies/01_shaft_static_analysis/` — built, with cross-validation against Abaqus for shaft FEM (Euler-Bernoulli and Timoshenko, point and distributed loads).
+- `axisforge_bridge/validation/` — migration in progress, moving the FEM convergence/comparison content into this more definitive form (reference cases + `results_library`).
+- `axisforge_bridge/studies/{02_deep_groove_bearing_life,03_helical_gearbox_drivetrain}` — not yet built.
+- `slippy_bridge/` — empty. Nothing has been written on the SlipPY side yet.
+- `results/` and `studies/` (top level) — not yet created. The first real content under `studies/` will be the spike described in the architecture doc: a single bearing, a single contact point, data extracted "raw" from AxisForge and fed into SlipPY.
 
 ## Setup
 
@@ -59,9 +62,9 @@ pip install -e ../axisforge
 
 ## Vault
 
-Este repositório tem uma vault Obsidian irmã das do AxisForge
-(`axisforge-agents/vault`) e do SlipPY (`slippy-study/vault`), em
-`axisforge-design-studies/` dentro de `Projeto_Universidade` — gerada pelas
-mesmas três ferramentas (`vault_sync.py`, `mindmap_gen.py`,
-`dependency_cascade_gen.py`), com a lei de camadas adaptada a este
-repositório. Ver `README_SETUP.md` aí para o bootstrap.
+This repository has an Obsidian vault, a sibling to the ones for AxisForge
+(`axisforge-agents/vault`) and SlipPY (`slippy-study/vault`), located at
+`axisforge-design-studies/` inside `Projeto_Universidade` — generated by
+the same three tools (`vault_sync.py`, `mindmap_gen.py`,
+`dependency_cascade_gen.py`), with the layer law adapted to this
+repository. See `README_SETUP.md` there for the bootstrap instructions.
