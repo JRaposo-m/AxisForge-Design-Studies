@@ -28,12 +28,14 @@ not uniquely defined, total displacement without an external reference
 length). Displacement is left for a future study on the elliptical
 (ball-bearing) contacts, where it is well defined.
 
-Output layout (one PNG per bearing, organized by case study):
+Output layout (organized by case study; point contact gets two PNGs per
+bearing -- see plot_point_contact()'s docstring for the "_a" vs "_ab"
+normalization trade-off):
 
     plots/
         point_contact/
-            B1_dgb.png
-            B3_ang.png
+            B1_dgb_a.png    B1_dgb_ab.png
+            B3_ang_a.png    B3_ang_ab.png
         line_contact_coarse/
             pressure/
                 B2_roll.png
@@ -150,11 +152,28 @@ def most_critical(records, label):
     return max(records, key=lambda r: r["result"]["max_pressure"])
 
 
-def plot_point_contact(rec, out_path):
-    """Dimensionless elliptical pressure map, p/p0 over (x/a, y/b) -- same
-    normalization convention as the line-contact plots (sigma/p0, x/a),
-    so results are directly comparable element-to-element / bearing-to-
-    bearing regardless of contact size or load.
+def plot_point_contact(rec, out_path, normalize="a"):
+    """Dimensionless elliptical pressure map, p/p0, over the contact.
+
+    normalize picks how the in-plane axes are non-dimensionalized -- this
+    is a real trade-off, not just a style choice, so it's an explicit
+    parameter rather than something buried in the plotting code:
+
+      "a"  (default): BOTH x and y divided by the same length, the
+           semi-major axis a. Preserves the TRUE aspect ratio b/a of the
+           contact ellipse on the plot (e.g. the b/a~0.10 elements are
+           visibly a thin sliver, not a circle) -- x/a in [-1,1] still
+           reaches the ellipse boundary, but y/a only reaches +-(b/a).
+           Use this when the shape of the contact patch itself matters
+           (comparing how elongated different elements/bearings are).
+
+      "ab": x divided by a, y divided by b (its OWN semi-axis). Always
+           renders as a unit circle regardless of the true b/a, because
+           each axis is separately rescaled to reach +-1 at its own
+           ellipse boundary. Loses all information about how elongated
+           the real contact is -- every element looks identical in shape.
+           Use this only when comparing the pressure PROFILE shape
+           (e.g. edge falloff) across elements, not the contact geometry.
     """
     res = rec["result"]
     a, b = res["contact_radii"]
@@ -164,11 +183,20 @@ def plot_point_contact(rec, out_path):
     X, Y = np.meshgrid(x, y)
     P = np.nan_to_num(res["pressure_f"](X, Y)) / p0
 
+    if normalize == "a":
+        Xn, Yn = X / a, Y / a
+        y_label = "$y/a$, transverse direction"
+    elif normalize == "ab":
+        Xn, Yn = X / a, Y / b
+        y_label = "$y/b$, transverse direction"
+    else:
+        raise ValueError(f"normalize must be 'a' or 'ab', got {normalize!r}")
+
     fig, ax = plt.subplots(figsize=(6.2, 5.2))
-    cf = ax.contourf(X / a, Y / b, P, levels=30, cmap="inferno")
+    cf = ax.contourf(Xn, Yn, P, levels=30, cmap="inferno")
     fig.colorbar(cf, ax=ax, label="$p/p_0$")
     ax.set_xlabel("$x/a$, rolling direction")
-    ax.set_ylabel("$y/b$, transverse direction")
+    ax.set_ylabel(y_label)
     ax.set_aspect("equal")
     # two lines, kept narrow so long titles never run into the colorbar
     ax.set_title(f"{rec['label']} — elem {rec['elem']} ({rec['race']})\n"
@@ -335,9 +363,15 @@ for d in (point_dir, line_pressure_dir, line_stress_dir):
 print()
 for label, rec in critical.items():
     if rec["contact"] == "point":
-        out_path = point_dir / f"{label}.png"
-        plot_point_contact(rec, out_path)
-        print(f"plot written to: {out_path}")
+        # both normalizations (see plot_point_contact docstring): "_a" keeps
+        # the true elongated ellipse shape, "_ab" is a unit circle that only
+        # shows the pressure profile shape, not the contact geometry.
+        out_path_a = point_dir / f"{label}_a.png"
+        out_path_ab = point_dir / f"{label}_ab.png"
+        plot_point_contact(rec, out_path_a, normalize="a")
+        plot_point_contact(rec, out_path_ab, normalize="ab")
+        print(f"plot written to: {out_path_a}")
+        print(f"plot written to: {out_path_ab}")
     else:
         pressure_path = line_pressure_dir / f"{label}.png"
         stress_path = line_stress_dir / f"{label}.png"
