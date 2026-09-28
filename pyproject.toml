@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axisforge-design-studies"
+version = "0.1.0"
+description = "Bridge and validation studies between AxisForge and SlipPY"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+include = ["axisforge_bridge*", "slippy_bridge*"]

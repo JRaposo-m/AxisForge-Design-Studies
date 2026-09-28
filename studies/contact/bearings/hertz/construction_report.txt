@@ -1,0 +1,166 @@
+========================================================================
+                          Single Stage System                           
+========================================================================
+
+TOPOLOGY / RESOLVED STATE
+------------------------------------------------------------------------
+── single_stage_system ──────────────────────────────────────────────
+  shafts: 2   links: 1   source: shaft_1_system
+    shaft_1_system T_out=31.831 N·m     rot=1   pos=(y=0.00, z=0.00) mm
+    shaft_2_system T_out=95.493 N·m     rot=-1.0 pos=(y=120.00, z=0.00) mm
+────────────────────────────────────────────────────────
+
+========================================================================
+SHAFT: shaft_1_system
+========================================================================
+  geometry (1 sections, total_length=200.00 mm):
+    [0] (s1) z=[0.0, 200.0] mm  d=40.0 mm  L=200.0 mm  mat=S355  Ra=0.8 um
+
+  bearings (2):
+-- B1_dgb ----------------------------------
+  family      : deep_groove_ball
+  bearing_type: None
+  duty        : None
+  position    : 20.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 47.0 mm
+  b           : 14.0 mm
+  C (computed): 9846 N
+  geometry    : assembled
+  analyses    : (none enabled)
+--------------------------------------------
+-- B2_roll ---------------------------------
+  family      : cylindrical_roller
+  bearing_type: None
+  duty        : None
+  position    : 180.00 mm
+  arrangement : floating
+  d / D       : 40.0 mm / 80.0 mm
+  b           : 18.0 mm
+  C (computed): 60484 N
+  geometry    : assembled
+  analyses    : (none enabled)
+--------------------------------------------
+
+  gears (1):
+  -- pinion (spur, role=driver) ----------------------------
+    rotation_dir   : 1
+    position       : 100.00 mm
+    mn / z / x     : 3.000 mm / 20 / 0.0000
+    alpha_n / beta_n: 20.00 deg / 0.00 deg
+    b (face width) : 25.00 mm
+    d / da / df    : 60.000 / 67.500 / 52.500 mm
+    material_id    : (none)
+
+── ShaftSystem 'shaft_1_system' ─────────────────────────────
+  length        : 200.00 mm
+  speed         : 1500.00 rpm
+  design life   : 20000 h
+  axis offset   : (y=0.000, z=0.000) mm   origin_x=0.000 mm
+  bearings      : 2  @ ['20.0', '180.0']
+  gears         : 1  @ ['100.0']
+  loads         : 4  (user=0, gear_mesh=4)
+──────────────────────────────────────────────────────────
+
+  loads (4 total):
+    [gear_mesh] TorqueLoad(position=0.00 mm, T=-31.83 N·m, source='gear_mesh', label='shaft_1_system:T_in')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=386.18 N, theta=0.0°, Fy=386.18 N, Fz=0.00 N, source='gear_mesh', label='pinion:Fr')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=1061.03 N, theta=90.0°, Fy=0.00 N, Fz=1061.03 N, source='gear_mesh', label='pinion:Ft')
+    [gear_mesh] TorqueLoad(position=100.00 mm, T=31.83 N·m, source='gear_mesh', label='pinion:T')
+
+  FEM results (11 nodes, beam theory via solver settings):
+    M_max         : 45165.11 N*mm   @ x=100.00 mm
+    v_max (defl.) : 0.0037 mm     @ x=100.00 mm
+    sigma_b_max   : 7.19 MPa  @ x=100.00 mm
+    tau_max       : 2.53 MPa  @ x=0.00 mm
+    phi_max (twist): 0.000160 rad  @ x=100.00 mm
+    bearing reactions (2):
+      [B1_dgb] x=20.00 mm  Fr=564.56 N  Fa=0.00 N  M_xz=0.00 N*mm  M_xy=0.00 N*mm
+      [B2_roll] x=180.00 mm  Fr=564.56 N  Fa=0.00 N  M_xz=0.00 N*mm  M_xy=0.00 N*mm
+
+========================================================================
+SHAFT: shaft_2_system
+========================================================================
+  geometry (1 sections, total_length=250.00 mm):
+    [0] (s1) z=[0.0, 250.0] mm  d=50.0 mm  L=250.0 mm  mat=S355  Ra=0.8 um
+
+  bearings (2):
+-- B3_ang ----------------------------------
+  family      : angular_contact
+  bearing_type: None
+  duty        : None
+  position    : 30.00 mm
+  arrangement : locating
+  d / D       : 25.0 mm / 52.0 mm
+  b           : 15.0 mm
+  C (computed): 9759 N
+  geometry    : assembled
+  analyses    : (none enabled)
+--------------------------------------------
+-- B4_roll ---------------------------------
+  family      : cylindrical_roller
+  bearing_type: None
+  duty        : None
+  position    : 220.00 mm
+  arrangement : floating
+  d / D       : 50.0 mm / 90.0 mm
+  b           : 20.0 mm
+  C (computed): 70248 N
+  geometry    : assembled
+  analyses    : (none enabled)
+--------------------------------------------
+
+  gears (1):
+  -- wheel (spur, role=driven) -----------------------------
+    rotation_dir   : None
+    position       : 100.00 mm
+    mn / z / x     : 3.000 mm / 60 / 0.0000
+    alpha_n / beta_n: 20.00 deg / 0.00 deg
+    b (face width) : 25.00 mm
+    d / da / df    : 180.000 / 187.500 / 172.500 mm
+    material_id    : (none)
+
+── ShaftSystem 'shaft_2_system' ─────────────────────────────
+  length        : 250.00 mm
+  speed         : 500.00 rpm
+  design life   : 20000 h
+  axis offset   : (y=120.000, z=0.000) mm   origin_x=0.000 mm
+  bearings      : 2  @ ['30.0', '220.0']
+  gears         : 1  @ ['100.0']
+  loads         : 3  (user=0, gear_mesh=3)
+──────────────────────────────────────────────────────────
+
+  loads (3 total):
+    [gear_mesh] RadialLoad(position=100.00 mm, F=386.18 N, theta=180.0°, Fy=-386.18 N, Fz=0.00 N, source='gear_mesh', label='wheel:Fr')
+    [gear_mesh] RadialLoad(position=100.00 mm, F=1061.03 N, theta=90.0°, Fy=0.00 N, Fz=1061.03 N, source='gear_mesh', label='wheel:Ft')
+    [gear_mesh] TorqueLoad(position=100.00 mm, T=-95.49 N·m, source='gear_mesh', label='wheel:T')
+
+  FEM results (11 nodes, beam theory via solver settings):
+    M_max         : 49919.33 N*mm   @ x=100.00 mm
+    v_max (defl.) : 0.0023 mm     @ x=112.50 mm
+    sigma_b_max   : 4.07 MPa  @ x=100.00 mm
+    tau_max       : 3.89 MPa  @ x=100.00 mm
+    phi_max (twist): 0.000295 rad  @ x=250.00 mm
+    bearing reactions (2):
+      [B3_ang] x=30.00 mm  Fr=713.13 N  Fa=0.00 N  M_xz=-0.00 N*mm  M_xy=0.00 N*mm
+      [B4_roll] x=220.00 mm  Fr=415.99 N  Fa=0.00 N  M_xz=0.00 N*mm  M_xy=0.00 N*mm
+
+========================================================================
+MESHES (1)
+========================================================================
+  shaft_1_system -> shaft_2_system   phi_deg=0.00   torque_split=None   distribute_loads=False   label='stage_1'
+── stage_1 ─────────────────────────────────
+  gear1 : z=20, mn=3.0, x=0.0, β=0.0°
+  gear2 : z=60, mn=3.0, x=0.0, β=0.0°
+  u     : 3.0000
+  a     : 120.0000 mm   (reference centre distance)
+  al    : 120.0000 mm   (working centre distance)
+  αtw   : 20.0000°
+  dl1   : 60.0000 mm
+  dl2   : 180.0000 mm
+  εα    : 2.0289
+  εβ    : 0.0000
+  εγ    : 2.0289
+────────────────────────────────────────────────────
+
+========================================================================
