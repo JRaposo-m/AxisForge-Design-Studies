@@ -2,11 +2,14 @@
 compare_refined_mesh_case_radial_single_position.py
 
 Diffs the refined-mesh Timoshenko CSV (produced by
-refine_mesh_case_radial_single_position.py, same folder) against the
+refine_mesh_case_radial_single_position.py, one folder up) against the
 closed-form analytical CSV -- same compare_shaft()/common/compare.py
 machinery the existing compare_analytical_case_radial_single_position.py
 already uses, just pointed at timoshenko/refined_mesh/results/ instead
 of timoshenko/results/.
+
+Expected location:
+  case_radial_single_position/timoshenko/refined_mesh/comparison/<this file>
 
 Builds paths directly off CASE_ROOT rather than common/paths.py's
 case_dir()/results_dir() helpers -- those assume comparison/ sits ONE
@@ -14,6 +17,11 @@ level below euler_bernoulli/timoshenko/analytical (case root -> theory
 -> comparison), but this script sits TWO levels down
 (case root -> timoshenko -> refined_mesh -> comparison), a nesting
 those helpers were not written for.
+
+CASE_ROOT is found by walking up to the first ancestor that contains
+BOTH timoshenko/ and analytical/ (fixed: the previous parents[2] landed
+on timoshenko/, not on the case root, because this file is one level
+deeper than refine_mesh_*.py -- that is parents[3] here).
 """
 from __future__ import annotations
 
@@ -31,8 +39,19 @@ if _root is None:
 sys.path.insert(0, str(_root))
 from common.compare import compare_shaft, load_abaqus_csv  # noqa: E402
 
+CASE_ROOT = None
+for _ancestor in _p.parents:
+    if (_ancestor / "timoshenko").is_dir() and (_ancestor / "analytical").is_dir():
+        CASE_ROOT = _ancestor
+        break
+if CASE_ROOT is None:
+    raise RuntimeError(
+        f"{__file__}: no ancestor containing both 'timoshenko/' and 'analytical/' "
+        f"(the case root) found."
+    )
+
 SHAFT_NAMES = ("shaft1", "shaft2")
-SHEAR_THEORY = "cowper"
+SHEAR_THEORY = "cowper"   # keep equal to SHEAR_THEORY in refine_mesh_*.py
 
 _COLUMN_MAP = {
     "v_xy_mm": "v_xy_mm", "v_xz_mm": "v_xz_mm", "v_mm": "v_mm",
@@ -40,8 +59,6 @@ _COLUMN_MAP = {
     "V_xy_N": "V_xy_N", "V_xz_N": "V_xz_N", "V_N": "V_N",
 }
 _COLUMN_SCALE = {col: 1.0 for col in _COLUMN_MAP}
-
-CASE_ROOT = Path(__file__).resolve().parents[2]  # .../case_radial_single_position/
 
 
 def main() -> None:

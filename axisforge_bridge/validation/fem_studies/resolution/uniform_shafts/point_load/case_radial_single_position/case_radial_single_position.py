@@ -4,25 +4,29 @@ validation/fem_studies/resolution/uniform_shafts/point_load/case_radial_single_p
 Case group: uniform shaft, ONE extra point RadialLoad, position varied,
 solved under BOTH beam theories (Euler-Bernoulli and Timoshenko). See
 the suite's top-level README.md for the euler_bernoulli/ vs
-timoshenko/ vs analytical_solution/ split, and for the "vehicle, not
-mechanism" discipline shared by every case script.
+timoshenko/ vs analytical/ split, and for the "vehicle, not mechanism"
+discipline shared by every case script.
 
-REORG NOTE (this pass): previously this file only solved Timoshenko
-(shaft_fem=("shaft_fem.timoshenko_rigid",)) and wrote into
-results_dir(__file__)/<shear_theory>/ with NO theory segment in the
-path -- which never actually matched the on-disk layout
-(case_radial_single_position/{euler_bernoulli,timoshenko}/results/...,
-theory as a real folder). Whatever previously populated
-euler_bernoulli/results/ was NOT this script (there was no code path
-here that ever called shaft_fem.euler_bernoulli_rigid), and the
-timoshenko/results/ output on disk predates this rewrite -- both are
-now regenerated correctly by the loop in main() below, each branch
-building its own case_dir(__file__) / "<theory>" / "results" path
-directly (NOT results_dir(__file__, theory) -- that helper joins its
-extra segments AFTER "results", by design, matching how
-compare_case_x.py already relies on it; here <theory>/ sits ABOVE
-results/ instead, the opposite nesting -- see common/paths.py's own
-docstring, and the inline comment at the first case_dir() call below).
+REWRITE (this pass) -- no more fixtures / capabilities layer:
+  - The system is now built DIRECTLY from the AxisForge core
+    (Shaft/ShaftSection, Bearing.assemble via common/bearings.py,
+    SpurHelicalGear + SpurHelicalGearMeshing, ShaftSystem/GearElement,
+    SpurHelicalMeshLink, SpurHelicalGearSystem.resolve()). The old
+    ConstructionCapabilities / StudyCapabilities / build_linear_system /
+    solve_system calls are gone -- the modules behind them no longer
+    exist.
+  - The FEM solve is RigidSupportFEMSolver(BeamModelSettings).solve(ss),
+    which now returns a finished ShaftResults directly (no
+    ShaftResultsReader, no results library).
+  - Reports come from the bridge: construction_report.txt from
+    outputs.construction.text_report.write_construction_report, and
+    report_resolution.txt from outputs.solver_results.fem_report.
+    write_fem_report (same layout as the previous report_resolution.txt).
+  - Plots come from outputs.solver_results.plots.fem_plots.write_fem_plots
+    (same 9 PNGs per shaft, same folder layout as before). CSV: a
+    TEMPORARY local writer below reproduces the columns
+    compare_case_*.py reads; replace it once the bridge grows a real
+    outputs module for it.
 
 A single 1-stage gear chain (2 shafts) is built purely to get two
 independent, individually-resolved ShaftSystem objects out of one script
@@ -47,31 +51,33 @@ BC: fixed for this whole suite -- ball (locating) @10mm, roller
 constrain v=0 only (u=0 additionally at the locating one); NEITHER ever
 constrains theta -- see solvers/.../constraints/boundary_conditions.py.
 That makes both supports true pins with no moment reaction, which is
-exactly what analytical_solution/'s closed-form beam formulas assume --
-see that script's own docstring.
+exactly what analytical/'s closed-form beam formulas assume.
 
 integration_method="single_point" (selective/reduced integration) for
 the Timoshenko branch -- this is a resolution study, not the
 locking-demonstration integration_method="exact" used by the mesh
 convergence group. Euler-Bernoulli has no shear term, so
-integration_method does not apply to that branch at all.
+BeamModelSettings requires shear_theory=None and integration_method=None
+for that branch (it raises otherwise).
 
-Outputs, per theory:
-  euler_bernoulli/results/               (report .txt, plots/*.png, csv/*.csv)
-                                          -- no <shear_theory>/ subfolder:
-                                          Euler-Bernoulli has no shear
-                                          correction to sweep, exactly
-                                          one AxisForge solve per shaft.
-  timoshenko/results/<shear_theory>/     (report .txt, plots/*.png, csv/*.csv)
-                                          -- one subfolder per shear_theory
-                                          swept (cowper, hutchinson).
-Both relative to this case's own folder -- see common/paths.py.
+Outputs, per theory (relative to this case's own folder -- see
+common/paths.py):
+  euler_bernoulli/results/              construction_report.txt,
+                                        report_resolution.txt, csv/*.csv
+  timoshenko/results/<shear_theory>/    report_resolution.txt, csv/*.csv
+  timoshenko/results/                   construction_report.txt
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
+# --- path bootstrap ---------------------------------------------------------
+# 1) suite root: nearest ancestor containing common/  -> `import common.*`
+# 2) package root: the folder that CONTAINS the axisforge_bridge/ directory
+#    -> `import axisforge_bridge.*` (no install needed for the bridge).
+# `axisforge` itself (the base package) must be importable on its own:
+# pip install -e <AxisForge repo>, or PYTHONPATH pointing at its root.
 _p = Path(__file__).resolve()
 _root = None
 for _ancestor in _p.parents:
@@ -83,17 +89,49 @@ if _root is None:
         f"{__file__}: no ancestor directory containing 'common/' "
         f"found -- this file must live somewhere inside the suite tree."
     )
+_bridge_parent = None
+for _ancestor in _p.parents:
+    if _ancestor.name == "axisforge_bridge":
+        _bridge_parent = _ancestor.parent
+        break
+if _bridge_parent is None:
+    raise RuntimeError(
+        f"{__file__}: no ancestor directory named 'axisforge_bridge' found."
+    )
 sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_bridge_parent))
+
+import numpy as np  # noqa: E402
+
 from common.bearings import build_case_bearings  # noqa: E402
+from common.materials import ensure_case_materials  # noqa: E402
 from common.paths import case_dir  # noqa: E402
 
 from axisforge.core.loads import RadialLoad, TorqueLoad  # noqa: E402
-from axisforge.fixtures.construction.construction_capabilities import ConstructionCapabilities  # noqa: E402
-from axisforge.fixtures.construction.outputs.text_report import write_construction_report  # noqa: E402
-from axisforge.fixtures.studies.study_capabilities import StudyCapabilities  # noqa: E402
-from axisforge.fixtures.studies.outputs.text_report import write_studies_report  # noqa: E402
-from axisforge.fixtures.studies.shafts.fem_studies.outputs.plots import write_resolution_plots  # noqa: E402
-from axisforge.fixtures.studies.shafts.fem_studies.outputs.resolution_csv import resolution_csv  # noqa: E402
+from axisforge.core.machine_elements.shaft.shaft import Shaft, ShaftSection  # noqa: E402
+from axisforge.core.machine_elements.gears.parallel_axis.gear_properties.spur_helical_gear import (  # noqa: E402
+    SpurHelicalGear,
+)
+from axisforge.core.machine_elements.gears.parallel_axis.gear_meshing.spurhelical_meshing import (  # noqa: E402
+    SpurHelicalGearMeshing,
+)
+from axisforge.core.mechanical_system.parallel_axis.spur_helical.shaft_system import (  # noqa: E402
+    GearElement,
+    ShaftSystem,
+)
+from axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system import (  # noqa: E402
+    SpurHelicalGearSystem,
+    SpurHelicalMeshLink,
+)
+from axisforge.mesh.shaft.beam_model_settings import BeamModelSettings  # noqa: E402
+from axisforge.solvers.machine_elements.shaft.fem_solvers.global_solver.rigid_support import (  # noqa: E402
+    RigidSupportFEMSolver,
+)
+from axisforge.results.fem_results.shaft_results import ShaftResults  # noqa: E402
+
+from axisforge_bridge.outputs.construction.text_report import write_construction_report  # noqa: E402
+from axisforge_bridge.outputs.solver_results.fem_report import write_fem_report  # noqa: E402
+from axisforge_bridge.outputs.solver_results.plots.fem_plots import write_fem_plots  # noqa: E402
 
 
 SHAFT_LENGTH_MM = 200.0
@@ -104,91 +142,88 @@ LOAD_THETA_DEG = 270.0
 LOAD_X_SHAFT1_MM = 60.0
 LOAD_X_SHAFT2_MM = 140.0
 
+# Source-shaft power / speed. P = T * omega with T = 100 N*m at 1000 rpm.
+POWER_W = 10471.9755
+SHAFT1_RPM = 1000.0
+SHAFT2_RPM = 500.0            # z1/z2 = 20/40 -> informational, see ShaftSystem.speed_rpm
+ROTATION_DIR_SOURCE = 1
+
 # Timoshenko-branch integration method -- "exact" is the other option,
 # but this is a resolution study, not the locking-demonstration group.
-# Not used at all by the Euler-Bernoulli branch (no shear term).
 TIMOSHENKO_INTEGRATION_METHOD = "single_point"
 
 # Shear theories swept for the Timoshenko branch only.
 SHEAR_THEORIES = ("cowper", "hutchinson")
 
 
-def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]:
+def build_system() -> SpurHelicalGearSystem:
     """
-    Builds and RESOLVES the ShaftSystem for this case -- geometry,
-    bearings, gear mesh, and every load (user + gear_mesh-sourced),
-    independent of which beam theory will later solve it (bending
-    theory is a Studies-stage choice, made in main() below, not here).
+    Builds and RESOLVES the SpurHelicalGearSystem for this case --
+    geometry, bearings, gear mesh, and every load (user + gear_mesh-
+    sourced), independent of which beam theory will later solve it.
 
     Exposed (not just called from main()) specifically so that
-    analytical_solution/analytical_case_radial_single_position.py can
-    import and call this SAME function to get the identical, already-
-    resolved ShaftSystem -- same geometry, same bearing positions, same
-    gear-mesh Ft/Fr (a core-level statics computation, not FEM) -- for
-    its own closed-form (non-FEM) solve, rather than re-deriving any of
-    those numbers by hand and risking a second, independently-wrong
-    source of truth.
+    analytical/analytical_case_radial_single_position.py can import and
+    call this SAME function to get the identical, already-resolved
+    system -- same geometry, same bearing positions, same gear-mesh
+    Ft/Fr -- for its own closed-form (non-FEM) solve, rather than
+    re-deriving any of those numbers by hand.
+
+    NOTE for that caller: this used to return (construction, system);
+    the capabilities layer is gone, so it now returns `system` only.
     """
-    construction = ConstructionCapabilities(
-        shaft=("shafts.generic",),
-        bearings=("bearings.deep_groove_ball", "bearings.cylindrical_roller"),
-        gears=("gears.spur",),
-        system=("systems.parallel_axis_linear",),
+    ensure_case_materials()   # core material registry is empty until registered
+
+    def make_shaft_geometry(name: str) -> Shaft:
+        shaft = Shaft(label=name)
+        shaft.add_section(ShaftSection(
+            length=SHAFT_LENGTH_MM, diameter=SHAFT_DIAMETER_MM, label=name,
+        ))
+        return shaft
+
+    # --- shaft containers ------------------------------------------------
+    ss1 = ShaftSystem(make_shaft_geometry("shaft1"), name="shaft1", speed_rpm=SHAFT1_RPM)
+    ss2 = ShaftSystem(make_shaft_geometry("shaft2"), name="shaft2", speed_rpm=SHAFT2_RPM)
+
+    for ss in (ss1, ss2):
+        for brg in build_case_bearings(ss.name):
+            ss.add_bearing(brg)
+
+    # --- gears + mesh ----------------------------------------------------
+    g_driver = SpurHelicalGear(mn=2.0, z=20, b=15.0, position=100.0, label="g_driver")
+    g_driven = SpurHelicalGear(mn=2.0, z=40, b=15.0, position=100.0, label="g_driven")
+    meshing = SpurHelicalGearMeshing(g_driver, g_driven, label="stage1")
+
+    ge_driver = GearElement(g_driver, role="driver", label="g_driver")
+    ge_driven = GearElement(g_driven, role="driven", label="g_driven")
+    ss1.add_gear(ge_driver)
+    ss2.add_gear(ge_driven)
+
+    # --- the one thing that varies between shafts --------------------------
+    ss1.add_load(RadialLoad(LOAD_X_SHAFT1_MM, LOAD_N, theta_deg=LOAD_THETA_DEG, label="radial_test_load"))
+    ss2.add_load(RadialLoad(LOAD_X_SHAFT2_MM, LOAD_N, theta_deg=LOAD_THETA_DEG, label="radial_test_load"))
+
+    link = SpurHelicalMeshLink(
+        ss1, ge_driver, ss2, ge_driven, meshing,
+        phi_deg=0.0, label="stage1",
     )
-    objs = construction.resolve()
-
-    make_shaft = objs["factory"]
-    SectionSpec = objs["SectionSpec"]
-    make_deep_groove_ball_bearing = objs["make_deep_groove_ball_bearing"]
-    make_cylindrical_roller_bearing = objs["make_cylindrical_roller_bearing"]
-    make_spur_gear = objs["make_spur_gear"]
-    ShaftSpec = objs["ShaftSpec"]
-    StageSpec = objs["StageSpec"]
-    build_linear_system = objs["build_linear_system"]
-
-    def make_shaft_geometry(name: str):
-        return make_shaft(
-            sections=[SectionSpec(length=SHAFT_LENGTH_MM, diameter=SHAFT_DIAMETER_MM, label=name)],
-            transitions={},
-            name=name,
-        ).shaft
-
-    shaft1 = make_shaft_geometry("shaft1")
-    shaft2 = make_shaft_geometry("shaft2")
-    bearings1 = build_case_bearings(make_deep_groove_ball_bearing, make_cylindrical_roller_bearing, "shaft1")
-    bearings2 = build_case_bearings(make_deep_groove_ball_bearing, make_cylindrical_roller_bearing, "shaft2")
-
-    g_driver = make_spur_gear(mn=2.0, z=20, b=15.0, position=100.0, label="g_driver")
-    g_driven = make_spur_gear(mn=2.0, z=40, b=15.0, position=100.0, label="g_driven")
-
-    load1 = RadialLoad(LOAD_X_SHAFT1_MM, LOAD_N, theta_deg=LOAD_THETA_DEG, label="radial_test_load")
-    load2 = RadialLoad(LOAD_X_SHAFT2_MM, LOAD_N, theta_deg=LOAD_THETA_DEG, label="radial_test_load")
-
-    shaft_specs = [
-        ShaftSpec(shaft=shaft1, bearings=bearings1, speed_rpm=1000,
-                  loads=(load1,), name="shaft1"),
-        ShaftSpec(shaft=shaft2, bearings=bearings2, speed_rpm=500,
-                  loads=(load2,), name="shaft2"),
-    ]
-    stage_specs = [
-        StageSpec(gear_driver=g_driver, gear_driven=g_driven, phi_deg=0.0, label="stage1"),
-    ]
-
-    system = build_linear_system(
-        shaft_specs, stage_specs, P=10471.9755, rotation_dir_source=1,
+    system = SpurHelicalGearSystem(
+        [ss1, ss2], [link],
         label="uniform_point_load_radial_single_position",
     )
+    system.validate_or_raise()
+    system.resolve(P=POWER_W, rpm=SHAFT1_RPM, rotation_dir_source=ROTATION_DIR_SOURCE)
 
     # shaft2 (driven shaft) only receives the gear-mesh reaction torque
     # (source="gear_mesh", at x=100mm) -- nothing balances that torque
-    # on this shaft. validate_torsion_equilibrium() would flag this,
-    # and an Abaqus model built from the construction report ends up
-    # with DOF 4 (torsion) unconstrained -- zero pivot in the solver.
+    # on this shaft. TorsionSolver.validate_equilibrium() would flag
+    # this, and an Abaqus model built from the construction report ends
+    # up with DOF 4 (torsion) unconstrained -- zero pivot in the solver.
     #
     # Driven-machine torque sink, placed on the far side of the gear
-    # (x=200mm > 100mm, so AxisForge's own T(x) closes back to zero past
-    # the application point -- see solve_torsion). Magnitude is derived
-    # from the net already present rather than hand-copied.
+    # (x=200mm > 100mm, so T(x) closes back to zero past the
+    # application point). Magnitude is derived from the net already
+    # present rather than hand-copied.
     shaft2_sys = system.shafts[-1]
     net_before = sum(ld.magnitude for ld in shaft2_sys.torque_loads)
     shaft2_sys.add_load(TorqueLoad(
@@ -198,35 +233,91 @@ def build_system() -> tuple["ConstructionCapabilities", "SpurHelicalGearSystem"]
         source="user",
     ))
 
-    return construction, system
+    return system
 
 
-def _write_theory_outputs(system, out_dir: Path, library, title: str) -> None:
-    """Report + plots + csv for one already-solved library, shared by
-    both theory branches in main() below (the only thing that differs
-    between them is which capability solved `library` and where
-    `out_dir` points)."""
+def solve_system(system: SpurHelicalGearSystem, settings: BeamModelSettings) -> dict[str, ShaftResults]:
+    """
+    Solve every ShaftSystem in `system` with the same BeamModelSettings.
+    One fresh RigidSupportFEMSolver per shaft (cheap, and keeps the old
+    "no solver instance reused across shafts" rule trivially true).
+    Returns {ShaftSystem.name: ShaftResults}.
+    """
+    results: dict[str, ShaftResults] = {}
+    for ss in system.shafts:
+        results[ss.name] = RigidSupportFEMSolver(settings).solve(ss)
+    return results
+
+
+# --- TEMPORARY csv writer --------------------------------------------------
+# Reproduces the columns compare_case_*.py reads (x_mm, u_mm, v_xy_mm,
+# v_xz_mm, theta_xy_rad, theta_xz_rad -- see common/compare.py's
+# DEFAULT_/EXTENDED_COLUMN_MAP). The remaining columns (M, V, T, stresses)
+# are named by analogy and NOT verified against the old resolution_csv or
+# against compare_analytical_case_*.py -- check those two before relying
+# on them. Replace with a proper bridge outputs module.
+_CSV_COLUMNS = (
+    ("x_mm",         "x"),
+    ("u_mm",         "u"),
+    ("v_xz_mm",      "v_xz"),
+    ("v_xy_mm",      "v_xy"),
+    ("v_mm",         "v"),
+    ("theta_xz_rad", "theta_xz"),
+    ("theta_xy_rad", "theta_xy"),
+    ("M_xz_Nmm",     "M_xz"),
+    ("M_xy_Nmm",     "M_xy"),
+    ("M_Nmm",        "M"),
+    ("V_xz_N",       "V_xz"),
+    ("V_xy_N",       "V_xy"),
+    ("V_N",          "V"),
+    ("T_Nm",         "T"),
+    ("phi_rad",      "phi"),
+    ("d_mm",         "d"),
+    ("W_mm3",        "W"),
+    ("Wt_mm3",       "Wt"),
+    ("sigma_b_MPa",  "sigma_b"),
+    ("tau_MPa",      "tau"),
+)
+
+
+def _write_resolution_csv(result: ShaftResults, path: Path, decimals: int = 10) -> None:
+    cols = [np.asarray(getattr(result, attr), dtype=float) for _, attr in _CSV_COLUMNS]
+    n = len(cols[0])
+    lines = [",".join(name for name, _ in _CSV_COLUMNS)]
+    for i in range(n):
+        lines.append(",".join(f"{c[i]:.{decimals}g}" for c in cols))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_theory_outputs(system, results: dict[str, ShaftResults], out_dir: Path, title: str) -> None:
+    """Report + plots + csv for one already-solved theory branch, shared by both
+    branches in main()."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    write_studies_report(
-        system, out_dir / "report_resolution.txt",
-        title=title, shaft_fem_library=library,
-    )
-    write_resolution_plots(library, system, out_dir)
+    write_fem_report(system, results, out_dir / "report_resolution.txt", title=title)
+    write_fem_plots(system, results, out_dir)          # -> out_dir/plots/<shaft>/*.png
 
     csv_dir = out_dir / "csv"
     csv_dir.mkdir(parents=True, exist_ok=True)
     for ss in system.shafts:
-        r = library.get_or_none(ss.name)
+        r = results.get(ss.name)
         if r is None:
             continue
-        (csv_dir / f"{ss.name}_resolution.csv").write_text(
-            resolution_csv(r, decimals=10), encoding="utf-8",
-        )
+        _write_resolution_csv(r, csv_dir / f"{ss.name}_resolution.csv")
     print(f"[OK] report + plots + csv written under {out_dir}")
 
 
+def _print_envelope(tag: str, system, results: dict[str, ShaftResults]) -> None:
+    for ss in system.shafts:
+        r = results.get(ss.name)
+        if r is None:
+            continue
+        print(f"    [{tag}] {ss.name:8s} "
+              f"v_max={r.v_max:7.4f} mm @ x={r.x_v_max:6.1f} mm  "
+              f"sigma_b_max={r.sigma_b_max:8.2f} MPa @ x={r.x_sigma_b_max:6.1f} mm")
+
+
 def main() -> None:
-    construction, system = build_system()
+    system = build_system()
 
     print("uniform_shafts/point_load/case_radial_single_position")
     print(f"  shaft1: RadialLoad {LOAD_N:.0f} N @ x={LOAD_X_SHAFT1_MM:.1f} mm")
@@ -234,15 +325,11 @@ def main() -> None:
 
     # ------------------------------------------------------------------
     # Euler-Bernoulli branch -- one solve per shaft, no shear sweep.
+    # <theory>/ sits ABOVE results/ on disk, so the path is built off
+    # case_dir() directly, NOT through results_dir() (see common/paths.py).
+    # BeamModelSettings itself rejects a non-None shear_theory /
+    # integration_method for euler_bernoulli.
     # ------------------------------------------------------------------
-    # NOTE: NOT results_dir(__file__, "euler_bernoulli") -- that helper
-    # joins its extra segments AFTER "results" (case_dir()/results/<extra>),
-    # by design, matching how compare_case_x.py already uses it
-    # (comparison_dir(__file__, shear_theory) -> comparison/<shear_theory>).
-    # On disk here, <theory>/ sits ABOVE results/ (a sibling of
-    # abaqus_results/ and comparison/ under euler_bernoulli/ or
-    # timoshenko/), the opposite nesting -- so the theory folder is
-    # built directly off case_dir() instead.
     eb_dir = case_dir(__file__) / "euler_bernoulli" / "results"
     eb_dir.mkdir(parents=True, exist_ok=True)
     write_construction_report(
@@ -250,41 +337,18 @@ def main() -> None:
         title="uniform_shafts/point_load/case_radial_single_position -- Construction (Euler-Bernoulli)",
     )
 
-    eb_study = StudyCapabilities(construction=construction, shaft_fem=("shaft_fem.euler_bernoulli_rigid",))
-    eb_solve_system = eb_study.resolve()["solve_system"]
-    # solve_system() has ONE uniform signature across both theories --
-    # shear_theory/integration_method are required keyword-only args
-    # even on the Euler-Bernoulli branch (confirmed by running this:
-    # TypeError without them). CORRECTED (this was wrong on the first
-    # attempt): they are NOT silently ignored/inert for euler_bernoulli
-    # the way kGA_override is -- BeamModelSettings.__post_init__()
-    # actively VALIDATES and REJECTS a non-None shear_theory when
-    # beam_theory="euler_bernoulli" ("does not use shear_theory ...
-    # pass None"), confirmed by running this with shear_theory="cowper"
-    # here. Both are therefore explicitly None for this branch -- not
-    # an arbitrary placeholder value, the ONLY value BeamModelSettings
-    # accepts here.
-    eb_library = eb_solve_system(
-        system, construction,
-        shear_theory=None,
-        integration_method=None,
+    eb_results = solve_system(
+        system, BeamModelSettings(beam_theory="euler_bernoulli",
+                                  shear_theory=None, integration_method=None),
     )
-
-    for ss in system.shafts:
-        r = eb_library.get_or_none(ss.name)
-        if r is None:
-            continue
-        print(f"    [euler_bernoulli] {ss.name:8s} "
-              f"v_max={r.v_max:7.4f} mm @ x={r.x_v_max:6.1f} mm  "
-              f"sigma_b_max={r.sigma_b_max:8.2f} MPa @ x={r.x_sigma_b_max:6.1f} mm")
-
+    _print_envelope("euler_bernoulli", system, eb_results)
     _write_theory_outputs(
-        system, eb_dir, eb_library,
+        system, eb_results, eb_dir,
         title="uniform_shafts/point_load/case_radial_single_position -- radial load, position sweep (euler_bernoulli)",
     )
 
     # ------------------------------------------------------------------
-    # Timoshenko branch -- swept over shear_theory, as before.
+    # Timoshenko branch -- swept over shear_theory.
     # ------------------------------------------------------------------
     ts_root = case_dir(__file__) / "timoshenko" / "results"
     ts_root.mkdir(parents=True, exist_ok=True)
@@ -293,26 +357,15 @@ def main() -> None:
         title="uniform_shafts/point_load/case_radial_single_position -- Construction (timoshenko)",
     )
 
-    ts_study = StudyCapabilities(construction=construction, shaft_fem=("shaft_fem.timoshenko_rigid",))
-    ts_solve_system = ts_study.resolve()["solve_system"]
-
     for shear_theory in SHEAR_THEORIES:
-        ts_library = ts_solve_system(
-            system, construction,
-            shear_theory=shear_theory,
-            integration_method=TIMOSHENKO_INTEGRATION_METHOD,
+        ts_results = solve_system(
+            system, BeamModelSettings(beam_theory="timoshenko",
+                                      shear_theory=shear_theory,
+                                      integration_method=TIMOSHENKO_INTEGRATION_METHOD),
         )
-
-        for ss in system.shafts:
-            r = ts_library.get_or_none(ss.name)
-            if r is None:
-                continue
-            print(f"    [timoshenko/{shear_theory}] {ss.name:8s} "
-                  f"v_max={r.v_max:7.4f} mm @ x={r.x_v_max:6.1f} mm  "
-                  f"sigma_b_max={r.sigma_b_max:8.2f} MPa @ x={r.x_sigma_b_max:6.1f} mm")
-
+        _print_envelope(f"timoshenko/{shear_theory}", system, ts_results)
         _write_theory_outputs(
-            system, ts_root / shear_theory, ts_library,
+            system, ts_results, ts_root / shear_theory,
             title=f"uniform_shafts/point_load/case_radial_single_position -- radial load, position sweep (timoshenko/{shear_theory})",
         )
 

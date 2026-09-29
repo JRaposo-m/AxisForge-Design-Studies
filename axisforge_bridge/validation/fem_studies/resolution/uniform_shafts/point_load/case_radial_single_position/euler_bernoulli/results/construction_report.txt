@@ -14,37 +14,33 @@ TOPOLOGY / RESOLVED STATE
 SHAFT: shaft1
 ========================================================================
   geometry (1 sections, total_length=200.00 mm):
-    [0] (shaft1) z=[0.0, 200.0] mm  d=20.0 mm  L=200.0 mm  mat=AISI_1045  Ra=0.8 um
+    [0] (shaft1) z=[0.0, 200.0] mm  d=20.0 mm  L=200.0 mm  mat=S355  Ra=0.8 um
 
   bearings (2):
 -- shaft1_ball_locating --------------------
   family      : deep_groove_ball
-  bearing_type: BearingType.DEEP_GROOVE_BALL
-  duty        : radial
   position    : 10.00 mm
   arrangement : locating
   d / D       : 20.0 mm / 42.0 mm
-  b           : 0.0 mm
-  C / C0      : 0 N / 0 N
+  b           : 12.0 mm
+  C (computed): 8353 N
   geometry    : assembled
-  analyses    : ['point_contact']
+  ISO 16281   : off
 --------------------------------------------
 -- shaft1_roller_nonlocating ---------------
   family      : cylindrical_roller
-  bearing_type: BearingType.CYLINDRICAL_ROLLER
-  duty        : radial
   position    : 190.00 mm
   arrangement : non-locating
   d / D       : 20.0 mm / 47.0 mm
   b           : 14.0 mm
-  C / C0      : 28500 N / 22000 N
+  C (computed): 17211 N
   geometry    : assembled
-  analyses    : ['line_contact']
+  ISO 16281   : off
 --------------------------------------------
 
   gears (1):
   -- g_driver (spur, role=driver) --------------------------
-    rotation_dir   : 1
+    rotation_dir   : None
     position       : 100.00 mm
     mn / z / x     : 2.000 mm / 20 / 0.0000
     alpha_n / beta_n: 20.00 deg / 0.00 deg
@@ -73,32 +69,28 @@ SHAFT: shaft1
 SHAFT: shaft2
 ========================================================================
   geometry (1 sections, total_length=200.00 mm):
-    [0] (shaft2) z=[0.0, 200.0] mm  d=20.0 mm  L=200.0 mm  mat=AISI_1045  Ra=0.8 um
+    [0] (shaft2) z=[0.0, 200.0] mm  d=20.0 mm  L=200.0 mm  mat=S355  Ra=0.8 um
 
   bearings (2):
 -- shaft2_ball_locating --------------------
   family      : deep_groove_ball
-  bearing_type: BearingType.DEEP_GROOVE_BALL
-  duty        : radial
   position    : 10.00 mm
   arrangement : locating
   d / D       : 20.0 mm / 42.0 mm
-  b           : 0.0 mm
-  C / C0      : 0 N / 0 N
+  b           : 12.0 mm
+  C (computed): 8353 N
   geometry    : assembled
-  analyses    : ['point_contact']
+  ISO 16281   : off
 --------------------------------------------
 -- shaft2_roller_nonlocating ---------------
   family      : cylindrical_roller
-  bearing_type: BearingType.CYLINDRICAL_ROLLER
-  duty        : radial
   position    : 190.00 mm
   arrangement : non-locating
   d / D       : 20.0 mm / 47.0 mm
   b           : 14.0 mm
-  C / C0      : 28500 N / 22000 N
+  C (computed): 17211 N
   geometry    : assembled
-  analyses    : ['line_contact']
+  ISO 16281   : off
 --------------------------------------------
 
   gears (1):

@@ -19,27 +19,36 @@ SHAFT: shaft_1_system
   bearings (2):
 -- B1_dgb ----------------------------------
   family      : deep_groove_ball
-  bearing_type: None
-  duty        : None
   position    : 20.00 mm
   arrangement : locating
   d / D       : 20.0 mm / 47.0 mm
   b           : 14.0 mm
   C (computed): 9846 N
   geometry    : assembled
-  analyses    : (none enabled)
+  ISO 16281   : on
+    e1        : 2.08e+05
+    e2        : 2.08e+05
+    nu1       : 0.3
+    nu2       : 0.3
+    cp        : 1.469e+05
+    Ri        : 16.91
 --------------------------------------------
 -- B2_roll ---------------------------------
   family      : cylindrical_roller
-  bearing_type: None
-  duty        : None
   position    : 180.00 mm
   arrangement : floating
   d / D       : 40.0 mm / 80.0 mm
   b           : 18.0 mm
   C (computed): 60484 N
   geometry    : assembled
-  analyses    : (none enabled)
+  ISO 16281   : on
+    e1        : 2.08e+05
+    e2        : 2.08e+05
+    nu1       : 0.3
+    nu2       : 0.3
+    cL        : 3.273e+05
+    cs        : 1.091e+04
+    P_xk      : array(30,) min=4.669e-06 max=0.01144
 --------------------------------------------
 
   gears (1):
@@ -68,16 +77,6 @@ SHAFT: shaft_1_system
     [gear_mesh] RadialLoad(position=100.00 mm, F=1061.03 N, theta=90.0°, Fy=0.00 N, Fz=1061.03 N, source='gear_mesh', label='pinion:Ft')
     [gear_mesh] TorqueLoad(position=100.00 mm, T=31.83 N·m, source='gear_mesh', label='pinion:T')
 
-  FEM results (11 nodes, beam theory via solver settings):
-    M_max         : 45165.11 N*mm   @ x=100.00 mm
-    v_max (defl.) : 0.0037 mm     @ x=100.00 mm
-    sigma_b_max   : 7.19 MPa  @ x=100.00 mm
-    tau_max       : 2.53 MPa  @ x=0.00 mm
-    phi_max (twist): 0.000160 rad  @ x=100.00 mm
-    bearing reactions (2):
-      [B1_dgb] x=20.00 mm  Fr=564.56 N  Fa=0.00 N  M_xz=0.00 N*mm  M_xy=0.00 N*mm
-      [B2_roll] x=180.00 mm  Fr=564.56 N  Fa=0.00 N  M_xz=0.00 N*mm  M_xy=0.00 N*mm
-
 ========================================================================
 SHAFT: shaft_2_system
 ========================================================================
@@ -87,27 +86,36 @@ SHAFT: shaft_2_system
   bearings (2):
 -- B3_ang ----------------------------------
   family      : angular_contact
-  bearing_type: None
-  duty        : None
   position    : 30.00 mm
   arrangement : locating
   d / D       : 25.0 mm / 52.0 mm
   b           : 15.0 mm
   C (computed): 9759 N
   geometry    : assembled
-  analyses    : (none enabled)
+  ISO 16281   : on
+    e1        : 2.08e+05
+    e2        : 2.08e+05
+    nu1       : 0.3
+    nu2       : 0.3
+    cp        : 1.43e+05
+    Ri        : 19.39
 --------------------------------------------
 -- B4_roll ---------------------------------
   family      : cylindrical_roller
-  bearing_type: None
-  duty        : None
   position    : 220.00 mm
   arrangement : floating
   d / D       : 50.0 mm / 90.0 mm
   b           : 20.0 mm
   C (computed): 70248 N
   geometry    : assembled
-  analyses    : (none enabled)
+  ISO 16281   : on
+    e1        : 2.08e+05
+    e2        : 2.08e+05
+    nu1       : 0.3
+    nu2       : 0.3
+    cL        : 3.514e+05
+    cs        : 1.171e+04
+    P_xk      : array(30,) min=5.058e-06 max=0.0124
 --------------------------------------------
 
   gears (1):
@@ -134,16 +142,6 @@ SHAFT: shaft_2_system
     [gear_mesh] RadialLoad(position=100.00 mm, F=386.18 N, theta=180.0°, Fy=-386.18 N, Fz=0.00 N, source='gear_mesh', label='wheel:Fr')
     [gear_mesh] RadialLoad(position=100.00 mm, F=1061.03 N, theta=90.0°, Fy=0.00 N, Fz=1061.03 N, source='gear_mesh', label='wheel:Ft')
     [gear_mesh] TorqueLoad(position=100.00 mm, T=-95.49 N·m, source='gear_mesh', label='wheel:T')
-
-  FEM results (11 nodes, beam theory via solver settings):
-    M_max         : 49919.33 N*mm   @ x=100.00 mm
-    v_max (defl.) : 0.0023 mm     @ x=112.50 mm
-    sigma_b_max   : 4.07 MPa  @ x=100.00 mm
-    tau_max       : 3.89 MPa  @ x=100.00 mm
-    phi_max (twist): 0.000295 rad  @ x=250.00 mm
-    bearing reactions (2):
-      [B3_ang] x=30.00 mm  Fr=713.13 N  Fa=0.00 N  M_xz=-0.00 N*mm  M_xy=0.00 N*mm
-      [B4_roll] x=220.00 mm  Fr=415.99 N  Fa=0.00 N  M_xz=0.00 N*mm  M_xy=0.00 N*mm
 
 ========================================================================
 MESHES (1)

@@ -126,6 +126,7 @@ from case_radial_single_position import (  # noqa: E402
     build_system, SHAFT_LENGTH_MM, SHAFT_DIAMETER_MM,
 )
 
+from common.materials import ensure_case_materials  # noqa: E402  (after the case import, which sets up sys.path for axisforge)
 from axisforge.core.loads import LoadPlane  # noqa: E402
 from axisforge.core.materials import get_material  # noqa: E402
 
@@ -136,23 +137,27 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Section / material -- must match what case_radial_single_position.py's
-# own make_shaft_geometry() actually builds. SectionSpec there does NOT
-# pass material_id, so it falls back to SectionSpec's own default
-# ("AISI_1045" -- see fixtures/construction/shafts/shaft_fixture.py).
+# own build_system() actually builds. ShaftSection there does NOT pass
+# material_id, so it falls back to ShaftSection's own default ("S355" --
+# axisforge/core/machine_elements/shaft/shaft.py). The core material
+# registry is empty until common.materials.ensure_case_materials() runs,
+# so it is called here, before the first get_material().
 # Section is solid (no inner_diameter passed), diameter SHAFT_DIAMETER_MM.
 # FLAG: this is currently the one piece of case_radial_single_position.py
 # NOT read back programmatically (unlike geometry/loads/bearings, which
-# all come from build_system() itself) -- if that script's material_id
+# all come from build_system() itself) -- if ShaftSection's default
+# material_id, common/materials.py's S355 values
 # or SHAFT_DIAMETER_MM / hollow-ness ever changes, this constant needs
 # updating by hand to match. Kept a plain constant rather than silently
 # guessed, so a mismatch is a one-line diff to spot, not a hidden bug.
 # ---------------------------------------------------------------------------
-_MATERIAL_ID = "AISI_1045"
+_MATERIAL_ID = "S355"
 
+ensure_case_materials()
 _material = get_material(_MATERIAL_ID)
-E_MPA = _material.E                      # 207 000 MPa
+E_MPA = _material.E                      # 210 000 MPa (S355, common/materials.py)
 NU = _material.poisson_ratio             # 0.3
-G_MPA = E_MPA / (2.0 * (1.0 + NU))       # ~79 615.4 MPa
+G_MPA = E_MPA / (2.0 * (1.0 + NU))       # ~80 769.2 MPa (S355)
 
 _D = SHAFT_DIAMETER_MM
 I_MM4 = 3.141592653589793 / 64.0 * _D**4     # second moment of area, solid circular
@@ -523,7 +528,7 @@ def _run_one_theory(system, kGA: float, theory_label: str, out_dir: Path) -> Non
 
 
 def main() -> None:
-    _construction, system = build_system()
+    system = build_system()   # returns `system` only now (was (construction, system))
 
     print("case_radial_single_position -- analytical (closed-form) solution")
     print(f"  E={E_MPA:.1f} MPa, nu={NU}, G={G_MPA:.2f} MPa, "

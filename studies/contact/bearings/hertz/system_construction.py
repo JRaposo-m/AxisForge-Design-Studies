@@ -21,7 +21,7 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.con
     ISO16281BallSolver, ISO16281RollerSolver,
 )
 
-from axisforge_bridge.construction.outputs.text_report import write_construction_report
+from axisforge_bridge.outputs.construction.text_report import write_construction_report
 
 # --- material: S355 (EN 10025-2), registado manualmente para os veios ---
 try:

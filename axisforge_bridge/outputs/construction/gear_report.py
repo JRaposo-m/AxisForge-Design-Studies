@@ -11,10 +11,6 @@ summary() in core (only loose attributes + validate()). "spur" vs
 core/mechanical_system/parallel_axis/spur_helical/gear_system.py's own
 module docstring defines it: beta_n_deg == 0.0 -> spur, > 0.0 -> helical.
 
-CONTENT ONLY -- this module builds a text block, it does not write any
-file. text_report.py is the single place that assembles every domain's
-blocks into the one combined construction report .txt and writes it.
-
 Dependency (core only, read-only access):
   axisforge.core.machine_elements.gears.parallel_axis.gear_properties.spur_helical_gear
       SpurHelicalGear

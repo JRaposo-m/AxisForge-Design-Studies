@@ -51,7 +51,6 @@ from .shaft_report import shaft_geometry_block
 from .bearing_report import bearing_block
 from .gear_report import gear_block
 from .system_report import topology_block, shaft_system_block, loads_block, mesh_block
-from .fem_report import fem_results_block
 
 RULE = "=" * 72
 SUB = "-" * 72
@@ -136,12 +135,7 @@ def write_construction_report(
         sections.append("")
         sections.append(loads_block(ss))
         sections.append("")
-
-        fem_result = fem_results.get(ss.name)
-        if fem_result is not None:
-            sections.append(fem_results_block(fem_result))
-            sections.append("")
-
+        
     if system.links:
         sections.append(RULE)
         sections.append(f"MESHES ({len(system.links)})")

@@ -12,23 +12,25 @@ analytical/comparison/compare_analytical_case_radial_single_position.py
 not nested under timoshenko/, and diffs against a different reference
 entirely (closed-form, not Abaqus).
 
-Lives inside case_radial_single_position/comparison/, next to the
-comparison/ output it produces and one level below case_radial_single_position.py
-itself. common/paths.py's case_dir() knows this: a script found
-directly inside a folder named "comparison" resolves its case root one
-level further up (see case_dir()'s own docstring) -- so results_dir(),
-abaqus_results_dir() and comparison_dir() all resolve correctly from
-here with no extra arguments needed.
+Lives inside case_radial_single_position/timoshenko/comparison/, next to
+the comparison/ output it produces. common/paths.py's case_dir() knows
+this: a script found directly inside a folder named "comparison"
+resolves its case root one level further up (here timoshenko/, see
+case_dir()'s own docstring) -- so results_dir(), abaqus_results_dir()
+and comparison_dir() all resolve correctly from here with no extra
+arguments needed.
 
 Expected inputs (you provide the abaqus_results/ ones by hand -- see
 abaqus_results/README.md for the exact convention):
 
-  results/
+  timoshenko/results/
       cowper/csv/shaft1_resolution.csv, shaft2_resolution.csv
       hutchinson/csv/shaft1_resolution.csv, shaft2_resolution.csv
-      (already produced by case_radial_single_position.py, one level up)
+      (already produced by case_radial_single_position.py, one level up;
+      the CSVs come from its _write_resolution_csv(), which replaced the
+      old fixtures' resolution_csv.py)
 
-  abaqus_results/
+  timoshenko/abaqus_results/
       shaft1_abaqus.csv, shaft2_abaqus.csv
       (ONE Abaqus export per shaft -- not per shear_theory: the Abaqus
       model's own transverse-shear formulation is a single fixed

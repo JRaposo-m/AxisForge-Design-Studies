@@ -48,6 +48,10 @@ from common.paths import case_dir, results_dir, comparison_dir  # noqa: E402
 from common.compare import compare_shaft, load_abaqus_csv  # noqa: E402
 
 
+# Must match the ShaftSystem names build_system() gives the two shafts in
+# case_radial_single_position.py ("shaft1"/"shaft2"), since both the FEM
+# CSV (<name>_resolution.csv) and the analytical CSV (<name>_analytical.csv)
+# are named after them.
 SHAFT_NAMES = ("shaft1", "shaft2")
 SHEAR_THEORIES = ("cowper", "hutchinson")
 
@@ -64,7 +68,10 @@ SHEAR_THEORIES = ("cowper", "hutchinson")
 # matches the analytical CSV's own column set, which in turn mirrors
 # resolution_csv.py's BENDING & SHEAR / DEFLECTION columns (see that
 # script's own comment on why u_mm/theta_*/T_Nm are NOT included: this
-# closed-form solver only models bending + transverse shear). Every
+# closed-form solver only models bending + transverse shear).
+# The FEM side of every column below is written by _write_resolution_csv()
+# in case_radial_single_position.py (fixtures' resolution_csv.py no
+# longer exists) -- its _CSV_COLUMNS must keep these exact names. Every
 # compare.py column gets its own report table AND its own overlay plot
 # automatically (write_comparison_plots() iterates column_map) -- no
 # separate plotting code needed here for M/V on top of v.
