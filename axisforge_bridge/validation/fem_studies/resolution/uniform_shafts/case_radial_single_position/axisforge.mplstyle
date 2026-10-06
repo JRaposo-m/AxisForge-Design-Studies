@@ -1,0 +1,72 @@
+# AxisForge -- matplotlib style for report figures (PROVISIONAL location).
+# One file decides how every figure looks; plotting functions only pass data.
+# Load with: matplotlib.pyplot.style.use("<path>/axisforge.mplstyle")
+#
+# Sizing: 6.3 in wide = A4 text width (160 mm). Fonts are sized for that
+# width at 100 % scale -- do not rescale figures in the document.
+
+# --- figure / export --------------------------------------------------------
+figure.figsize      : 6.3, 3.4
+figure.dpi          : 110
+figure.constrained_layout.use : True
+savefig.dpi         : 300
+savefig.format      : pdf
+savefig.bbox        : tight
+savefig.pad_inches  : 0.02
+pdf.fonttype        : 42          # embed TrueType -> text stays editable/searchable
+svg.fonttype        : none
+
+# --- typography: serif text + STIX maths (shipped with matplotlib) ---------------
+font.family         : serif
+font.serif          : STIXGeneral, DejaVu Serif
+mathtext.fontset    : stix
+font.size           : 9
+axes.titlesize      : 9
+axes.titleweight    : bold
+axes.titlelocation  : left
+axes.labelsize      : 9
+legend.fontsize     : 8
+xtick.labelsize     : 8
+ytick.labelsize     : 8
+
+# --- colour: validated categorical order (CVD-checked); never cycle past 4 -------
+# 1 blue, 2 orange, 3 aqua, 4 yellow. Slots 3-4 are < 3:1 vs white, so every
+# series also gets its own line style (set per plot) and a legend.
+axes.prop_cycle     : cycler('color', ['2a78d6', 'eb6834', '1baf7a', 'eda100'])
+text.color          : 1f1f1e
+axes.labelcolor     : 1f1f1e
+axes.edgecolor      : 6b6b66
+xtick.color         : 6b6b66
+ytick.color         : 6b6b66
+
+# --- axes: recessive frame and grid -------------------------------------------
+axes.spines.top     : False
+axes.spines.right   : False
+axes.linewidth      : 0.6
+axes.grid           : True
+axes.grid.which     : major
+grid.color          : d9d9d4
+grid.linewidth      : 0.5
+grid.linestyle      : -
+axes.axisbelow      : True
+axes.formatter.use_mathtext : True
+axes.formatter.limits : -3, 4
+xtick.direction     : out
+ytick.direction     : out
+xtick.major.size    : 3
+ytick.major.size    : 3
+xtick.major.width   : 0.6
+ytick.major.width   : 0.6
+xtick.minor.visible : False
+ytick.minor.visible : False
+
+# --- marks -----------------------------------------------------------------
+lines.linewidth     : 1.4
+lines.markersize    : 4
+lines.solid_capstyle: round
+errorbar.capsize    : 2
+
+# --- legend ------------------------------------------------------------------
+legend.frameon      : False
+legend.handlelength : 2.4
+legend.borderaxespad: 0.3
