@@ -1,54 +1,63 @@
 # AxisForge Design Studies
 
-A bridge between [AxisForge](https://github.com/JRaposo-m/AxisForge-Shaft-Bearing-Gear-System-Analysis-Platform) — a deterministic, standards-based CAE engine for shafts, rolling bearings, and parallel-axis gear systems — and [SlipPY](https://github.com/FrictionTribologyEnigma/slippy), a contact mechanics and tribology library. AxisForge builds and solves the mechanical system; SlipPY analyzes local contact and lubrication; this repository is where the two meet.
+The proof that [AxisForge](https://github.com/JRaposo-m/AxisForge-Shaft-Bearing-Gear-System-Analysis-Platform)
+works — a deterministic, standards-based CAE engine for shafts, rolling bearings
+and parallel-axis gear systems — and the place where it is used to answer
+engineering questions, including local contact with
+[SlipPY](https://github.com/FrictionTribologyEnigma/slippy).
 
-Neither AxisForge nor SlipPY is aware that this repository exists. The coupling is unidirectional: `axisforge-design-studies` uses both as libraries, never the other way around.
+Neither AxisForge nor SlipPY knows this repository exists. Every system here is
+built by its own script, directly against the AxisForge API: there is no wrapper
+layer between the reader and the library being proven.
 
-## Architecture
+## Layout
 
 ```
-axisforge_bridge/       Everything that talks to AxisForge
-    construction/          Builds systems (shaft + bearings/gears)
-    extract/               Extracts contact-relevant data from solved results
-    studies/               AxisForge-only studies (e.g. mesh convergence,
-                            solver comparison) — single-side validation,
-                            often an input to a joint study rather than a
-                            final product in its own right
-    validation/            Reference cases and expected results, for
-                            regression testing
-
-slippy_bridge/           Everything that talks to SlipPY
-    build/                 Assembles SlipPY cases per machine element
-                            (bearing_case.py, gear_case.py)
-    (no internal studies/ — validating SlipPY in isolation always requires
-    data originating from AxisForge, so it is, by definition, always a
-    joint study)
-
-results/                 The shape of a joint study's output (contact
-                          pressure, film thickness, later specific film
-                          thickness ratio λ / flash temperature)
-
-studies/                 Joint AxisForge+SlipPY analyses only — the only
-                          layer allowed to depend on axisforge_bridge,
-                          slippy_bridge, and results (see the full law in
-                          the vault, 00_Master/WIRING.md)
-    <domain>/contract.py    The neutral dataclass linking the two bridges,
-                            specific to each study domain (e.g.
-                            studies/contact/contract.py) — not a
-                            repository-wide contract
+references/     closed-form solutions — the independent judges (beams; Hertz, planned)
+validation/     AxisForge vs a known answer, criteria fixed before running
+    _support/     reports, figures, convergence adapters — for the validation cases only
+    shafts/  bearings/  gears/
+examples/       the libraries being used, no acceptance criterion (slippy/)
+studies/        engineering questions: shafts/ bearings/ gears/ systems/ contact/
+style/          axisforge.mplstyle — the one report style
+tests/          imports + regression of the validation cases
+artifacts/      (git-ignored) everything a script generates, mirroring its path
 ```
 
-Decided on 2026-09-18/19 — see `40_ADR/ADR-001_folder_organization.md` in
-this repository's Obsidian vault for the full reasoning behind each
-decision.
+**validation vs studies.** If the answer is known (a closed form, a standard's
+worked example, a textbook example), it is validation. If it is an open question,
+it is a study. **examples** teach how a library is driven.
 
-## Current status (2026-09-19)
+**Inside a case or study folder:** a README (objective, AxisForge commit,
+criteria, files, result), an optional `construction.py` that returns the system
+**not solved**, and scripts numbered by stage (`01_…`, `02_…`). Construction is
+never shared between folders.
 
-- `axisforge_bridge/construction/` and `axisforge_bridge/studies/01_shaft_static_analysis/` — built, with cross-validation against Abaqus for shaft FEM (Euler-Bernoulli and Timoshenko, point and distributed loads).
-- `axisforge_bridge/validation/` — migration in progress, moving the FEM convergence/comparison content into this more definitive form (reference cases + `results_library`).
-- `axisforge_bridge/studies/{02_deep_groove_bearing_life,03_helical_gearbox_drivetrain}` — not yet built.
-- `slippy_bridge/` — empty. Nothing has been written on the SlipPY side yet.
-- `results/` and `studies/` (top level) — not yet created. The first real content under `studies/` will be the spike described in the architecture doc: a single bearing, a single contact point, data extracted "raw" from AxisForge and fed into SlipPY.
+## Dependency rules
+
+| Folder | May import from this repository |
+|---|---|
+| `references` | nothing |
+| `validation/<case>` | `references`, `validation._support`, its own files |
+| `examples/<topic>` | `references`, its own files |
+| `studies/<study>` | `references`, its own files |
+
+No case or study imports another. Checked on every vault sync
+(`tools/vault_sync.py`) in the `axisforge-design-studies` vault.
+
+## Coverage — what is proven, and where
+
+| AxisForge capability | Validation | Studies |
+|---|---|---|
+| Shaft FEM, Euler–Bernoulli / Timoshenko, point loads | `validation/shafts/fem_uniform_radial_load` | `studies/shafts/slenderness_eb_vs_timoshenko` (planned) |
+| Shaft FEM, stepped sections, distributed loads | `validation/shafts/fem_stepped_distributed_gear` | — |
+| Mesh convergence (GCI) | both shaft cases, notebook 02 (verification) | — |
+| Fatigue | — | `studies/shafts/stepped_fatigue_fillet` (planned) |
+| Bearings — ISO 281 life | `validation/bearings/iso281_catalogue_life` (planned) | — |
+| Bearings — ISO/TS 16281 load distribution | `validation/bearings/iso16281_harris_examples` (planned) | `studies/bearings/clearance_load_distribution` (planned) |
+| Gears — ISO 6336 | `validation/gears/iso6336_tr30_examples` (planned) | `studies/gears/khbeta_shaft_deflection` (planned) |
+| System — hyperstatic shafts | — | `studies/systems/hyperstatic_reactions_vs_bearing_stiffness` (planned) |
+| Contact data for SlipPY (ADR-002) | — | `studies/contact/ball_on_raceway` (planned) |
 
 ## Setup
 
@@ -58,13 +67,35 @@ git clone <this-repo-url> axisforge-design-studies
 cd axisforge-design-studies
 pip install -r requirements.txt
 pip install -e ../axisforge
+pip install -e .                      # references/ and validation/_support/
+pip install -e <slippy repo>          # only for examples/slippy and studies/contact
 ```
+
+Check:
+
+```bash
+pytest                                            # imports + regression of the validation cases
+pytest --doctest-modules references validation/_support
+```
+
+Run a case or study from its own folder (its scripts import `construction` as a
+sibling module).
+
+## Notebooks
+
+The `.ipynb` files are paired with `.py` (jupytext `py:percent`). Edit either;
+jupytext keeps them in sync. The `.py` is the one to review in diffs.
+
+## History
+
+- 2026-09-18/19 — repository created with two bridges (`axisforge_bridge`, `slippy_bridge`).
+- 2026-10-06 (morning) — bridges reorganised (`common/`, shared construction helpers).
+- 2026-10-06 (evening) — bridges removed: a repository of validation cases,
+  examples and studies, each building its own system. Reasoning in the project
+  doc `design_studies_architecture_next_steps.md` (addendum 2026-10-06, part 2).
 
 ## Vault
 
-This repository has an Obsidian vault, a sibling to the ones for AxisForge
-(`axisforge-agents/vault`) and SlipPY (`slippy-study/vault`), located at
-`axisforge-design-studies/` inside `Projeto_Universidade` — generated by
-the same three tools (`vault_sync.py`, `mindmap_gen.py`,
-`dependency_cascade_gen.py`), with the layer law adapted to this
-repository. See `README_SETUP.md` there for the bootstrap instructions.
+Obsidian vault at `Projeto_Universidade/axisforge-design-studies/vault`, a sibling
+of the AxisForge and SlipPY vaults, generated by the same tools. See
+`README_SETUP.md` there.

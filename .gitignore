@@ -7,11 +7,13 @@ venv/
 .dat
 .json
 .ipynb_checkpoints/
+.pytest_cache/
 .DS_Store
 *.egg-info/
 build/
 dist/
 
-# generated per-run reports outside sample_outputs/ (that folder is checked in on purpose)
-/studies/**/report.txt
-/studies/**/results.csv
+# Everything a study or a validation run generates (figures, tables, reports)
+# goes here, mirroring the path of the code that produced it. Never next to
+# the code.
+/artifacts/

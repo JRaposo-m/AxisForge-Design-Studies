@@ -4,15 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "axisforge-design-studies"
-version = "0.1.0"
-description = "Bridge and validation studies between AxisForge and SlipPY"
+version = "0.3.0"
+description = "Validation cases, examples and engineering studies built on AxisForge (and SlipPY)"
 requires-python = ">=3.12"
 dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
-    "pytest",
+    "pandas",
+    "ipython",
 ]
+# axisforge and slippy are NOT listed: neither is on PyPI. Install both
+# separately with `pip install -e <repo>` (see README.md#setup).
 
+[project.optional-dependencies]
+dev = ["pytest", "jupytext"]
+
+# Only the shared code is a package. Case and study folders are not: each
+# script imports its own construction.py as a sibling module.
 [tool.setuptools.packages.find]
-include = ["axisforge_bridge*", "slippy_bridge*"]
+include = ["references*", "validation", "validation._support*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-q --import-mode=importlib"
