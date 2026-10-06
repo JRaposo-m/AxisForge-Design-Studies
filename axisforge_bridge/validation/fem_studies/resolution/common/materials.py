@@ -1,16 +1,5 @@
 """
 validation/fem_studies/resolution/common/materials.py
-
-Registers the materials this suite needs in the core material registry
-(axisforge.core.materials.base). That registry is empty until something
-calls register(), and Elem.from_mesh()/TorsionSolver look every section's
-material_id up in it (KeyError "Material 'S355' not found. Available: ").
-
-Values are the old core/materials.py S355 (Shigley-based library):
-E = 210 GPa, nu = 0.3 (that library's default), rho = 7850 kg/m^3,
-Sut = 590 MPa, Sy = 355 MPa. The FEM solve only reads E and nu.
-
-Idempotent: safe to call from every case script / from build_system().
 """
 from __future__ import annotations
 
