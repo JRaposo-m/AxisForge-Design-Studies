@@ -1,0 +1,49 @@
+section,parameter,value,unit
+gear stage,power,10471.9755,W
+gear stage,driving shaft torque,99.99999988573335,N m
+gear stage,speed shaft_1,1000.0,rpm
+gear stage,speed shaft_2,500.0,rpm
+gear stage,normal module,2.0,mm
+gear stage,teeth driver / driven,20 / 40,
+gear stage,face width,15.0,mm
+gear stage,helix angle,0.0,deg
+gear stage,gear position,100.0,mm
+gear stage,line of centres angle,0.0,deg
+shafts (both identical),section 1 bearing_seat_A,"L = 20, d = 20",mm
+shafts (both identical),section 2 body_left,"L = 65, d = 28",mm
+shafts (both identical),section 3 gear_seat,"L = 30, d = 25",mm
+shafts (both identical),section 4 body_right,"L = 65, d = 28",mm
+shafts (both identical),section 5 bearing_seat_B,"L = 20, d = 20",mm
+shafts (both identical),shoulder fillet radius,1.0,mm
+shafts (both identical),total length,200.0,mm
+materials,shaft,S355,
+materials,shaft E,210000.0,MPa
+materials,shaft poisson ratio,0.3,
+materials,bearing,GCr15,
+materials,bearing E,210000.0,MPa
+materials,bearing poisson ratio,0.3,
+materials,gear,C45,
+materials,gear E,210000.0,MPa
+materials,gear poisson ratio,0.3,
+"bearing 1 (locating, under study)",type,DeepGrooveSpec,
+"bearing 1 (locating, under study)",position,10.0,mm
+"bearing 1 (locating, under study)",d_mm,20.0,mm
+"bearing 1 (locating, under study)",D_mm,42.0,mm
+"bearing 1 (locating, under study)",b_mm,12.0,mm
+"bearing 1 (locating, under study)",designation,deep_groove_didactic,
+"bearing 1 (locating, under study)",s,0.01,mm
+"bearing 1 (locating, under study)",Dw,7.0,mm
+"bearing 1 (locating, under study)",Dpw,31.0,mm
+"bearing 1 (locating, under study)",Z,9,
+"bearing 2 (non-locating, partner)",type,CylindricalRollerSpec,
+"bearing 2 (non-locating, partner)",position,190.0,mm
+"bearing 2 (non-locating, partner)",d_mm,20.0,mm
+"bearing 2 (non-locating, partner)",D_mm,42.0,mm
+"bearing 2 (non-locating, partner)",b_mm,12.0,mm
+"bearing 2 (non-locating, partner)",designation,cylindrical_roller_didactic,
+"bearing 2 (non-locating, partner)",s,0.01,mm
+"bearing 2 (non-locating, partner)",Dwe,5.0,mm
+"bearing 2 (non-locating, partner)",Lwe,5.0,mm
+"bearing 2 (non-locating, partner)",Dpw,31.0,mm
+"bearing 2 (non-locating, partner)",Z,14,
+"bearing 2 (non-locating, partner)",n_s,50,
