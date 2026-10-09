@@ -1,5 +1,5 @@
 Data check started at:
-23:54:57 09-10-2026
+00:17:56 10-10-2026
 Checking model roller_raceway_two_profiles_N256:
 Checking step: load
 Checking sub models for step load
@@ -8,7 +8,7 @@ Solving model roller_raceway_two_profiles_N256, CUDA = False
 Solving step Initial
 Solving step load
 Solving contact by PK method
-Inserting height: 7.764008858555892e-07, total_load: 3.6470270026960474 into cache, len = 2
+Inserting height: 7.438644766277511e-07, total_load: 1.8235135013480237 into cache, len = 2
 ## Solving sub models
 Writing outputs
-Analysis completed successfully at: 23:54:57 09-10-2026
+Analysis completed successfully at: 00:17:56 10-10-2026

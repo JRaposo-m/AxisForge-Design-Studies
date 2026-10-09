@@ -12,10 +12,10 @@ GRID
 
 NUMERICAL (SlipPy)
             n       a [mm]       b [mm]     p0 [MPa]   delta [um]     load [N]    converged     time [s]
-           64      0.05015          inf       654.76       0.8287       7.2941         True         0.26
-          128      0.04787          inf       655.76       0.7765       3.6470         True         0.39
+           64      0.05015          inf       654.76       0.8287       7.2941         True         0.28
+          128      0.04787          inf       655.76       0.7765       3.6470         True         0.38
           256      0.04901          inf       655.48       0.7439       1.8235         True         0.53
-          512      0.04844          inf       655.54       0.7247       0.9118         True         0.78
+          512      0.04844          inf       655.54       0.7247       0.9118         True         0.75
 
 RELATIVE ERROR vs HERTZ [%]  (numerical - Hertz) / Hertz
             n            a            b           p0        delta         load
