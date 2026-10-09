@@ -1,0 +1,14 @@
+Data check started at:
+00:13:39 10-10-2026
+Checking model ball_raceway_two_profiles_N1024:
+Checking step: load
+Checking sub models for step load
+Checking outputs for step load
+Solving model ball_raceway_two_profiles_N1024, CUDA = False
+Solving step Initial
+Solving step load
+Solving contact by PK method
+Inserting height: 6.141857015560571e-06, total_load: 500.0 into cache, len = 2
+## Solving sub models
+Writing outputs
+Analysis completed successfully at: 00:13:51 10-10-2026

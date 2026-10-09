@@ -1,0 +1,27 @@
+ball_flat / reference   case_hash 9ccc2ddabd085997
+
+HERTZ (analytic, hertz_full)
+  a = 0.27430 mm   b = 0.27430 mm   p0 = 3173.02 MPa   delta = 11.8485 um   load = 500 N
+
+GRID
+            n       h [um]  extent [mm]  nodes in 2b    apex off.
+           64       51.430       3.2915         10.7          0.0
+          128       25.715       3.2915         21.3          0.0
+          256       12.858       3.2915         42.7          0.0
+          512        6.429       3.2915         85.3          0.0
+
+NUMERICAL (SlipPy)
+            n       a [mm]       b [mm]     p0 [MPa]   delta [um]     load [N]    converged     time [s]
+           64      0.28287      0.28287      3173.13      11.7632     500.0000         True         0.47
+          128      0.27001      0.27001      3175.25      11.7730     500.0000         True         0.88
+          256      0.27644      0.27644      3173.79      11.7721     500.0000         True         2.12
+          512      0.27322      0.27322      3173.87      11.7723     500.0000         True         5.45
+
+RELATIVE ERROR vs HERTZ [%]  (numerical - Hertz) / Hertz
+            n            a            b           p0        delta         load
+           64       +3.125       +3.125       +0.003       -0.720       +0.000
+          128       -1.562       -1.562       +0.070       -0.638       -0.000
+          256       +0.781       +0.781       +0.024       -0.645       +0.000
+          512       -0.391       -0.391       +0.027       -0.643       +0.000
+
+a, b: half-extent of the loaded nodes (resolution = one node); a >= b.

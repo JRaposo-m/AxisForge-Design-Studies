@@ -23,7 +23,7 @@ REPORT_FILE = "report.txt"
 SYSTEM_FILE = "system.csv"
 FEM_FILE = "fem_bearing_nodes.csv"
 FEM_SUMMARY_FILE = "fem_shaft_summary.csv"
-SYSTEM_TEXT_FILE = "system.txt"
+FEM_MESH_FILE = "fem_mesh_nodes.csv"
 ANALYSIS_FILE = "analysis_reference.txt"
 ROWS_FILE = "iso16281_rows.csv"
 Q_FILE = "iso16281_elements.csv"
@@ -47,11 +47,11 @@ class StudyData:
     system_rows: list of dict
         {section, parameter, value, unit} of the system.
     system_text: str
-        The complete description of the system as AxisForge prints it (system.txt).
-    system_summary: str
-        The short description for report.txt.
+        The short description of the system for report.txt (``axisforge.outputs``).
     fem_summary_rows: list of dict
         Maxima of the shaft FEM result, one per (power, shaft).
+    fem_mesh_rows: list of dict
+        The shaft FEM at every mesh node, one per (power, shaft, node).
     fem_rows: list of dict
         Bearing-node results of the shaft FEM, one per (power, shaft, node).
     analysis_text: str
@@ -64,7 +64,7 @@ class StudyData:
     meta: dict
     system_rows: list[dict] = field(default_factory=list)
     system_text: str = ""
-    system_summary: str = ""
+    fem_mesh_rows: list[dict] = field(default_factory=list)
     fem_summary_rows: list[dict] = field(default_factory=list)
     fem_rows: list[dict] = field(default_factory=list)
     analysis_text: str = ""
@@ -158,7 +158,7 @@ def write_results(results_dir: Path, data: StudyData, *, row_fields, q_fields, l
                                 ["section", "parameter", "value", "unit"])
     af_format.write_records_csv(results_dir / FEM_FILE, data.fem_rows)
     af_format.write_records_csv(results_dir / FEM_SUMMARY_FILE, data.fem_summary_rows)
-    (results_dir / SYSTEM_TEXT_FILE).write_text(data.system_text + "\n", encoding="utf-8")
+    af_format.write_records_csv(results_dir / FEM_MESH_FILE, data.fem_mesh_rows)
     (results_dir / ANALYSIS_FILE).write_text(
         "AxisForge result of the first point of the sweep, first shaft:\n\n"
         + data.analysis_text + "\n", encoding="utf-8")
@@ -205,7 +205,8 @@ def read_results(results_dir: Path) -> StudyData:
                      lam_rows=_read_csv(results_dir / LAMINA_FILE), meta=meta,
                      system_rows=_read_csv(results_dir / SYSTEM_FILE),
                      fem_rows=_read_csv(results_dir / FEM_FILE),
-                     fem_summary_rows=_read_csv(results_dir / FEM_SUMMARY_FILE))
+                     fem_summary_rows=_read_csv(results_dir / FEM_SUMMARY_FILE),
+                     fem_mesh_rows=_read_csv(results_dir / FEM_MESH_FILE))
 
 
 def check_compatible(datasets: dict[str, StudyData], same_axes: bool = True) -> None:

@@ -6,16 +6,17 @@ Files
 report.txt              the report to read, in five short sections:
                           1 RUN INFORMATION   what produced the results (also read by compare
                                               and by the regression tests: do not edit)
-                          2 SYSTEM            gear stage, bearings, loads (summary)
-                          3 SHAFT FEM         bearing-node reactions and slopes, shaft maxima
-                          4 ISO/TS 16281      one line per point and shaft, then the element
-                                              loads of the reference shaft
+                          2 CONSTRUCTION      what was built: gear stage, shafts, bearings, loads
+                          3 SOLVER: SHAFT FEM what the shaft FEM returned: bearing nodes, maxima
+                                              and the values at every mesh node
+                          4 SOLVER: ISO/TS 16281  one line per point and shaft, then the
+                                              element loads of the reference shaft
                           5 CHECKS            convergence, equilibrium, symmetry, errors
-system.txt              the complete description of the system, as AxisForge prints it
 analysis_reference.txt  AxisForge's own result text for the first point of the sweep
 system.csv              section, parameter, value, unit
 fem_bearing_nodes.csv   one row per (power, shaft, bearing node), every numeric node field
 fem_shaft_summary.csv   one row per (power, shaft): maxima of the shaft FEM result
+fem_mesh_nodes.csv      one row per (power, shaft, mesh node): the FEM along the shaft
 iso16281_rows.csv       one row per (point, shaft): see rows.py
 iso16281_elements.csv   rolling-element loads Q_j
 iso16281_laminae.csv    lamina loads of the most loaded roller (line contact only)
@@ -33,9 +34,6 @@ import math
 from datetime import datetime, timezone
 
 from axisforge.outputs import _format as af_format
-from axisforge.outputs.construction import bearings as af_bearings
-from axisforge.outputs.construction import loads as af_loads
-from axisforge.outputs.construction import shaft as af_shaft
 from axisforge.outputs.construction import system as af_system
 from axisforge.outputs.solvers.fem_results import shaft_results as af_shaft_results
 
@@ -71,8 +69,9 @@ def describe_system(spec, system, study_slot: str = "") -> tuple[list[dict], str
         gear system, every shaft, gear, bearing and load, followed by the role of each bearing
         in this study and the materials passed to the build.
     text: str
-        The study rows (role of each bearing, materials passed to the build) followed by the
-        description as AxisForge prints it (``system_text``).
+        The role of each bearing followed by the short description of AxisForge
+        (``system_text``), for report.txt. The materials passed to the build are in ``rows``
+        (system.csv) only.
     """
     rows = af_system.system_records(system, power_W=spec.power_W)
 
@@ -89,7 +88,8 @@ def describe_system(spec, system, study_slot: str = "") -> tuple[list[dict], str
         study.append(af_format.kv_record(section, f"{role} E", data["E"], "MPa"))
         study.append(af_format.kv_record(section, f"{role} poisson ratio", data["poisson"]))
 
-    text = (af_format.format_key_values(study) + "\n\n"
+    roles = [r for r in study if r["section"] == "study"]
+    text = (af_format.format_key_values(roles) + "\n\n"
             + af_system.system_text(system, power_W=spec.power_W))
     return rows + study, text
 
@@ -119,73 +119,6 @@ def fem_node_rows(power_W: float, fem: dict) -> list[dict]:
     return rows
 
 
-def summarize_system(spec, system, study_slot: str = "") -> str:
-    """The short description of the system for report.txt.
-
-    Parameters
-    ----------
-    spec: SystemSpec
-        The system specification (nominal power).
-    system: SpurHelicalGearSystem
-        The built system, after ``resolve``.
-    study_slot: str
-        Arrangement of the bearing under study.
-
-    Returns
-    -------
-    text: str
-        The role of each bearing, the gear stage (power, torque, speeds, gears, mesh), the
-        shaft sections and shoulders, the bearings table, and the loads on each shaft. The
-        complete text is ``describe_system`` (system.txt).
-    """
-    af_f = af_format
-    shafts = list(system.shafts)
-    first = shafts[0]
-    out = []
-
-    roles = [af_f.kv_record("bearings of the shaft", f"{b.label} ({b.arrangement})",
-                            "under study" if b.arrangement == study_slot else "partner")
-             for b in first.bearings]
-    out.append(af_f.format_key_values(roles))
-
-    stage = [af_f.kv_record("gear stage", "power", spec.power_W, "W")]
-    for ss in shafts:
-        stage.append(af_f.kv_record("gear stage", f"speed {ss.name}", ss.speed_rpm, "rpm"))
-    records = af_system.system_records(system, power_W=spec.power_W)
-    keep = {"torque of the source shaft", "line of centres angle phi", "gear ratio u",
-            "reference centre distance a", "transverse contact ratio", "overlap ratio",
-            "normal module mn", "number of teeth z", "face width b", "helix angle beta",
-            "normal pressure angle alpha_n", "reference diameter d", "material"}
-    stage += [r for r in records
-              if r["parameter"] in keep and r["section"] != "materials passed to the build"
-              and (r["section"].startswith(("mesh ", "gear ")) or r["section"] == "gear system")]
-    out.append(af_f.format_key_values(stage))
-
-    sections = [af_shaft.section_records(ss) for ss in shafts]
-    shoulders = [af_shaft.shoulder_records(ss) for ss in shafts]
-
-    def strip(rows):
-        return [{k: v for k, v in r.items() if k != "shaft"} for r in rows]
-
-    same = all(strip(sections[0]) == strip(x) for x in sections[1:])
-    names = first.name if same is False or len(shafts) == 1 else " = ".join(s.name for s in shafts)
-    for ss, sec, sho in zip(shafts, sections, shoulders):
-        if same and ss is not first:
-            break
-        title = names if same else ss.name
-        out.append(f"Shaft {title} (length {ss.shaft.total_length:g} mm):\n"
-                   + af_f.format_table(af_shaft.SECTION_COLUMNS, sec, indent=2)
-                   + ("\n\n" + af_f.format_table(af_shaft.SHOULDER_COLUMNS, sho, indent=2)
-                      if sho else ""))
-
-    out.append("Bearings of the shaft:\n" + af_bearings.bearings_table_text(first.bearings, 2)
-               + ("\n  (identical on " + ", ".join(s.name for s in shafts[1:]) + ")"
-                  if len(shafts) > 1 else ""))
-    for ss in shafts:
-        out.append(af_loads.loads_text(ss))
-    return "\n\n".join(out)
-
-
 def fem_summary_rows(power_W: float, fem: dict) -> list[dict]:
     """Maxima of the shaft FEM result at one power.
 
@@ -204,6 +137,28 @@ def fem_summary_rows(power_W: float, fem: dict) -> list[dict]:
     """
     return [dict(power_W=power_W, **af_shaft_results.shaft_summary_record(results, name))
             for name, results in fem.items()]
+
+
+def fem_mesh_rows(power_W: float, fem: dict) -> list[dict]:
+    """Values of the shaft FEM at every mesh node.
+
+    Parameters
+    ----------
+    power_W: float
+        Power of this FEM solve [W].
+    fem: dict
+        {shaft name: ShaftResults}.
+
+    Returns
+    -------
+    rows: list of dict
+        One per (shaft, mesh node): ``power_W`` followed by ``axisforge.outputs``
+        ``mesh_node_records`` (position, diameter, moment, shear force, torque, deflection,
+        rotations, twist and stresses).
+    """
+    return [dict(power_W=power_W, **record)
+            for name, results in fem.items()
+            for record in af_shaft_results.mesh_node_records(results, name)]
 
 
 def union_fields(rows: list[dict]) -> list[str]:
@@ -326,23 +281,31 @@ def build_report(data, axis_names, type_name: str) -> str:
         lines.append(f"  {key} = {json.dumps(value, sort_keys=True)}")
     lines.append("")
 
-    # 2 system (summary; the complete description is system.txt)
-    lines += _title("2  SYSTEM (summary; complete description in system.txt)")
-    lines.append(data.system_summary if data.system_summary
+    # 2 construction
+    lines += _title("2  CONSTRUCTION - what was built")
+    lines.append(data.system_text if data.system_text
                  else af_format.format_key_values(data.system_rows))
 
-    # 3 FEM
-    lines += _title("3  SHAFT FEM (rigid supports)")
-    lines += ["Bearing nodes: reactions and slopes (every node field is in fem_bearing_nodes.csv). "
-              "One solve per power.", ""]
+    # 3 solver: shaft FEM
+    lines += _title("3  SOLVER - SHAFT FEM (rigid supports)")
+    lines += ["Bearing nodes: reactions and slopes. One solve per power.", ""]
     lines.append(af_shaft_results.bearing_nodes_table_text(data.fem_rows)
                  if data.fem_rows else "(no bearing-node data)")
     if data.fem_summary_rows:
-        lines += ["", "Shaft maxima (units assumed N, mm, MPa; see fem_shaft_summary.csv):", "",
+        lines += ["", "Maxima along each shaft (units assumed N, mm, MPa):", "",
                   af_shaft_results.shaft_summary_table_text(data.fem_summary_rows)]
+    if data.fem_mesh_rows:
+        nominal = meta.get("power_W", data.fem_mesh_rows[0]["power_W"])
+        at_nominal = [r for r in data.fem_mesh_rows if abs(r["power_W"] - nominal) <= 1e-9 * max(
+            1.0, abs(nominal))] or data.fem_mesh_rows
+        for shaft in dict.fromkeys(r["shaft"] for r in at_nominal):
+            rows = [r for r in at_nominal if r["shaft"] == shaft]
+            lines += ["", f"Along {shaft} at P = {rows[0]['power_W']:.1f} W, one line per mesh "
+                          "node (all powers in fem_mesh_nodes.csv):", "",
+                      af_shaft_results.mesh_nodes_table_text(rows)]
 
     # 4 ISO/TS 16281
-    lines += _title("4  ISO/TS 16281 LOAD DISTRIBUTION - bearing under study")
+    lines += _title("4  SOLVER - ISO/TS 16281 LOAD DISTRIBUTION (bearing under study)")
     lines.append("Displacements in um and stiffness in N/um in this table (mm and N/mm in the CSV).")
     columns = [(a, a, ".6g") for a in axis_names]
     columns += [c for c in ISO_COLUMNS if c[0] not in axis_names and _has_values(data.rows, c[0])]

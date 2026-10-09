@@ -1,0 +1,14 @@
+Data check started at:
+16:30:51 09-10-2026
+Checking model ball_flat_composite_N512:
+Checking step: load
+Checking sub models for step load
+Checking outputs for step load
+Solving model ball_flat_composite_N512, CUDA = False
+Solving step Initial
+Solving step load
+Solving contact by PK method
+Inserting height: 1.1772299391270873e-05, total_load: 500.0 into cache, len = 2
+## Solving sub models
+Writing outputs
+Analysis completed successfully at: 16:30:54 09-10-2026

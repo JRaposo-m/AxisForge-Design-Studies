@@ -1,5 +1,5 @@
 AxisForge design studies - bearings / load_distribution / clearance_and_alpha / cylindrical_roller
-Generated 2026-10-09T10:06:24+00:00
+Generated 2026-10-09T10:14:34+00:00
 
 ====================================================================================================
 1  RUN INFORMATION
@@ -17,15 +17,15 @@ Generated 2026-10-09T10:06:24+00:00
   system = {"helix_angle_deg": 0.0, "locating": {"D_mm": 42.0, "Dpw": 31.0, "Dw": 7.0, "Z": 9, "arrangement": "locating", "b_mm": 12.0, "d_mm": 20.0, "designation": "deep_groove_didactic", "kind": "ball", "s": 0.01, "spec": "DeepGrooveSpec"}, "non_locating": {"D_mm": 42.0, "Dpw": 31.0, "Dwe": 5.0, "Lwe": 5.0, "Z": 14, "arrangement": "non-locating", "b_mm": 12.0, "d_mm": 20.0, "designation": "cylindrical_roller_didactic", "kind": "roller", "n_s": 50, "s": 0.01, "spec": "CylindricalRollerSpec"}, "power_W": 10471.9755}
   axisforge_version = "0.1.0"
   parameter_hash = "effb18ce55cad7f6"
-  created_utc = "2026-10-09T10:06:24+00:00"
+  created_utc = "2026-10-09T10:14:34+00:00"
 
 
 ====================================================================================================
-2  SYSTEM (summary; complete description in system.txt)
+2  CONSTRUCTION - what was built
 ====================================================================================================
-bearings of the shaft:
-    shaft_1_ball_bearing_1 (locating)             partner
-    shaft_1_roller_bearing_2 (non-locating)        under study
+study:
+    bearing shaft_1_ball_bearing_1 (locating)            partner
+    bearing shaft_1_roller_bearing_2 (non-locating)        under study
 
 gear stage:
     power                                           10472  W
@@ -92,12 +92,12 @@ Shaft shaft_2 (length 200 mm):
    115.0          25.0          28.0           1.00
    180.0          20.0          28.0           1.00
 
-Bearings of the shaft:
+Bearings of shaft_1:
                    bearing              family   arrangement  x [mm]  d [mm]  D [mm]  b [mm]   Z  Dw/Dwe [mm]  Lwe [mm]  Dpw [mm]  s [mm]  alpha0 [deg]  C [N]
   ------------------------  ------------------  ------------  ------  ------  ------  ------  --  -----------  --------  --------  ------  ------------  -----
     shaft_1_ball_bearing_1    deep_groove_ball      locating    10.0    20.0    42.0    12.0   9        7.000         -     31.00  0.0100         10.84   8447
   shaft_1_roller_bearing_2  cylindrical_roller  non-locating   190.0    20.0    42.0    12.0  14        5.000     5.000     31.00  0.0100          0.00  12618
-  (identical on shaft_2)
+  (same bearings on shaft_2)
 
 Loads on shaft_1:
     TorqueLoad(position=0.00 mm, T=-100.00 N·m, source='gear_mesh', label='shaft_1:T_in')
@@ -112,9 +112,9 @@ Loads on shaft_2:
     TorqueLoad(position=200.00 mm, T=200.00 N·m, source='user', label='output_coupling')
 
 ====================================================================================================
-3  SHAFT FEM (rigid supports)
+3  SOLVER - SHAFT FEM (rigid supports)
 ====================================================================================================
-Bearing nodes: reactions and slopes (every node field is in fem_bearing_nodes.csv). One solve per power.
+Bearing nodes: reactions and slopes. One solve per power.
 
   P [W]    shaft              bearing node  x [mm]   Fr [N]  Fr_xz [N]  Fr_xy [N]  Fa [N]  psi_xz [rad]  psi_xz [mrad]  psi_xy [rad]  psi_xy [mrad]
 -------  -------  ------------------------  ------  -------  ---------  ---------  ------  ------------  -------------  ------------  -------------
@@ -123,15 +123,55 @@ Bearing nodes: reactions and slopes (every node field is in fem_bearing_nodes.cs
 10472.0  shaft_2    shaft_2_ball_bearing_1    10.0  2660.44   -2500.00     909.93    0.00    1.9341e-03         1.9341   -7.0395e-04        -0.7039
 10472.0  shaft_2  shaft_2_roller_bearing_2   190.0  2660.44   -2500.00     909.93    0.00   -1.9341e-03        -1.9341    7.0395e-04         0.7039
 
-Shaft maxima (units assumed N, mm, MPa; see fem_shaft_summary.csv):
+Maxima along each shaft (units assumed N, mm, MPa):
 
   P [W]    shaft  mesh nodes  M_max [N m]  at x [mm]  v_max [mm]  at x [mm]  sigma_b [MPa]  at x [mm]  tau [MPa]  at x [mm]  phi_max [mrad]  at x [mm]
 -------  -------  ----------  -----------  ---------  ----------  ---------  -------------  ---------  ---------  ---------  --------------  ---------
 10472.0  shaft_1          15       229.46      100.0     0.12363      100.0         149.59      100.0      63.66        0.0          3.3943      100.0
 10472.0  shaft_2          15       229.46      107.5     0.12363      100.0         149.59      107.5     127.32      180.0          6.7886      200.0
 
+Along shaft_1 at P = 10472.0 W, one line per mesh node (all powers in fem_mesh_nodes.csv):
+
+x [mm]  d [mm]  M [N m]   V [N]  T [N m]   v [mm]   u [mm]  theta_xz [mrad]  theta_xy [mrad]  twist [mrad]  sigma_b [MPa]  tau [MPa]
+------  ------  -------  ------  -------  -------  -------  ---------------  ---------------  ------------  -------------  ---------
+   0.0    20.0     0.00     0.0    -0.10  0.02058  0.00000           1.9341           0.7039        0.0000           0.00     -63.66
+   4.0    20.0     0.00     0.0    -0.10  0.01235  0.00000           1.9341           0.7039       -0.3153           0.00     -63.66
+  10.0    20.0     0.00     0.0    -0.10  0.00000  0.00000           1.9341           0.7039       -0.7882           0.00     -63.66
+  16.0    20.0     7.98  2660.4    -0.10  0.01297  0.00000           1.9068           0.6940       -1.2611          10.16     -63.66
+  20.0    28.0    21.28  2660.4    -0.10  0.02146  0.00000           1.8583           0.6764       -1.5764           9.88     -23.20
+  85.0    25.0   113.07  2660.4    -0.10  0.11622  0.00000           0.7683           0.2796       -2.9100          73.71     -32.59
+  92.5    25.0   209.51  2660.4    -0.10  0.12146  0.00000           0.4016           0.1462       -3.1522         136.58     -32.59
+ 100.0    25.0   229.46  2660.4     0.00  0.12363  0.00000          -0.0000          -0.0000       -3.3943         149.59       0.00
+ 107.5    25.0   229.46  2660.4     0.00  0.12146  0.00000          -0.4016          -0.1462       -3.3943         149.59       0.00
+ 115.0    28.0   209.51  2660.4     0.00  0.11622  0.00000          -0.7683          -0.2796       -3.3943          97.21       0.00
+ 180.0    20.0   113.07  2660.4     0.00  0.02146  0.00000          -1.8583          -0.6764       -3.3943         143.96       0.00
+ 184.0    20.0    21.28  2660.4     0.00  0.01297  0.00000          -1.9068          -0.6940       -3.3943          27.10       0.00
+ 190.0    20.0     7.98  2660.4     0.00  0.00000  0.00000          -1.9341          -0.7039       -3.3943          10.16       0.00
+ 196.0    20.0     0.00     0.0     0.00  0.01235  0.00000          -1.9341          -0.7039       -3.3943           0.00       0.00
+ 200.0    20.0     0.00     0.0     0.00  0.02058  0.00000          -1.9341          -0.7039       -3.3943           0.00       0.00
+
+Along shaft_2 at P = 10472.0 W, one line per mesh node (all powers in fem_mesh_nodes.csv):
+
+x [mm]  d [mm]  M [N m]   V [N]  T [N m]   v [mm]   u [mm]  theta_xz [mrad]  theta_xy [mrad]  twist [mrad]  sigma_b [MPa]  tau [MPa]
+------  ------  -------  ------  -------  -------  -------  ---------------  ---------------  ------------  -------------  ---------
+   0.0    20.0     0.00     0.0     0.00  0.02058  0.00000           1.9341          -0.7039        0.0000           0.00       0.00
+   4.0    20.0     0.00     0.0     0.00  0.01235  0.00000           1.9341          -0.7039        0.0000           0.00       0.00
+  10.0    20.0     0.00     0.0     0.00  0.00000  0.00000           1.9341          -0.7039        0.0000           0.00       0.00
+  16.0    20.0     7.98  2660.4     0.00  0.01297  0.00000           1.9068          -0.6940        0.0000          10.16       0.00
+  20.0    28.0    21.28  2660.4     0.00  0.02146  0.00000           1.8583          -0.6764        0.0000           9.88       0.00
+  85.0    25.0   113.07  2660.4     0.00  0.11622  0.00000           0.7683          -0.2796        0.0000          73.71       0.00
+  92.5    25.0   209.51  2660.4     0.00  0.12146  0.00000           0.4016          -0.1462        0.0000         136.58       0.00
+ 100.0    25.0   229.46  2660.4    -0.20  0.12363  0.00000          -0.0000          -0.0000        0.0000         149.59     -65.19
+ 107.5    25.0   229.46  2660.4    -0.20  0.12146  0.00000          -0.4016           0.1462       -0.4843         149.59     -65.19
+ 115.0    28.0   209.51  2660.4    -0.20  0.11622  0.00000          -0.7683           0.2796       -0.9685          97.21     -46.40
+ 180.0    20.0   113.07  2660.4    -0.20  0.02146  0.00000          -1.8583           0.6764       -3.6358         143.96    -127.32
+ 184.0    20.0    21.28  2660.4    -0.20  0.01297  0.00000          -1.9068           0.6940       -4.2664          27.10    -127.32
+ 190.0    20.0     7.98  2660.4    -0.20  0.00000  0.00000          -1.9341           0.7039       -5.2122          10.16    -127.32
+ 196.0    20.0     0.00     0.0    -0.20  0.01235  0.00000          -1.9341           0.7039       -6.1580           0.00    -127.32
+ 200.0    20.0     0.00     0.0     0.00  0.02058  0.00000          -1.9341           0.7039       -6.7886           0.00       0.00
+
 ====================================================================================================
-4  ISO/TS 16281 LOAD DISTRIBUTION - bearing under study
+4  SOLVER - ISO/TS 16281 LOAD DISTRIBUTION (bearing under study)
 ====================================================================================================
 Displacements in um and stiffness in N/um in this table (mm and N/mm in the CSV).
 

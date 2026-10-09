@@ -1,0 +1,52 @@
+{
+  "case": {
+    "label": "roller_raceway",
+    "r1": [
+      0.005,
+      "inf"
+    ],
+    "r2": [
+      0.030000000000000002,
+      "inf"
+    ],
+    "moduli": [
+      210000000000.0,
+      210000000000.0
+    ],
+    "v": [
+      0.3,
+      0.3
+    ],
+    "load": 50000.0,
+    "angle": 0.0,
+    "line": true
+  },
+  "case_hash": "8f21f492364adfda",
+  "build": "two_profiles",
+  "fields": [
+    "case_hash",
+    "label",
+    "build",
+    "n",
+    "h_m",
+    "extent_m",
+    "nodes_in_2b",
+    "apex_node_offset",
+    "a_ref_m",
+    "b_ref_m",
+    "p0_ref_Pa",
+    "delta_ref_m",
+    "a_num_m",
+    "b_num_m",
+    "p0_num_Pa",
+    "delta_num_m",
+    "load_num_N",
+    "err_a",
+    "err_b",
+    "err_p0",
+    "err_delta",
+    "err_load",
+    "converged",
+    "solve_time_s"
+  ]
+}

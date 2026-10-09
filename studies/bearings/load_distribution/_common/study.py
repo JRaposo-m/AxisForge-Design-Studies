@@ -253,12 +253,12 @@ class LoadDistributionStudy(ABC):
                     for r in reports.fem_node_rows(power, solved[power][1])]
         fem_summary_rows = [r for power in sorted(solved)
                             for r in reports.fem_summary_rows(power, solved[power][1])]
-        system_summary = reports.summarize_system(self.system_spec(), nominal_system,
-                                                  study_slot=self.spec.arrangement)
+        fem_mesh_rows = [r for power in sorted(solved)
+                         for r in reports.fem_mesh_rows(power, solved[power][1])]
         return StudyData(rows=rows, q_rows=q_rows, lam_rows=lam_rows, meta=meta,
                          system_rows=system_rows, system_text=system_text, fem_rows=fem_rows,
-                         analysis_text=analysis_text, system_summary=system_summary,
-                         fem_summary_rows=fem_summary_rows)
+                         analysis_text=analysis_text, fem_summary_rows=fem_summary_rows,
+                         fem_mesh_rows=fem_mesh_rows)
 
     def figures(self, data: StudyData, plots_dir: Path) -> None:
         """Figures of one bearing type (override to add or change figures).

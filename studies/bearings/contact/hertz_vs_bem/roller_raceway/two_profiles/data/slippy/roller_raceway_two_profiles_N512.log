@@ -1,0 +1,14 @@
+Data check started at:
+23:54:58 09-10-2026
+Checking model roller_raceway_two_profiles_N512:
+Checking step: load
+Checking sub models for step load
+Checking outputs for step load
+Solving model roller_raceway_two_profiles_N512, CUDA = False
+Solving step Initial
+Solving step load
+Solving contact by PK method
+Inserting height: 7.439281005252124e-07, total_load: 1.8235135013480237 into cache, len = 2
+## Solving sub models
+Writing outputs
+Analysis completed successfully at: 23:54:59 09-10-2026
