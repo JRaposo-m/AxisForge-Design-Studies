@@ -26,6 +26,8 @@ from abc import ABC
 from pathlib import Path
 from typing import ClassVar, Sequence
 
+from axisforge.outputs.solvers.bearings import bearing_analysis_result as af_analysis
+
 from . import plots, reports
 from .bearings import BearingSpec, CylindricalRollerSpec, DeepGrooveSpec
 from .rows import add_derived, lamina_fields, make_row, q_fields, row_fields
@@ -220,6 +222,7 @@ class LoadDistributionStudy(ABC):
 
         points = self.points()
         rows, q_rows, lam_rows = [], [], []
+        analysis_text = ""
         for point in points:
             spec = self.configure(self.spec, **point)
             power = self.power_W(**point)
@@ -229,6 +232,8 @@ class LoadDistributionStudy(ABC):
             for ss in system.shafts:
                 bearing = assemble_bearing(spec, ss.name)
                 analysis, error, postprocessed = solve_bearing(ss, bearing, fem[ss.name], psi_rad)
+                if analysis is not None and not analysis_text:       # first solved point
+                    analysis_text = af_analysis.analysis_text(analysis)
                 row, q, lam_k = make_row(point, ss.name, ss.speed_rpm, bearing, kind, analysis,
                                          error, postprocessed)
                 row["power_W"] = power
@@ -246,8 +251,14 @@ class LoadDistributionStudy(ABC):
             self.system_spec(), nominal_system, study_slot=self.spec.arrangement)
         fem_rows = [r for power in sorted(solved)
                     for r in reports.fem_node_rows(power, solved[power][1])]
+        fem_summary_rows = [r for power in sorted(solved)
+                            for r in reports.fem_summary_rows(power, solved[power][1])]
+        system_summary = reports.summarize_system(self.system_spec(), nominal_system,
+                                                  study_slot=self.spec.arrangement)
         return StudyData(rows=rows, q_rows=q_rows, lam_rows=lam_rows, meta=meta,
-                         system_rows=system_rows, system_text=system_text, fem_rows=fem_rows)
+                         system_rows=system_rows, system_text=system_text, fem_rows=fem_rows,
+                         analysis_text=analysis_text, system_summary=system_summary,
+                         fem_summary_rows=fem_summary_rows)
 
     def figures(self, data: StudyData, plots_dir: Path) -> None:
         """Figures of one bearing type (override to add or change figures).

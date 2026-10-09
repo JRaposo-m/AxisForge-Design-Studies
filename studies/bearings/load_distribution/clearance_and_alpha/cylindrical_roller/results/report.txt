@@ -1,5 +1,5 @@
 AxisForge design studies - bearings / load_distribution / clearance_and_alpha / cylindrical_roller
-Generated 2026-10-08T14:56:46+00:00
+Generated 2026-10-09T10:06:24+00:00
 
 ====================================================================================================
 1  RUN INFORMATION
@@ -17,189 +17,118 @@ Generated 2026-10-08T14:56:46+00:00
   system = {"helix_angle_deg": 0.0, "locating": {"D_mm": 42.0, "Dpw": 31.0, "Dw": 7.0, "Z": 9, "arrangement": "locating", "b_mm": 12.0, "d_mm": 20.0, "designation": "deep_groove_didactic", "kind": "ball", "s": 0.01, "spec": "DeepGrooveSpec"}, "non_locating": {"D_mm": 42.0, "Dpw": 31.0, "Dwe": 5.0, "Lwe": 5.0, "Z": 14, "arrangement": "non-locating", "b_mm": 12.0, "d_mm": 20.0, "designation": "cylindrical_roller_didactic", "kind": "roller", "n_s": 50, "s": 0.01, "spec": "CylindricalRollerSpec"}, "power_W": 10471.9755}
   axisforge_version = "0.1.0"
   parameter_hash = "effb18ce55cad7f6"
-  created_utc = "2026-10-08T14:56:46+00:00"
+  created_utc = "2026-10-09T10:06:24+00:00"
 
 
 ====================================================================================================
-2  SYSTEM
+2  SYSTEM (summary; complete description in system.txt)
 ====================================================================================================
+bearings of the shaft:
+    shaft_1_ball_bearing_1 (locating)             partner
+    shaft_1_roller_bearing_2 (non-locating)        under study
 
 gear stage:
     power                                           10472  W
-    driving shaft torque                              100  N m
     speed shaft_1                                    1000  rpm
     speed shaft_2                                     500  rpm
-    normal module                                       2  mm
-    teeth driver / driven                         20 / 40  
-    face width                                         15  mm
-    helix angle                                         0  deg
-    gear position                                     100  mm
-    line of centres angle                               0  deg
 
-shafts (both identical):
-    section 1 bearing_seat_A               L = 20, d = 20  mm
-    section 2 body_left                    L = 65, d = 28  mm
-    section 3 gear_seat                    L = 30, d = 25  mm
-    section 4 body_right                   L = 65, d = 28  mm
-    section 5 bearing_seat_B               L = 20, d = 20  mm
-    shoulder fillet radius                              1  mm
-    total length                                      200  mm
+gear system:
+    torque of the source shaft                        100  N m
 
-materials:
-    shaft                                            S355  
-    shaft E                                        210000  MPa
-    shaft poisson ratio                               0.3  
-    bearing                                         GCr15  
-    bearing E                                      210000  MPa
-    bearing poisson ratio                             0.3  
-    gear                                              C45  
-    gear E                                         210000  MPa
-    gear poisson ratio                                0.3  
+mesh stage1 (shaft_1 -> shaft_2):
+    line of centres angle phi                           0  deg
+    reference centre distance a                        60  mm
+    gear ratio u                                        2
+    transverse contact ratio                      1.97899
+    overlap ratio                                       0
 
-bearing 1 (locating, partner):
-    type                                   DeepGrooveSpec  
-    position                                           10  mm
-    d_mm                                               20  mm
-    D_mm                                               42  mm
-    b_mm                                               12  mm
-    designation                        deep_groove_didactic  
-    s                                                0.01  mm
-    Dw                                                  7  mm
-    Dpw                                                31  mm
-    Z                                                   9  
+gear g_driver (shaft_1):
+    normal module mn                                    2  mm
+    number of teeth z                                  20
+    face width b                                       15  mm
+    normal pressure angle alpha_n                      20  deg
+    helix angle beta                                    0  deg
+    reference diameter d                               40  mm
+    material                                          C45
 
-bearing 2 (non-locating, under study):
-    type                               CylindricalRollerSpec  
-    position                                          190  mm
-    d_mm                                               20  mm
-    D_mm                                               42  mm
-    b_mm                                               12  mm
-    designation                        cylindrical_roller_didactic  
-    s                                                0.01  mm
-    Dwe                                                 5  mm
-    Lwe                                                 5  mm
-    Dpw                                                31  mm
-    Z                                                  14  
-    n_s                                                50  
+gear g_driven (shaft_2):
+    normal module mn                                    2  mm
+    number of teeth z                                  40
+    face width b                                       15  mm
+    normal pressure angle alpha_n                      20  deg
+    helix angle beta                                    0  deg
+    reference diameter d                               80  mm
+    material                                          C45
 
-Loads on shaft_1 after system.resolve:
+Shaft shaft_1 (length 200 mm):
+  #                 section  L [mm]  d [mm]  d_in [mm]  material  Ra [um]  keyways
+  -  ----------------------  ------  ------  ---------  --------  -------  -------
+  1  shaft_1_bearing_seat_A    20.0    20.0        0.0      S355     0.80        0
+  2       shaft_1_body_left    65.0    28.0        0.0      S355     0.80        0
+  3       shaft_1_gear_seat    30.0    25.0        0.0      S355     0.80        0
+  4      shaft_1_body_right    65.0    28.0        0.0      S355     0.80        0
+  5  shaft_1_bearing_seat_B    20.0    20.0        0.0      S355     0.80        0
+
+  z [mm]  d small [mm]  d large [mm]  fillet r [mm]
+  ------  ------------  ------------  -------------
+    20.0          20.0          28.0           1.00
+    85.0          25.0          28.0           1.00
+   115.0          25.0          28.0           1.00
+   180.0          20.0          28.0           1.00
+
+Shaft shaft_2 (length 200 mm):
+  #                 section  L [mm]  d [mm]  d_in [mm]  material  Ra [um]  keyways
+  -  ----------------------  ------  ------  ---------  --------  -------  -------
+  1  shaft_2_bearing_seat_A    20.0    20.0        0.0      S355     0.80        0
+  2       shaft_2_body_left    65.0    28.0        0.0      S355     0.80        0
+  3       shaft_2_gear_seat    30.0    25.0        0.0      S355     0.80        0
+  4      shaft_2_body_right    65.0    28.0        0.0      S355     0.80        0
+  5  shaft_2_bearing_seat_B    20.0    20.0        0.0      S355     0.80        0
+
+  z [mm]  d small [mm]  d large [mm]  fillet r [mm]
+  ------  ------------  ------------  -------------
+    20.0          20.0          28.0           1.00
+    85.0          25.0          28.0           1.00
+   115.0          25.0          28.0           1.00
+   180.0          20.0          28.0           1.00
+
+Bearings of the shaft:
+                   bearing              family   arrangement  x [mm]  d [mm]  D [mm]  b [mm]   Z  Dw/Dwe [mm]  Lwe [mm]  Dpw [mm]  s [mm]  alpha0 [deg]  C [N]
+  ------------------------  ------------------  ------------  ------  ------  ------  ------  --  -----------  --------  --------  ------  ------------  -----
+    shaft_1_ball_bearing_1    deep_groove_ball      locating    10.0    20.0    42.0    12.0   9        7.000         -     31.00  0.0100         10.84   8447
+  shaft_1_roller_bearing_2  cylindrical_roller  non-locating   190.0    20.0    42.0    12.0  14        5.000     5.000     31.00  0.0100          0.00  12618
+  (identical on shaft_2)
+
+Loads on shaft_1:
     TorqueLoad(position=0.00 mm, T=-100.00 N·m, source='gear_mesh', label='shaft_1:T_in')
     RadialLoad(position=100.00 mm, F=1819.85 N, theta=0.0°, Fy=1819.85 N, Fz=0.00 N, source='gear_mesh', label='g_driver:Fr')
     RadialLoad(position=100.00 mm, F=5000.00 N, theta=90.0°, Fy=0.00 N, Fz=5000.00 N, source='gear_mesh', label='g_driver:Ft')
     TorqueLoad(position=100.00 mm, T=100.00 N·m, source='gear_mesh', label='g_driver:T')
-Loads on shaft_2 after system.resolve:
+
+Loads on shaft_2:
     RadialLoad(position=100.00 mm, F=1819.85 N, theta=180.0°, Fy=-1819.85 N, Fz=0.00 N, source='gear_mesh', label='g_driven:Fr')
     RadialLoad(position=100.00 mm, F=5000.00 N, theta=90.0°, Fy=0.00 N, Fz=5000.00 N, source='gear_mesh', label='g_driven:Ft')
     TorqueLoad(position=100.00 mm, T=-200.00 N·m, source='gear_mesh', label='g_driven:T')
     TorqueLoad(position=200.00 mm, T=200.00 N·m, source='user', label='output_coupling')
-Bearing shaft_1_ball_bearing_1 (AxisForge summary):
-    -- shaft_1_ball_bearing_1 ------------------
-      family      : deep_groove_ball
-      position    : 10.00 mm
-      arrangement : locating
-      d / D       : 20.0 mm / 42.0 mm
-      b           : 12.0 mm
-      C (computed): 8447 N
-      geometry    : assembled
-      ISO 16281   : on
-        e1        : 2.1e+05
-        e2        : 2.1e+05
-        nu1       : 0.3
-        nu2       : 0.3
-        cp        : 2.786e+05
-        Ri        : 15.64
-    --------------------------------------------
-Bearing shaft_1_roller_bearing_2 (AxisForge summary):
-    -- shaft_1_roller_bearing_2 ----------------
-      family      : cylindrical_roller
-      position    : 190.00 mm
-      arrangement : non-locating
-      d / D       : 20.0 mm / 42.0 mm
-      b           : 12.0 mm
-      C (computed): 12618 N
-      geometry    : assembled
-      ISO 16281   : on
-        e1        : 2.1e+05
-        e2        : 2.1e+05
-        nu1       : 0.3
-        nu2       : 0.3
-        cL        : 1.503e+05
-        cs        : 3006
-        P_xk      : array(50,) min=7.001e-07 max=0.005651
-    --------------------------------------------
 
 ====================================================================================================
-3  SHAFT FEM (rigid supports) - bearing nodes
+3  SHAFT FEM (rigid supports)
 ====================================================================================================
-Units as returned by AxisForge: N, mm, N mm, rad. One solve per power.
+Bearing nodes: reactions and slopes (every node field is in fem_bearing_nodes.csv). One solve per power.
 
-P = 10471.9755 W | shaft_1 | node shaft_1_ball_bearing_1
-    label                    shaft_1_ball_bearing_1
-    position                 10
-    u                        0
-    v_xz                     0
-    v_xy                     0
-    theta_xz                 0.0019340833
-    theta_xy                 0.00070394876
-    Fr_xz                    -2500
-    Fr_xy                    -909.92558
-    Fr                       2660.4444
-    Fa                       0
-    M_xz                     0
-    M_xy                     5.8207661e-11
-    psi_xz                   0.0019340833
-    psi_xy                   0.00070394876
+  P [W]    shaft              bearing node  x [mm]   Fr [N]  Fr_xz [N]  Fr_xy [N]  Fa [N]  psi_xz [rad]  psi_xz [mrad]  psi_xy [rad]  psi_xy [mrad]
+-------  -------  ------------------------  ------  -------  ---------  ---------  ------  ------------  -------------  ------------  -------------
+10472.0  shaft_1    shaft_1_ball_bearing_1    10.0  2660.44   -2500.00    -909.93    0.00    1.9341e-03         1.9341    7.0395e-04         0.7039
+10472.0  shaft_1  shaft_1_roller_bearing_2   190.0  2660.44   -2500.00    -909.93    0.00   -1.9341e-03        -1.9341   -7.0395e-04        -0.7039
+10472.0  shaft_2    shaft_2_ball_bearing_1    10.0  2660.44   -2500.00     909.93    0.00    1.9341e-03         1.9341   -7.0395e-04        -0.7039
+10472.0  shaft_2  shaft_2_roller_bearing_2   190.0  2660.44   -2500.00     909.93    0.00   -1.9341e-03        -1.9341    7.0395e-04         0.7039
 
-P = 10471.9755 W | shaft_1 | node shaft_1_roller_bearing_2
-    label                    shaft_1_roller_bearing_2
-    position                 190
-    u                        0
-    v_xz                     0
-    v_xy                     0
-    theta_xz                 -0.0019340833
-    theta_xy                 -0.00070394876
-    Fr_xz                    -2500
-    Fr_xy                    -909.92558
-    Fr                       2660.4444
-    Fa                       0
-    M_xz                     -1.1641532e-10
-    M_xy                     0
-    psi_xz                   -0.0019340833
-    psi_xy                   -0.00070394876
+Shaft maxima (units assumed N, mm, MPa; see fem_shaft_summary.csv):
 
-P = 10471.9755 W | shaft_2 | node shaft_2_ball_bearing_1
-    label                    shaft_2_ball_bearing_1
-    position                 10
-    u                        0
-    v_xz                     0
-    v_xy                     0
-    theta_xz                 0.0019340833
-    theta_xy                 -0.00070394876
-    Fr_xz                    -2500
-    Fr_xy                    909.92558
-    Fr                       2660.4444
-    Fa                       0
-    M_xz                     0
-    M_xy                     0
-    psi_xz                   0.0019340833
-    psi_xy                   -0.00070394876
-
-P = 10471.9755 W | shaft_2 | node shaft_2_roller_bearing_2
-    label                    shaft_2_roller_bearing_2
-    position                 190
-    u                        0
-    v_xz                     0
-    v_xy                     0
-    theta_xz                 -0.0019340833
-    theta_xy                 0.00070394876
-    Fr_xz                    -2500
-    Fr_xy                    909.92558
-    Fr                       2660.4444
-    Fa                       0
-    M_xz                     -1.1641532e-10
-    M_xy                     0
-    psi_xz                   -0.0019340833
-    psi_xy                   0.00070394876
+  P [W]    shaft  mesh nodes  M_max [N m]  at x [mm]  v_max [mm]  at x [mm]  sigma_b [MPa]  at x [mm]  tau [MPa]  at x [mm]  phi_max [mrad]  at x [mm]
+-------  -------  ----------  -----------  ---------  ----------  ---------  -------------  ---------  ---------  ---------  --------------  ---------
+10472.0  shaft_1          15       229.46      100.0     0.12363      100.0         149.59      100.0      63.66        0.0          3.3943      100.0
+10472.0  shaft_2          15       229.46      107.5     0.12363      100.0         149.59      107.5     127.32      180.0          6.7886      200.0
 
 ====================================================================================================
 4  ISO/TS 16281 LOAD DISTRIBUTION - bearing under study

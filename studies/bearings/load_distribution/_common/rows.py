@@ -39,6 +39,10 @@ import math
 
 import numpy as np
 
+from axisforge.outputs.solvers.bearings import bearing_analysis_result as af_analysis
+from axisforge.outputs.solvers.bearings.load_distribution import (
+    load_distribution_results as af_load_distribution)
+
 NAN = math.nan
 
 RESULT_FIELDS = [
@@ -102,6 +106,11 @@ def make_row(point: dict, shaft_name: str, rpm: float, bearing, kind: str, analy
              error: str, postprocessed: bool):
     """Read one solver result into a row and the lists of its element and lamina loads.
 
+    The result is read through ``axisforge.outputs`` (records of AxisForge's own objects). The
+    quantities that judge the result (Q_max/(Fr/Z), loaded-zone half-angle, relative equilibrium
+    error, lamina ratios) are derived here from the raw element loads, so they stay independent
+    of AxisForge's own post-processing.
+
     Parameters
     ----------
     point: dict
@@ -141,59 +150,60 @@ def make_row(point: dict, shaft_name: str, rpm: float, bearing, kind: str, analy
     if analysis is None:
         return row, [], []
 
+    rec = af_analysis.analysis_record(analysis)       # bearing-level numbers, AxisForge units
     ld = analysis.load_distribution
-    ring = ld.row                                     # single-row bearing
-    Q = np.asarray(ring.Q_j, dtype=float)
-    phi = (np.asarray(ring.phi_j, dtype=float) + math.pi) % (2.0 * math.pi) - math.pi
-    alpha_j = getattr(ring, "alpha_j", None)
-    alpha_j = None if alpha_j is None else np.degrees(np.asarray(alpha_j, dtype=float))
+    elements = af_load_distribution.element_records(ld)           # single-row bearing: row 0
+    Q = np.array([e["Q_N"] for e in elements], dtype=float)
+    phi = np.array([e["phi_rad"] for e in elements], dtype=float)     # [-pi, pi), 0 = load line
+    alpha_j = np.degrees(np.array([e["alpha_rad"] for e in elements], dtype=float))
     loaded = Q > 0.0
-    Fr = ld.Fr
-    dFr, _ = ld.equilibrium_error
+    Fr = rec["Fr_N"]
+    dFr = rec["equilibrium_error_Fr_N"]
     j_max = int(np.argmax(Q))
 
     row.update(
-        Fr_N=Fr, Fa_N=ld.Fa,
-        Fa_over_Fr=ld.Fa / Fr if Fr > 0.0 else NAN,
+        Fr_N=Fr, Fa_N=rec["Fa_N"],
+        Fa_over_Fr=rec["Fa_N"] / Fr if Fr > 0.0 else NAN,
         Fr_over_C=Fr / bearing.C,
-        psi_mrad=1e3 * ld.psi,
-        delta_r_mm=ld.delta_r, delta_a_mm=ld.delta_a, Mz_Nmm=ld.Mz,
-        n_loaded=ring.n_loaded,
+        psi_mrad=1e3 * rec["psi_rad"],
+        delta_r_mm=rec["delta_r_mm"], delta_a_mm=rec["delta_a_mm"], Mz_Nmm=rec["Mz_Nmm"],
+        n_loaded=rec["n_loaded"],
         zone_half_angle_deg=math.degrees(np.max(np.abs(phi[loaded]))) if loaded.any() else NAN,
-        alpha_max_deg=float(alpha_j[j_max]) if alpha_j is not None else NAN,
+        alpha_max_deg=float(alpha_j[j_max]),
         Q_max_N=float(Q.max()),
         Q_max_over_Fr_per_Z=float(Q.max()) / (Fr / bearing.Z) if Fr > 0.0 else NAN,
         equil_err_rel=abs(dFr) / Fr if Fr > 0.0 else NAN,
-        ok=bool(ld.ok), residual=ld.residual, n_iter=ld.n_iter,
+        ok=rec["ok"], residual=rec["residual"], n_iter=rec["n_iter"],
     )
 
-    st = ld.stiffness                                 # only with postprocess=True
-    if st is not None:
-        # Kr_xz = Fr_xz / delta_r_xz and Kr_xy = Fr_xy / delta_r_xy both equal Fr / delta_r; a
-        # plane with ~0 displacement gives inf (known TODO of the post-processing), so Kr takes
-        # the plane with the larger displacement.
-        larger = st.Kr_xz if abs(st.delta_r_xz) >= abs(st.delta_r_xy) else st.Kr_xy
-        row.update(Kr_N_per_mm=_finite(larger), Kr_xz_N_per_mm=_finite(st.Kr_xz),
-                   Kr_xy_N_per_mm=_finite(st.Kr_xy))
-    life = analysis.basic_life
-    if life is not None:
-        row.update(L10r_Mrev=life.L10r, L10h_h=life.L10r * 1e6 / (60.0 * rpm))
+    if rec["stiffness_available"]:                    # only with postprocess=True
+        # Kr_xz = Fr_xz / delta_r_xz and Kr_xy = Fr_xy / delta_r_xy both equal Fr / delta_r. A
+        # plane with ~0 displacement has no secant stiffness in a stationary analysis (AxisForge
+        # returns inf there), so Kr takes the plane with the larger displacement.
+        larger = (rec["Kr_xz_N_per_mm"] if abs(rec["delta_r_xz_mm"]) >= abs(rec["delta_r_xy_mm"])
+                  else rec["Kr_xy_N_per_mm"])
+        row.update(Kr_N_per_mm=_finite(larger), Kr_xz_N_per_mm=_finite(rec["Kr_xz_N_per_mm"]),
+                   Kr_xy_N_per_mm=_finite(rec["Kr_xy_N_per_mm"]))
+    if not math.isnan(rec["L10r_Mrev"]):
+        row.update(L10r_Mrev=rec["L10r_Mrev"],
+                   L10h_h=rec["L10r_Mrev"] * 1e6 / (60.0 * rpm))
 
     ident = dict(point, shaft=shaft_name, label=bearing.label, kind=kind)
     q_rows = [dict(ident, j=j, phi_deg=math.degrees(phi[j]), Q_N=float(Q[j]),
-                   alpha_j_deg=float(alpha_j[j]) if alpha_j is not None else NAN)
+                   alpha_j_deg=float(alpha_j[j]))
               for j in range(len(Q))]
 
     lam_rows = []
-    if getattr(ld, "is_line_contact", False):         # lamina model: inside the most loaded roller
-        q_k = np.asarray(ring.q_jk[j_max], dtype=float)
+    if rec["contact"] == af_load_distribution.CONTACT_LINE:   # lamina model, most loaded roller
+        laminae = af_load_distribution.lamina_records(ld, element=j_max)
+        q_k = np.array([lam["q_N"] for lam in laminae], dtype=float)
         positive = q_k > 0.0
         row.update(q_lamina_max_N=float(q_k.max()),
                    lamina_loaded_frac=float(positive.mean()),
                    lamina_peak_over_mean=(float(q_k.max() / q_k[positive].mean())
                                           if positive.any() else NAN))
-        lam_rows = [dict(ident, roller_j=j_max, k=k, x_mm=float(ring.x_k[k]), q_N=float(q_k[k]))
-                    for k in range(len(q_k))]
+        lam_rows = [dict(ident, roller_j=j_max, k=lam["k"], x_mm=lam["x_mm"], q_N=lam["q_N"])
+                    for lam in laminae]
     # the axis values win over the values read back from the solver (for example a prescribed
     # psi_mrad is reported as prescribed, as in the original misalignment study)
     row.update(point)

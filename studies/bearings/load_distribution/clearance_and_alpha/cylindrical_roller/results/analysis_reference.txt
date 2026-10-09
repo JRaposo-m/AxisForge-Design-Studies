@@ -1,0 +1,45 @@
+AxisForge result of the first point of the sweep, first shaft:
+
+bearing shaft_1_roller_bearing_2 (line contact, 1 row(s)):
+    radial load Fr                              2660.4444  N
+    axial load Fa                                       0  N
+    moment Mz                                  -1204.6822  N mm
+    radial approach delta_r                   0.010949093  mm
+    axial approach delta_a                              0  mm
+    misalignment psi                         0.0020582085  rad
+    misalignment psi                            2.0582085  mrad
+    load direction phi_Fr                      -2.7925268  rad
+    loaded elements                                     7
+    equilibrium error Fr                    1.7735147e-11  N
+    equilibrium error Fa                                0  N
+    converged                                         yes
+    residual                                1.7735147e-11
+    function evaluations                               10
+    radial stiffness Kr (XZ)                    242983.08  N/mm
+    radial stiffness Kr (XY)                    242983.08  N/mm
+    axial stiffness Ka                                inf  N/mm
+    axial regime                                  no_load
+
+  Element loads, row 0 (phi = 0 on the load line):
+   j  phi [deg]    Q [N]  delta [mm]  alpha [deg]
+  --  ---------  -------  ----------  -----------
+   0        0.0  810.698    0.010949         0.00
+   1       25.7  706.357    0.009865         0.00
+   2       51.4  428.813    0.006827         0.00
+   3       77.1   94.856    0.002436         0.00
+   4      102.9    0.000   -0.002436         0.00
+   5      128.6    0.000   -0.006827         0.00
+   6      154.3    0.000   -0.009865         0.00
+   7     -180.0    0.000   -0.010949         0.00
+   8     -154.3    0.000   -0.009865         0.00
+   9     -128.6    0.000   -0.006827         0.00
+  10     -102.9    0.000   -0.002436         0.00
+  11      -77.1   94.856    0.002436         0.00
+  12      -51.4  428.813    0.006827         0.00
+  13      -25.7  706.357    0.009865         0.00
+
+basic reference rating life shaft_1_roller_bearing_2 (ISO/TS 16281:2008):
+    L10r (bearing)                              434.63722  10^6 rev
+    reference load Pref_r                       2039.7103  N
+    reference load Pref_a                               -  N
+    row 0 L10r                                  434.63722  10^6 rev

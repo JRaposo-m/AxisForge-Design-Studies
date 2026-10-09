@@ -9,12 +9,12 @@ source, AxisForge version, parameter hash, date) is the RUN INFORMATION block of
 """
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from axisforge.outputs import _format as af_format
 
 from . import reports
 from .rows import BOOL_FIELDS, TEXT_FIELDS
@@ -22,6 +22,9 @@ from .rows import BOOL_FIELDS, TEXT_FIELDS
 REPORT_FILE = "report.txt"
 SYSTEM_FILE = "system.csv"
 FEM_FILE = "fem_bearing_nodes.csv"
+FEM_SUMMARY_FILE = "fem_shaft_summary.csv"
+SYSTEM_TEXT_FILE = "system.txt"
+ANALYSIS_FILE = "analysis_reference.txt"
 ROWS_FILE = "iso16281_rows.csv"
 Q_FILE = "iso16281_elements.csv"
 LAMINA_FILE = "iso16281_laminae.csv"
@@ -43,10 +46,16 @@ class StudyData:
         Run information (written at the top of report.txt).
     system_rows: list of dict
         {section, parameter, value, unit} of the system.
-    system_text: list of str
-        Shaft loads and bearing summaries as printed by AxisForge.
+    system_text: str
+        The complete description of the system as AxisForge prints it (system.txt).
+    system_summary: str
+        The short description for report.txt.
+    fem_summary_rows: list of dict
+        Maxima of the shaft FEM result, one per (power, shaft).
     fem_rows: list of dict
         Bearing-node results of the shaft FEM, one per (power, shaft, node).
+    analysis_text: str
+        ``analysis_text`` of AxisForge for the first point of the sweep and the first shaft.
     """
 
     rows: list[dict]
@@ -54,8 +63,11 @@ class StudyData:
     lam_rows: list[dict]
     meta: dict
     system_rows: list[dict] = field(default_factory=list)
-    system_text: list[str] = field(default_factory=list)
+    system_text: str = ""
+    system_summary: str = ""
+    fem_summary_rows: list[dict] = field(default_factory=list)
     fem_rows: list[dict] = field(default_factory=list)
+    analysis_text: str = ""
 
 
 def axisforge_version() -> str:
@@ -123,13 +135,6 @@ def make_meta(*, question: str, axes: dict, system: dict, study_kind: str,
                 parameter_hash=parameter_hash(defining), created_utc=reports.utc_now())
 
 
-def _write_csv(path: Path, fieldnames, rows) -> None:
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
-
-
 def write_results(results_dir: Path, data: StudyData, *, row_fields, q_fields, lamina_fields,
                   type_name: str) -> None:
     """Write report.txt and the CSV tables of one bearing type.
@@ -149,36 +154,28 @@ def write_results(results_dir: Path, data: StudyData, *, row_fields, q_fields, l
     axis_names = data.meta["axis_order"]
     with open(results_dir / REPORT_FILE, "w", encoding="utf-8") as f:
         f.write(reports.build_report(data, axis_names, type_name))
-    _write_csv(results_dir / SYSTEM_FILE, ["section", "parameter", "value", "unit"],
-               data.system_rows)
-    _write_csv(results_dir / FEM_FILE, reports.union_fields(data.fem_rows), data.fem_rows)
-    _write_csv(results_dir / ROWS_FILE, row_fields, data.rows)
-    _write_csv(results_dir / Q_FILE, q_fields, data.q_rows)
+    af_format.write_records_csv(results_dir / SYSTEM_FILE, data.system_rows,
+                                ["section", "parameter", "value", "unit"])
+    af_format.write_records_csv(results_dir / FEM_FILE, data.fem_rows)
+    af_format.write_records_csv(results_dir / FEM_SUMMARY_FILE, data.fem_summary_rows)
+    (results_dir / SYSTEM_TEXT_FILE).write_text(data.system_text + "\n", encoding="utf-8")
+    (results_dir / ANALYSIS_FILE).write_text(
+        "AxisForge result of the first point of the sweep, first shaft:\n\n"
+        + data.analysis_text + "\n", encoding="utf-8")
+    af_format.write_records_csv(results_dir / ROWS_FILE, data.rows, row_fields)
+    af_format.write_records_csv(results_dir / Q_FILE, data.q_rows, q_fields)
     lamina_path = results_dir / LAMINA_FILE
     if data.lam_rows:
-        _write_csv(lamina_path, lamina_fields, data.lam_rows)
+        af_format.write_records_csv(lamina_path, data.lam_rows, lamina_fields)
     elif lamina_path.exists():
         lamina_path.unlink()                  # stale file of an earlier run
 
 
-def _parse(field_name: str, text: str):
-    if field_name in TEXT_FIELDS:
-        return text
-    if field_name in BOOL_FIELDS:
-        return text == "True"
-    if text == "":
-        return math.nan
-    try:
-        return float(text)
-    except ValueError:
-        return text
-
-
 def _read_csv(path: Path) -> list[dict]:
+    """Records of one results CSV; empty if the file does not exist."""
     if not path.exists():
         return []
-    with open(path, newline="", encoding="utf-8") as f:
-        return [{k: _parse(k, v) for k, v in r.items()} for r in csv.DictReader(f)]
+    return af_format.read_records_csv(path, text_fields=TEXT_FIELDS, bool_fields=BOOL_FIELDS)
 
 
 def read_results(results_dir: Path) -> StudyData:
@@ -207,7 +204,8 @@ def read_results(results_dir: Path) -> StudyData:
     return StudyData(rows=_read_csv(results_dir / ROWS_FILE), q_rows=_read_csv(results_dir / Q_FILE),
                      lam_rows=_read_csv(results_dir / LAMINA_FILE), meta=meta,
                      system_rows=_read_csv(results_dir / SYSTEM_FILE),
-                     fem_rows=_read_csv(results_dir / FEM_FILE))
+                     fem_rows=_read_csv(results_dir / FEM_FILE),
+                     fem_summary_rows=_read_csv(results_dir / FEM_SUMMARY_FILE))
 
 
 def check_compatible(datasets: dict[str, StudyData], same_axes: bool = True) -> None:

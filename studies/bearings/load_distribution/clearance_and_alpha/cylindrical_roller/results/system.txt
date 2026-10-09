@@ -1,0 +1,254 @@
+study:
+    bearing shaft_1_ball_bearing_1 (locating)            partner
+    bearing shaft_1_roller_bearing_2 (non-locating)        under study
+
+materials passed to the build:
+    shaft                                            S355
+    shaft E                                        210000  MPa
+    shaft poisson ratio                               0.3
+    bearing                                         GCr15
+    bearing E                                      210000  MPa
+    bearing poisson ratio                             0.3
+    gear                                              C45
+    gear E                                         210000  MPa
+    gear poisson ratio                                0.3
+
+── clearance_and_alpha ──────────────────────────────────────────────
+  shafts: 2   links: 1   source: shaft_1
+    shaft_1      T_out=100.000 N·m    rot=1   pos=(y=0.00, z=0.00) mm
+    shaft_2      T_out=200.000 N·m    rot=-1.0 pos=(y=60.00, z=0.00) mm
+────────────────────────────────────────────────────────
+
+SpurHelicalMeshLink(shaft_1 -> shaft_2, phi=0.0°, torque_split=None, label='stage1')
+
+gear system:
+    power                                           10472  W
+    torque of the source shaft                        100  N m
+
+mesh stage1 (shaft_1 -> shaft_2):
+    line of centres angle phi                           0  deg
+    torque split                           mode B (100 %)
+    distribute loads                                   no
+    driver gear                                  g_driver
+    driven gear                                  g_driven
+    reference centre distance a                        60  mm
+    working centre distance                            60  mm
+    gear ratio u                                        2
+    transverse working pressure angle            0.349066  rad
+    transverse contact ratio                      1.97899
+    overlap ratio                                       0
+    total contact ratio                           1.97899
+
+── ShaftSystem 'shaft_1' ─────────────────────────────
+  length        : 200.00 mm
+  speed         : 1000.00 rpm
+  design life   : 20000 h
+  axis offset   : (y=0.000, z=0.000) mm   origin_x=0.000 mm
+  bearings      : 2  @ ['10.0', '190.0']
+  gears         : 1  @ ['100.0']
+  loads         : 4  (user=0, gear_mesh=4)
+──────────────────────────────────────────────────────────
+
+Sections:
+  #                 section  L [mm]  d [mm]  d_in [mm]  material  Ra [um]  keyways
+  -  ----------------------  ------  ------  ---------  --------  -------  -------
+  1  shaft_1_bearing_seat_A    20.0    20.0        0.0      S355     0.80        0
+  2       shaft_1_body_left    65.0    28.0        0.0      S355     0.80        0
+  3       shaft_1_gear_seat    30.0    25.0        0.0      S355     0.80        0
+  4      shaft_1_body_right    65.0    28.0        0.0      S355     0.80        0
+  5  shaft_1_bearing_seat_B    20.0    20.0        0.0      S355     0.80        0
+
+Shoulders:
+  z [mm]  d small [mm]  d large [mm]  fillet r [mm]
+  ------  ------------  ------------  -------------
+    20.0          20.0          28.0           1.00
+    85.0          25.0          28.0           1.00
+   115.0          25.0          28.0           1.00
+   180.0          20.0          28.0           1.00
+
+gear g_driver (shaft_1):
+    role                                           driver
+    rotation direction                         propagated
+    axial position                                    100  mm
+    normal module mn                                    2  mm
+    number of teeth z                                  20
+    profile shift coefficient x                         0
+    face width b                                       15  mm
+    normal pressure angle alpha_n                      20  deg
+    helix angle beta                                    0  deg
+    reference diameter d                               40  mm
+    tip diameter da                                    45  mm
+    root diameter df                                   35  mm
+    material                                          C45
+
+-- shaft_1_ball_bearing_1 ------------------
+  family      : deep_groove_ball
+  position    : 10.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 12.0 mm
+  C (computed): 8447 N
+  geometry    : assembled
+  ISO 16281   : on
+    e1        : 2.1e+05
+    e2        : 2.1e+05
+    nu1       : 0.3
+    nu2       : 0.3
+    cp        : 2.786e+05
+    Ri        : 15.64
+--------------------------------------------
+
+shaft_1_ball_bearing_1 geometry:
+    ball diameter Dw                                    7  mm
+    pitch diameter Dpw                                 31  mm
+    rolling elements per row Z                          9
+    number of rows i                                    1
+    radial internal clearance s                      0.01  mm
+    groove curvature-centre distance A               0.28  mm
+    inner groove radius ri                           3.64  mm
+    outer groove radius re                           3.64  mm
+    free contact angle alpha_0                   0.189265  rad
+    gamma                                        0.221774
+    reduction factor                                 0.95
+
+-- shaft_1_roller_bearing_2 ----------------
+  family      : cylindrical_roller
+  position    : 190.00 mm
+  arrangement : non-locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 12.0 mm
+  C (computed): 12618 N
+  geometry    : assembled
+  ISO 16281   : on
+    e1        : 2.1e+05
+    e2        : 2.1e+05
+    nu1       : 0.3
+    nu2       : 0.3
+    cL        : 1.503e+05
+    cs        : 3006
+    P_xk      : array(50,) min=7.001e-07 max=0.005651
+--------------------------------------------
+
+shaft_1_roller_bearing_2 geometry:
+    roller diameter Dwe                                 5  mm
+    roller effective length Lwe                         5  mm
+    pitch diameter Dpw                                 31  mm
+    rolling elements per row Z                         14
+    number of rows i                                    1
+    laminae per roller n_s                             50
+    radial internal clearance s                      0.01  mm
+    free contact angle alpha_0                          0  rad
+    gamma                                         0.16129
+
+Loads on shaft_1:
+    TorqueLoad(position=0.00 mm, T=-100.00 N·m, source='gear_mesh', label='shaft_1:T_in')
+    RadialLoad(position=100.00 mm, F=1819.85 N, theta=0.0°, Fy=1819.85 N, Fz=0.00 N, source='gear_mesh', label='g_driver:Fr')
+    RadialLoad(position=100.00 mm, F=5000.00 N, theta=90.0°, Fy=0.00 N, Fz=5000.00 N, source='gear_mesh', label='g_driver:Ft')
+    TorqueLoad(position=100.00 mm, T=100.00 N·m, source='gear_mesh', label='g_driver:T')
+
+── ShaftSystem 'shaft_2' ─────────────────────────────
+  length        : 200.00 mm
+  speed         : 500.00 rpm
+  design life   : 20000 h
+  axis offset   : (y=60.000, z=0.000) mm   origin_x=0.000 mm
+  bearings      : 2  @ ['10.0', '190.0']
+  gears         : 1  @ ['100.0']
+  loads         : 4  (user=1, gear_mesh=3)
+──────────────────────────────────────────────────────────
+
+Sections:
+  #                 section  L [mm]  d [mm]  d_in [mm]  material  Ra [um]  keyways
+  -  ----------------------  ------  ------  ---------  --------  -------  -------
+  1  shaft_2_bearing_seat_A    20.0    20.0        0.0      S355     0.80        0
+  2       shaft_2_body_left    65.0    28.0        0.0      S355     0.80        0
+  3       shaft_2_gear_seat    30.0    25.0        0.0      S355     0.80        0
+  4      shaft_2_body_right    65.0    28.0        0.0      S355     0.80        0
+  5  shaft_2_bearing_seat_B    20.0    20.0        0.0      S355     0.80        0
+
+Shoulders:
+  z [mm]  d small [mm]  d large [mm]  fillet r [mm]
+  ------  ------------  ------------  -------------
+    20.0          20.0          28.0           1.00
+    85.0          25.0          28.0           1.00
+   115.0          25.0          28.0           1.00
+   180.0          20.0          28.0           1.00
+
+gear g_driven (shaft_2):
+    role                                           driven
+    rotation direction                         propagated
+    axial position                                    100  mm
+    normal module mn                                    2  mm
+    number of teeth z                                  40
+    profile shift coefficient x                         0
+    face width b                                       15  mm
+    normal pressure angle alpha_n                      20  deg
+    helix angle beta                                    0  deg
+    reference diameter d                               80  mm
+    tip diameter da                                    85  mm
+    root diameter df                                   75  mm
+    material                                          C45
+
+-- shaft_2_ball_bearing_1 ------------------
+  family      : deep_groove_ball
+  position    : 10.00 mm
+  arrangement : locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 12.0 mm
+  C (computed): 8447 N
+  geometry    : assembled
+  ISO 16281   : on
+    e1        : 2.1e+05
+    e2        : 2.1e+05
+    nu1       : 0.3
+    nu2       : 0.3
+    cp        : 2.786e+05
+    Ri        : 15.64
+--------------------------------------------
+
+shaft_2_ball_bearing_1 geometry:
+    ball diameter Dw                                    7  mm
+    pitch diameter Dpw                                 31  mm
+    rolling elements per row Z                          9
+    number of rows i                                    1
+    radial internal clearance s                      0.01  mm
+    groove curvature-centre distance A               0.28  mm
+    inner groove radius ri                           3.64  mm
+    outer groove radius re                           3.64  mm
+    free contact angle alpha_0                   0.189265  rad
+    gamma                                        0.221774
+    reduction factor                                 0.95
+
+-- shaft_2_roller_bearing_2 ----------------
+  family      : cylindrical_roller
+  position    : 190.00 mm
+  arrangement : non-locating
+  d / D       : 20.0 mm / 42.0 mm
+  b           : 12.0 mm
+  C (computed): 12618 N
+  geometry    : assembled
+  ISO 16281   : on
+    e1        : 2.1e+05
+    e2        : 2.1e+05
+    nu1       : 0.3
+    nu2       : 0.3
+    cL        : 1.503e+05
+    cs        : 3006
+    P_xk      : array(50,) min=7.001e-07 max=0.005651
+--------------------------------------------
+
+shaft_2_roller_bearing_2 geometry:
+    roller diameter Dwe                                 5  mm
+    roller effective length Lwe                         5  mm
+    pitch diameter Dpw                                 31  mm
+    rolling elements per row Z                         14
+    number of rows i                                    1
+    laminae per roller n_s                             50
+    radial internal clearance s                      0.01  mm
+    free contact angle alpha_0                          0  rad
+    gamma                                         0.16129
+
+Loads on shaft_2:
+    RadialLoad(position=100.00 mm, F=1819.85 N, theta=180.0°, Fy=-1819.85 N, Fz=0.00 N, source='gear_mesh', label='g_driven:Fr')
+    RadialLoad(position=100.00 mm, F=5000.00 N, theta=90.0°, Fy=0.00 N, Fz=5000.00 N, source='gear_mesh', label='g_driven:Ft')
+    TorqueLoad(position=100.00 mm, T=-200.00 N·m, source='gear_mesh', label='g_driven:T')
+    TorqueLoad(position=200.00 mm, T=200.00 N·m, source='user', label='output_coupling')

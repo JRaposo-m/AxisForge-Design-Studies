@@ -1,49 +1,297 @@
 section,parameter,value,unit
-gear stage,power,10471.9755,W
-gear stage,driving shaft torque,99.99999988573335,N m
-gear stage,speed shaft_1,1000.0,rpm
-gear stage,speed shaft_2,500.0,rpm
-gear stage,normal module,2.0,mm
-gear stage,teeth driver / driven,20 / 40,
-gear stage,face width,15.0,mm
-gear stage,helix angle,0.0,deg
-gear stage,gear position,100.0,mm
-gear stage,line of centres angle,0.0,deg
-shafts (both identical),section 1 bearing_seat_A,"L = 20, d = 20",mm
-shafts (both identical),section 2 body_left,"L = 65, d = 28",mm
-shafts (both identical),section 3 gear_seat,"L = 30, d = 25",mm
-shafts (both identical),section 4 body_right,"L = 65, d = 28",mm
-shafts (both identical),section 5 bearing_seat_B,"L = 20, d = 20",mm
-shafts (both identical),shoulder fillet radius,1.0,mm
-shafts (both identical),total length,200.0,mm
-materials,shaft,S355,
-materials,shaft E,210000.0,MPa
-materials,shaft poisson ratio,0.3,
-materials,bearing,GCr15,
-materials,bearing E,210000.0,MPa
-materials,bearing poisson ratio,0.3,
-materials,gear,C45,
-materials,gear E,210000.0,MPa
-materials,gear poisson ratio,0.3,
-"bearing 1 (locating, partner)",type,DeepGrooveSpec,
-"bearing 1 (locating, partner)",position,10.0,mm
-"bearing 1 (locating, partner)",d_mm,20.0,mm
-"bearing 1 (locating, partner)",D_mm,42.0,mm
-"bearing 1 (locating, partner)",b_mm,12.0,mm
-"bearing 1 (locating, partner)",designation,deep_groove_didactic,
-"bearing 1 (locating, partner)",s,0.01,mm
-"bearing 1 (locating, partner)",Dw,7.0,mm
-"bearing 1 (locating, partner)",Dpw,31.0,mm
-"bearing 1 (locating, partner)",Z,9,
-"bearing 2 (non-locating, under study)",type,CylindricalRollerSpec,
-"bearing 2 (non-locating, under study)",position,190.0,mm
-"bearing 2 (non-locating, under study)",d_mm,20.0,mm
-"bearing 2 (non-locating, under study)",D_mm,42.0,mm
-"bearing 2 (non-locating, under study)",b_mm,12.0,mm
-"bearing 2 (non-locating, under study)",designation,cylindrical_roller_didactic,
-"bearing 2 (non-locating, under study)",s,0.01,mm
-"bearing 2 (non-locating, under study)",Dwe,5.0,mm
-"bearing 2 (non-locating, under study)",Lwe,5.0,mm
-"bearing 2 (non-locating, under study)",Dpw,31.0,mm
-"bearing 2 (non-locating, under study)",Z,14,
-"bearing 2 (non-locating, under study)",n_s,50,
+gear system,label,clearance_and_alpha,
+gear system,number of shafts,2,
+gear system,number of mesh links,1,
+gear system,source shaft,shaft_1,
+gear system,resolved,True,
+gear system,power,10471.9755,W
+gear system,torque of the source shaft,99.99999988573335,N m
+mesh stage1 (shaft_1 -> shaft_2),line of centres angle phi,0.0,deg
+mesh stage1 (shaft_1 -> shaft_2),torque split,mode B (100 %),
+mesh stage1 (shaft_1 -> shaft_2),distribute loads,False,
+mesh stage1 (shaft_1 -> shaft_2),driver gear,g_driver,
+mesh stage1 (shaft_1 -> shaft_2),driven gear,g_driven,
+mesh stage1 (shaft_1 -> shaft_2),reference centre distance a,60.0,mm
+mesh stage1 (shaft_1 -> shaft_2),working centre distance,60.000000000000014,mm
+mesh stage1 (shaft_1 -> shaft_2),gear ratio u,2.0,
+mesh stage1 (shaft_1 -> shaft_2),transverse working pressure angle,0.34906585039886606,rad
+mesh stage1 (shaft_1 -> shaft_2),transverse contact ratio,1.978985032974357,
+mesh stage1 (shaft_1 -> shaft_2),overlap ratio,0.0,
+mesh stage1 (shaft_1 -> shaft_2),total contact ratio,1.978985032974357,
+resolved shaft shaft_1,torque T_out,99.99999988573335,N m
+resolved shaft shaft_1,rotation direction,1,
+resolved shaft shaft_2,torque T_out,199.9999997714667,N m
+resolved shaft shaft_2,rotation direction,-1.0,
+shaft shaft_1,label,shaft_1,
+shaft shaft_1,speed,1000.0,rpm
+shaft shaft_1,design life,20000.0,h
+shaft shaft_1,axis offset y,0.0,mm
+shaft shaft_1,axis offset z,0.0,mm
+shaft shaft_1,origin_x,0.0,mm
+shaft shaft_1,total length,200.0,mm
+shaft shaft_1,number of sections,5,
+shaft shaft_1 - sections,1 shaft_1_bearing_seat_A length,20.0,mm
+shaft shaft_1 - sections,1 shaft_1_bearing_seat_A diameter,20.0,mm
+shaft shaft_1 - sections,1 shaft_1_bearing_seat_A inner_diameter,0.0,mm
+shaft shaft_1 - sections,1 shaft_1_bearing_seat_A material_id,S355,
+shaft shaft_1 - sections,1 shaft_1_bearing_seat_A surface finish Ra,0.8,um
+shaft shaft_1 - sections,1 shaft_1_bearing_seat_A keyways,0,
+shaft shaft_1 - sections,2 shaft_1_body_left length,65.0,mm
+shaft shaft_1 - sections,2 shaft_1_body_left diameter,28.0,mm
+shaft shaft_1 - sections,2 shaft_1_body_left inner_diameter,0.0,mm
+shaft shaft_1 - sections,2 shaft_1_body_left material_id,S355,
+shaft shaft_1 - sections,2 shaft_1_body_left surface finish Ra,0.8,um
+shaft shaft_1 - sections,2 shaft_1_body_left keyways,0,
+shaft shaft_1 - sections,3 shaft_1_gear_seat length,30.0,mm
+shaft shaft_1 - sections,3 shaft_1_gear_seat diameter,25.0,mm
+shaft shaft_1 - sections,3 shaft_1_gear_seat inner_diameter,0.0,mm
+shaft shaft_1 - sections,3 shaft_1_gear_seat material_id,S355,
+shaft shaft_1 - sections,3 shaft_1_gear_seat surface finish Ra,0.8,um
+shaft shaft_1 - sections,3 shaft_1_gear_seat keyways,0,
+shaft shaft_1 - sections,4 shaft_1_body_right length,65.0,mm
+shaft shaft_1 - sections,4 shaft_1_body_right diameter,28.0,mm
+shaft shaft_1 - sections,4 shaft_1_body_right inner_diameter,0.0,mm
+shaft shaft_1 - sections,4 shaft_1_body_right material_id,S355,
+shaft shaft_1 - sections,4 shaft_1_body_right surface finish Ra,0.8,um
+shaft shaft_1 - sections,4 shaft_1_body_right keyways,0,
+shaft shaft_1 - sections,5 shaft_1_bearing_seat_B length,20.0,mm
+shaft shaft_1 - sections,5 shaft_1_bearing_seat_B diameter,20.0,mm
+shaft shaft_1 - sections,5 shaft_1_bearing_seat_B inner_diameter,0.0,mm
+shaft shaft_1 - sections,5 shaft_1_bearing_seat_B material_id,S355,
+shaft shaft_1 - sections,5 shaft_1_bearing_seat_B surface finish Ra,0.8,um
+shaft shaft_1 - sections,5 shaft_1_bearing_seat_B keyways,0,
+shaft shaft_1 - shoulders,at z = 20 mm fillet radius,1.0,mm
+shaft shaft_1 - shoulders,at z = 20 mm large diameter,28.0,mm
+shaft shaft_1 - shoulders,at z = 20 mm small diameter,20.0,mm
+shaft shaft_1 - shoulders,at z = 85 mm fillet radius,1.0,mm
+shaft shaft_1 - shoulders,at z = 85 mm large diameter,28.0,mm
+shaft shaft_1 - shoulders,at z = 85 mm small diameter,25.0,mm
+shaft shaft_1 - shoulders,at z = 115 mm fillet radius,1.0,mm
+shaft shaft_1 - shoulders,at z = 115 mm large diameter,28.0,mm
+shaft shaft_1 - shoulders,at z = 115 mm small diameter,25.0,mm
+shaft shaft_1 - shoulders,at z = 180 mm fillet radius,1.0,mm
+shaft shaft_1 - shoulders,at z = 180 mm large diameter,28.0,mm
+shaft shaft_1 - shoulders,at z = 180 mm small diameter,20.0,mm
+gear g_driver (shaft_1),role,driver,
+gear g_driver (shaft_1),rotation direction,propagated,
+gear g_driver (shaft_1),axial position,100.0,mm
+gear g_driver (shaft_1),normal module mn,2.0,mm
+gear g_driver (shaft_1),number of teeth z,20,
+gear g_driver (shaft_1),profile shift coefficient x,0.0,
+gear g_driver (shaft_1),face width b,15.0,mm
+gear g_driver (shaft_1),normal pressure angle alpha_n,20.0,deg
+gear g_driver (shaft_1),helix angle beta,0.0,deg
+gear g_driver (shaft_1),reference diameter d,40.0,mm
+gear g_driver (shaft_1),tip diameter da,45.0,mm
+gear g_driver (shaft_1),root diameter df,35.0,mm
+gear g_driver (shaft_1),material,C45,
+bearing shaft_1_ball_bearing_1 (shaft_1),family,deep_groove_ball,
+bearing shaft_1_ball_bearing_1 (shaft_1),designation,deep_groove_didactic,
+bearing shaft_1_ball_bearing_1 (shaft_1),arrangement,locating,
+bearing shaft_1_ball_bearing_1 (shaft_1),axial position,10.0,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),bore d,20.0,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),outer D,42.0,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),width b,12.0,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),basic dynamic load rating C,8447.160006318012,N
+bearing shaft_1_ball_bearing_1 (shaft_1),ISO/TS 16281 analysis,True,
+bearing shaft_1_ball_bearing_1 (shaft_1),ball diameter Dw,7.0,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),pitch diameter Dpw,31.0,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),rolling elements per row Z,9,
+bearing shaft_1_ball_bearing_1 (shaft_1),number of rows i,1,
+bearing shaft_1_ball_bearing_1 (shaft_1),radial internal clearance s,0.01,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),groove curvature-centre distance A,0.28000000000000025,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),inner groove radius ri,3.64,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),outer groove radius re,3.64,mm
+bearing shaft_1_ball_bearing_1 (shaft_1),free contact angle alpha_0,0.18926459602876686,rad
+bearing shaft_1_ball_bearing_1 (shaft_1),gamma,0.2217741935483871,
+bearing shaft_1_ball_bearing_1 (shaft_1),reduction factor,0.95,
+bearing shaft_1_ball_bearing_1 (shaft_1),"elastic modulus, rolling element e1",210000.0,
+bearing shaft_1_ball_bearing_1 (shaft_1),"elastic modulus, raceway e2",210000.0,
+bearing shaft_1_ball_bearing_1 (shaft_1),"Poisson ratio, rolling element nu1",0.3,
+bearing shaft_1_ball_bearing_1 (shaft_1),"Poisson ratio, raceway nu2",0.3,
+bearing shaft_1_ball_bearing_1 (shaft_1),contact constant cp (Q = cp delta^1.5),278580.77138935745,N/mm^1.5
+bearing shaft_1_ball_bearing_1 (shaft_1),raceway contact radius Ri,15.6375,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),family,cylindrical_roller,
+bearing shaft_1_roller_bearing_2 (shaft_1),designation,cylindrical_roller_didactic,
+bearing shaft_1_roller_bearing_2 (shaft_1),arrangement,non-locating,
+bearing shaft_1_roller_bearing_2 (shaft_1),axial position,190.0,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),bore d,20.0,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),outer D,42.0,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),width b,12.0,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),basic dynamic load rating C,12618.465769192211,N
+bearing shaft_1_roller_bearing_2 (shaft_1),ISO/TS 16281 analysis,True,
+bearing shaft_1_roller_bearing_2 (shaft_1),roller diameter Dwe,5.0,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),roller effective length Lwe,5.0,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),pitch diameter Dpw,31.0,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),rolling elements per row Z,14,
+bearing shaft_1_roller_bearing_2 (shaft_1),number of rows i,1,
+bearing shaft_1_roller_bearing_2 (shaft_1),laminae per roller n_s,50,
+bearing shaft_1_roller_bearing_2 (shaft_1),radial internal clearance s,0.01,mm
+bearing shaft_1_roller_bearing_2 (shaft_1),free contact angle alpha_0,0.0,rad
+bearing shaft_1_roller_bearing_2 (shaft_1),gamma,0.16129032258064516,
+bearing shaft_1_roller_bearing_2 (shaft_1),"elastic modulus, rolling element e1",210000.0,
+bearing shaft_1_roller_bearing_2 (shaft_1),"elastic modulus, raceway e2",210000.0,
+bearing shaft_1_roller_bearing_2 (shaft_1),"Poisson ratio, rolling element nu1",0.3,
+bearing shaft_1_roller_bearing_2 (shaft_1),"Poisson ratio, raceway nu2",0.3,
+bearing shaft_1_roller_bearing_2 (shaft_1),line-contact constant cL,150307.76030302013,
+bearing shaft_1_roller_bearing_2 (shaft_1),line-contact constant cs,3006.1552060604026,
+loads shaft_1,1 shaft_1:T_in type,TorqueLoad,
+loads shaft_1,1 shaft_1:T_in source,gear_mesh,
+loads shaft_1,1 shaft_1:T_in position,0.0,mm
+loads shaft_1,1 shaft_1:T_in magnitude,-99.99999988573335,N m
+loads shaft_1,2 g_driver:Fr type,RadialLoad,
+loads shaft_1,2 g_driver:Fr source,gear_mesh,
+loads shaft_1,2 g_driver:Fr position,100.0,mm
+loads shaft_1,2 g_driver:Fr magnitude,1819.851169251529,N
+loads shaft_1,2 g_driver:Fr theta_deg,0.0,deg
+loads shaft_1,3 g_driver:Ft type,RadialLoad,
+loads shaft_1,3 g_driver:Ft source,gear_mesh,
+loads shaft_1,3 g_driver:Ft position,100.0,mm
+loads shaft_1,3 g_driver:Ft magnitude,4999.999994286666,N
+loads shaft_1,3 g_driver:Ft theta_deg,90.0,deg
+loads shaft_1,4 g_driver:T type,TorqueLoad,
+loads shaft_1,4 g_driver:T source,gear_mesh,
+loads shaft_1,4 g_driver:T position,100.0,mm
+loads shaft_1,4 g_driver:T magnitude,99.99999988573335,N m
+shaft shaft_2,label,shaft_2,
+shaft shaft_2,speed,500.0,rpm
+shaft shaft_2,design life,20000.0,h
+shaft shaft_2,axis offset y,60.000000000000014,mm
+shaft shaft_2,axis offset z,0.0,mm
+shaft shaft_2,origin_x,0.0,mm
+shaft shaft_2,total length,200.0,mm
+shaft shaft_2,number of sections,5,
+shaft shaft_2 - sections,1 shaft_2_bearing_seat_A length,20.0,mm
+shaft shaft_2 - sections,1 shaft_2_bearing_seat_A diameter,20.0,mm
+shaft shaft_2 - sections,1 shaft_2_bearing_seat_A inner_diameter,0.0,mm
+shaft shaft_2 - sections,1 shaft_2_bearing_seat_A material_id,S355,
+shaft shaft_2 - sections,1 shaft_2_bearing_seat_A surface finish Ra,0.8,um
+shaft shaft_2 - sections,1 shaft_2_bearing_seat_A keyways,0,
+shaft shaft_2 - sections,2 shaft_2_body_left length,65.0,mm
+shaft shaft_2 - sections,2 shaft_2_body_left diameter,28.0,mm
+shaft shaft_2 - sections,2 shaft_2_body_left inner_diameter,0.0,mm
+shaft shaft_2 - sections,2 shaft_2_body_left material_id,S355,
+shaft shaft_2 - sections,2 shaft_2_body_left surface finish Ra,0.8,um
+shaft shaft_2 - sections,2 shaft_2_body_left keyways,0,
+shaft shaft_2 - sections,3 shaft_2_gear_seat length,30.0,mm
+shaft shaft_2 - sections,3 shaft_2_gear_seat diameter,25.0,mm
+shaft shaft_2 - sections,3 shaft_2_gear_seat inner_diameter,0.0,mm
+shaft shaft_2 - sections,3 shaft_2_gear_seat material_id,S355,
+shaft shaft_2 - sections,3 shaft_2_gear_seat surface finish Ra,0.8,um
+shaft shaft_2 - sections,3 shaft_2_gear_seat keyways,0,
+shaft shaft_2 - sections,4 shaft_2_body_right length,65.0,mm
+shaft shaft_2 - sections,4 shaft_2_body_right diameter,28.0,mm
+shaft shaft_2 - sections,4 shaft_2_body_right inner_diameter,0.0,mm
+shaft shaft_2 - sections,4 shaft_2_body_right material_id,S355,
+shaft shaft_2 - sections,4 shaft_2_body_right surface finish Ra,0.8,um
+shaft shaft_2 - sections,4 shaft_2_body_right keyways,0,
+shaft shaft_2 - sections,5 shaft_2_bearing_seat_B length,20.0,mm
+shaft shaft_2 - sections,5 shaft_2_bearing_seat_B diameter,20.0,mm
+shaft shaft_2 - sections,5 shaft_2_bearing_seat_B inner_diameter,0.0,mm
+shaft shaft_2 - sections,5 shaft_2_bearing_seat_B material_id,S355,
+shaft shaft_2 - sections,5 shaft_2_bearing_seat_B surface finish Ra,0.8,um
+shaft shaft_2 - sections,5 shaft_2_bearing_seat_B keyways,0,
+shaft shaft_2 - shoulders,at z = 20 mm fillet radius,1.0,mm
+shaft shaft_2 - shoulders,at z = 20 mm large diameter,28.0,mm
+shaft shaft_2 - shoulders,at z = 20 mm small diameter,20.0,mm
+shaft shaft_2 - shoulders,at z = 85 mm fillet radius,1.0,mm
+shaft shaft_2 - shoulders,at z = 85 mm large diameter,28.0,mm
+shaft shaft_2 - shoulders,at z = 85 mm small diameter,25.0,mm
+shaft shaft_2 - shoulders,at z = 115 mm fillet radius,1.0,mm
+shaft shaft_2 - shoulders,at z = 115 mm large diameter,28.0,mm
+shaft shaft_2 - shoulders,at z = 115 mm small diameter,25.0,mm
+shaft shaft_2 - shoulders,at z = 180 mm fillet radius,1.0,mm
+shaft shaft_2 - shoulders,at z = 180 mm large diameter,28.0,mm
+shaft shaft_2 - shoulders,at z = 180 mm small diameter,20.0,mm
+gear g_driven (shaft_2),role,driven,
+gear g_driven (shaft_2),rotation direction,propagated,
+gear g_driven (shaft_2),axial position,100.0,mm
+gear g_driven (shaft_2),normal module mn,2.0,mm
+gear g_driven (shaft_2),number of teeth z,40,
+gear g_driven (shaft_2),profile shift coefficient x,0.0,
+gear g_driven (shaft_2),face width b,15.0,mm
+gear g_driven (shaft_2),normal pressure angle alpha_n,20.0,deg
+gear g_driven (shaft_2),helix angle beta,0.0,deg
+gear g_driven (shaft_2),reference diameter d,80.0,mm
+gear g_driven (shaft_2),tip diameter da,85.0,mm
+gear g_driven (shaft_2),root diameter df,75.0,mm
+gear g_driven (shaft_2),material,C45,
+bearing shaft_2_ball_bearing_1 (shaft_2),family,deep_groove_ball,
+bearing shaft_2_ball_bearing_1 (shaft_2),designation,deep_groove_didactic,
+bearing shaft_2_ball_bearing_1 (shaft_2),arrangement,locating,
+bearing shaft_2_ball_bearing_1 (shaft_2),axial position,10.0,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),bore d,20.0,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),outer D,42.0,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),width b,12.0,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),basic dynamic load rating C,8447.160006318012,N
+bearing shaft_2_ball_bearing_1 (shaft_2),ISO/TS 16281 analysis,True,
+bearing shaft_2_ball_bearing_1 (shaft_2),ball diameter Dw,7.0,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),pitch diameter Dpw,31.0,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),rolling elements per row Z,9,
+bearing shaft_2_ball_bearing_1 (shaft_2),number of rows i,1,
+bearing shaft_2_ball_bearing_1 (shaft_2),radial internal clearance s,0.01,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),groove curvature-centre distance A,0.28000000000000025,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),inner groove radius ri,3.64,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),outer groove radius re,3.64,mm
+bearing shaft_2_ball_bearing_1 (shaft_2),free contact angle alpha_0,0.18926459602876686,rad
+bearing shaft_2_ball_bearing_1 (shaft_2),gamma,0.2217741935483871,
+bearing shaft_2_ball_bearing_1 (shaft_2),reduction factor,0.95,
+bearing shaft_2_ball_bearing_1 (shaft_2),"elastic modulus, rolling element e1",210000.0,
+bearing shaft_2_ball_bearing_1 (shaft_2),"elastic modulus, raceway e2",210000.0,
+bearing shaft_2_ball_bearing_1 (shaft_2),"Poisson ratio, rolling element nu1",0.3,
+bearing shaft_2_ball_bearing_1 (shaft_2),"Poisson ratio, raceway nu2",0.3,
+bearing shaft_2_ball_bearing_1 (shaft_2),contact constant cp (Q = cp delta^1.5),278580.77138935745,N/mm^1.5
+bearing shaft_2_ball_bearing_1 (shaft_2),raceway contact radius Ri,15.6375,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),family,cylindrical_roller,
+bearing shaft_2_roller_bearing_2 (shaft_2),designation,cylindrical_roller_didactic,
+bearing shaft_2_roller_bearing_2 (shaft_2),arrangement,non-locating,
+bearing shaft_2_roller_bearing_2 (shaft_2),axial position,190.0,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),bore d,20.0,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),outer D,42.0,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),width b,12.0,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),basic dynamic load rating C,12618.465769192211,N
+bearing shaft_2_roller_bearing_2 (shaft_2),ISO/TS 16281 analysis,True,
+bearing shaft_2_roller_bearing_2 (shaft_2),roller diameter Dwe,5.0,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),roller effective length Lwe,5.0,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),pitch diameter Dpw,31.0,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),rolling elements per row Z,14,
+bearing shaft_2_roller_bearing_2 (shaft_2),number of rows i,1,
+bearing shaft_2_roller_bearing_2 (shaft_2),laminae per roller n_s,50,
+bearing shaft_2_roller_bearing_2 (shaft_2),radial internal clearance s,0.01,mm
+bearing shaft_2_roller_bearing_2 (shaft_2),free contact angle alpha_0,0.0,rad
+bearing shaft_2_roller_bearing_2 (shaft_2),gamma,0.16129032258064516,
+bearing shaft_2_roller_bearing_2 (shaft_2),"elastic modulus, rolling element e1",210000.0,
+bearing shaft_2_roller_bearing_2 (shaft_2),"elastic modulus, raceway e2",210000.0,
+bearing shaft_2_roller_bearing_2 (shaft_2),"Poisson ratio, rolling element nu1",0.3,
+bearing shaft_2_roller_bearing_2 (shaft_2),"Poisson ratio, raceway nu2",0.3,
+bearing shaft_2_roller_bearing_2 (shaft_2),line-contact constant cL,150307.76030302013,
+bearing shaft_2_roller_bearing_2 (shaft_2),line-contact constant cs,3006.1552060604026,
+loads shaft_2,1 g_driven:Fr type,RadialLoad,
+loads shaft_2,1 g_driven:Fr source,gear_mesh,
+loads shaft_2,1 g_driven:Fr position,100.0,mm
+loads shaft_2,1 g_driven:Fr magnitude,1819.851169251529,N
+loads shaft_2,1 g_driven:Fr theta_deg,180.0,deg
+loads shaft_2,2 g_driven:Ft type,RadialLoad,
+loads shaft_2,2 g_driven:Ft source,gear_mesh,
+loads shaft_2,2 g_driven:Ft position,100.0,mm
+loads shaft_2,2 g_driven:Ft magnitude,4999.999994286666,N
+loads shaft_2,2 g_driven:Ft theta_deg,90.0,deg
+loads shaft_2,3 g_driven:T type,TorqueLoad,
+loads shaft_2,3 g_driven:T source,gear_mesh,
+loads shaft_2,3 g_driven:T position,100.0,mm
+loads shaft_2,3 g_driven:T magnitude,-199.9999997714667,N m
+loads shaft_2,4 output_coupling type,TorqueLoad,
+loads shaft_2,4 output_coupling source,user,
+loads shaft_2,4 output_coupling position,200.0,mm
+loads shaft_2,4 output_coupling magnitude,199.9999997714667,N m
+study,bearing shaft_1_ball_bearing_1 (locating),partner,
+study,bearing shaft_1_roller_bearing_2 (non-locating),under study,
+materials passed to the build,shaft,S355,
+materials passed to the build,shaft E,210000.0,MPa
+materials passed to the build,shaft poisson ratio,0.3,
+materials passed to the build,bearing,GCr15,
+materials passed to the build,bearing E,210000.0,MPa
+materials passed to the build,bearing poisson ratio,0.3,
+materials passed to the build,gear,C45,
+materials passed to the build,gear E,210000.0,MPa
+materials passed to the build,gear poisson ratio,0.3,
