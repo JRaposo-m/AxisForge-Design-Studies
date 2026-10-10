@@ -22,7 +22,8 @@ examples/       the libraries being used, no acceptance criterion (slippy/)
 studies/        engineering questions: shafts/ bearings/ gears/ systems/ contact/
 style/          axisforge.mplstyle — the one report style
 tests/          imports + regression of the validation cases
-artifacts/      (git-ignored) everything a script generates, mirroring its path
+<case>/results/  (git-ignored) what the scripts of a study or validation case generate, next to
+                them (D-0020); examples still write to the old top-level artifacts/
 ```
 
 **validation vs studies.** If the answer is known (a closed form, a standard's

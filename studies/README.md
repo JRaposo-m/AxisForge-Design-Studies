@@ -31,11 +31,11 @@ All are planned; each README holds the question and why it matters.
   the study sweeps it. Keep construction in the study script when it is trivial
   or used once — separate it when that makes the study easier to read.
 - **Stages:** build → solve → analyse. Frozen data between stages is a file in
-  `artifacts/` stamped with the AxisForge commit that produced it — e.g. the
+  `results/` stamped with the AxisForge commit that produced it — e.g. the
   ADR-002 fields (`Q_j`, `alpha_j`, `phi_j`, `r1`, `r2`) written by the AxisForge
   stage and read by the SlipPY stage.
 - **Imports:** only `references` and the study's own files. Never another
   study, never `validation._support` (copy what you need).
 - **README of each study:** question, AxisForge commit, criteria if any (fixed
   before running), what each file does, result and conclusion.
-- Generated files go to `artifacts/studies/<domain>/<study>/` (git-ignored).
+- Generated files go to `results/` inside the study folder (git-ignored, D-0020).

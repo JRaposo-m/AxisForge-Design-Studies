@@ -1,10 +1,10 @@
 """Rolling bearings: AxisForge bearing (+ ISO/TS 16281 result) -> :class:`Contact` list.
 
-Registered for every AxisForge bearing family that exists today (point and line contact, radial
-and thrust). One adapter serves them all, because AxisForge already reduces each family to the
-same descriptor (``r_rolling_el``, ``r_inner``, ``r_outer``: two principal radii each, in mm) and
-registers it as point or line contact; this module only converts that descriptor to the
-Hertz/SlipPY form:
+:class:`BearingContacts` is registered for every AxisForge bearing family that exists today (point
+and line contact, radial and thrust). One adapter serves them all, because AxisForge already
+reduces each family to the same descriptor (``r_rolling_el``, ``r_inner``, ``r_outer``: two
+principal radii each, in mm) and registers it as point or line contact; this module only converts
+that descriptor to the Hertz/SlipPY form:
 
 * units: mm -> m, MPa -> Pa;
 * signs: convex > 0, concave < 0. AxisForge stores the rolling radius of the outer raceway as
@@ -26,9 +26,9 @@ import math
 
 import numpy as np
 
-from ...base import Contact, ContactCase, register
+from ...base import Contact, ContactCase, ElementAdapter, register
 
-__all__ = ["contact_case", "rolling_radius", "entrainment_speed", "bearing_contacts"]
+__all__ = ["contact_case", "rolling_radius", "entrainment_speed", "BearingContacts"]
 
 _MM = 1e-3      # [m/mm]
 _MPA = 1e6      # [Pa/MPa]
@@ -37,10 +37,10 @@ _MPA = 1e6      # [Pa/MPa]
 def rolling_radius(Dpw: float, D: float, alpha: float, race: str) -> float:
     """Raceway radius of curvature in the rolling direction, as a magnitude [same unit as Dpw].
 
-    ``(Dpw - D cos a) / (2 cos a)`` for the inner raceway, ``(Dpw + D cos a) / (2 cos a)`` for the
-    outer one, with ``D`` the ball diameter ``Dw`` or the roller diameter ``Dwe``. Same formula
-    as AxisForge ``BallBearingGeometry.r_bx_inner/outer`` (and, at ``a = 0``, the cylindrical
-    roller geometry).
+    ``(Dpw - D cos(alpha)) / (2 cos(alpha))`` for the inner raceway,
+    ``(Dpw + D cos(alpha)) / (2 cos(alpha))`` for the outer one, with ``D`` the ball diameter ``Dw`` or the
+    roller diameter ``Dwe``. Same formula as AxisForge ``BallBearingGeometry.r_bx_inner/outer``
+    (and, at ``alpha = 0``, the cylindrical roller geometry).
 
     Raises
     ------
@@ -126,7 +126,7 @@ def contact_case(bearing, race: str, load: float, alpha: float | None = None,
         label = f"{bearing.label or bearing.designation}_{race}"
     return ContactCase(label=label,
                        r1=tuple(r * _MM for r in r1), r2=tuple(r * _MM for r in r2),
-                       moduli=(bearing.e1 * _MPA, bearing.e2 * _MPA), v=(bearing.nu1, bearing.nu2),
+                       E=(bearing.e1 * _MPA, bearing.e2 * _MPA), nu=(bearing.nu1, bearing.nu2),
                        load=load_si, line=line)
 
 
@@ -135,8 +135,8 @@ def entrainment_speed(Dpw: float, D: float, alpha: float, n_inner_rpm: float, n_
 
     ``u_e = (Dpw/4) (1 - gamma^2) |omega_i - omega_o|`` with ``gamma = D cos(alpha) / Dpw``
     (Harris & Kotzalas, cage kinematics; equal for the inner and outer contact). ``Dpw``, ``D``
-    in mm. Spin and gyroscopic sliding are neglected; for a thrust bearing (alpha = pi/2) it is the
-    speed at the pitch radius.
+    in mm. Spin and gyroscopic sliding are neglected; for a thrust bearing (alpha = pi/2) it is half
+    the speed of the rotating washer at the pitch radius.
     """
     gamma = D * math.cos(alpha) / Dpw
     omega = abs(n_inner_rpm - n_outer_rpm) * 2.0 * math.pi / 60.0
@@ -168,86 +168,97 @@ def _select(Q: np.ndarray, elements) -> list[int]:
     return [int(j) for j in elements]
 
 
-@register("bearing", *_families())
-def bearing_contacts(bearing, result=None, *, races=("inner", "outer"), elements="loaded",
-                     row: int = 0, laminae: bool = False, load: float | None = None,
-                     alpha: float | None = None, n_inner_rpm: float | None = None,
-                     n_outer_rpm: float = 0.0) -> list[Contact]:
-    """Contacts of one AxisForge bearing.
+@register(*_families())
+class BearingContacts(ElementAdapter):
+    """Adapter of every AxisForge rolling bearing family, point and line contact alike.
 
-    Two ways to give the load:
-
-    * ``result``: the ISO/TS 16281 result (``BearingResult`` or one of its rows). Each selected
-      element j gives its ``Q_j`` and operating angle ``alpha_j``; rollers give their whole load
-      over ``Lwe``, or with ``laminae=True`` one contact per loaded lamina (``q_jk`` over
-      ``Lwe / n_s``).
-    * ``load`` (and optionally ``alpha``): one contact per race, no element index.
-
-    Parameters
-    ----------
-    bearing : axisforge Bearing
-    result : BearingResult or LoadDistributionResult, optional
-    races : sequence of {"inner", "outer"}
-    elements : "loaded" | "max" | sequence of int
-        Which rolling elements (with ``result``); unloaded elements in a list are skipped.
-    row : int
-        Row of a multi-row bearing (with ``result``).
-    laminae : bool
-        Roller bearings with ``result``: one contact per loaded lamina.
-    load : float, optional
-        Element load [N] when no ``result`` is given.
-    alpha : float, optional
-        Contact angle [rad] when no ``result`` is given (default: the family angle).
-    n_inner_rpm, n_outer_rpm : float, optional
-        Ring speeds [rpm]; if ``n_inner_rpm`` is given, ``kinematics`` gets ``u_e_m_per_s`` and
-        ``slide_roll = 0`` (pure rolling).
-
-    Returns
-    -------
-    list of Contact
-        Inner and outer contacts carry the same element load (AxisForge has no centrifugal term).
-
-    Raises
-    ------
-    ValueError
-        If both or neither of ``result`` and ``load`` are given, or ``laminae`` is asked for a
-        point contact.
+    One class only: AxisForge reduces each family to the same three pairs of radii and tags it as
+    point or line contact (read by ``_is_line_contact``), so there is no second variant to subclass.
     """
-    if (result is None) == (load is None):
-        raise ValueError("give either result (ISO/TS 16281) or load, not both")
-    line = _is_line_contact(bearing)
-    if laminae and not line:
-        raise ValueError("laminae applies to roller (line contact) bearings only")
-    subtype = type(bearing.family).__name__
-    D = bearing.Dwe if line else bearing.Dw
 
-    items = []          # (location, load [N], alpha [rad] or None, length [mm] or None)
-    if result is None:
-        items.append(({}, load, alpha, None))
-    else:
-        r = _row_of(result, row)
-        phi_global = result.phi_j_global(row) if hasattr(result, "phi_j_global") else None
-        for j in _select(r.Q_j, elements):
-            loc = {"row": row, "element_j": j, "phi_local_rad": float(r.phi_j[j]),
-                   **({} if phi_global is None else {"phi_global_rad": float(phi_global[j])}),
-                   "alpha_rad": float(r.alpha_j[j])}
-            if laminae:
-                width = bearing.Lwe / r.n_s
-                for k in np.flatnonzero(r.q_jk[j] > 0.0):
-                    items.append(({**loc, "lamina_k": int(k), "x_mm": float(r.x_k[k])},
-                                  float(r.q_jk[j, k]), float(r.alpha_j[j]), width))
-            elif r.Q_j[j] > 0.0:
-                items.append((loc, float(r.Q_j[j]), float(r.alpha_j[j]), None))
+    element = "bearing"
 
-    out = []
-    for loc, q, a, length in items:
-        a_kin = bearing.alpha_0 if a is None else a
-        kin = {} if n_inner_rpm is None else {
-            "u_e_m_per_s": entrainment_speed(bearing.Dpw, D, a_kin, n_inner_rpm, n_outer_rpm),
-            "slide_roll": 0.0}
-        for race in races:
-            suffix = "".join(f"_{k[0]}{v}" for k, v in loc.items() if k in ("element_j", "lamina_k"))
-            case = contact_case(bearing, race, q, alpha=a, length=length,
-                                label=f"{bearing.label or bearing.designation}_{race}{suffix}")
-            out.append(Contact("bearing", subtype, {"race": race, **loc}, case, kin))
-    return out
+    @classmethod
+    def contacts(cls, bearing, result=None, *, races=("inner", "outer"), elements="loaded",
+                 row: int = 0, laminae: bool = False, load: float | None = None,
+                 alpha: float | None = None, n_inner_rpm: float | None = None,
+                 n_outer_rpm: float = 0.0) -> list[Contact]:
+        """Contacts of one AxisForge bearing.
+
+        Two ways to give the load:
+
+        * ``result``: the ISO/TS 16281 result (``BearingResult`` or one of its rows). Each selected
+          element j gives its ``Q_j`` and operating angle ``alpha_j``; rollers give their whole load
+          over ``Lwe``, or with ``laminae=True`` one contact per loaded lamina (``q_jk`` over
+          ``Lwe / n_s``).
+        * ``load`` (and optionally ``alpha``): one contact per race, no element index.
+
+        Parameters
+        ----------
+        bearing : axisforge Bearing
+        result : BearingResult or LoadDistributionResult, optional
+        races : sequence of {"inner", "outer"}
+        elements : "loaded" | "max" | sequence of int
+            Which rolling elements (with ``result``); unloaded elements in a list are skipped.
+        row : int
+            Row of a multi-row bearing (with ``result``).
+        laminae : bool
+            Roller bearings with ``result``: one contact per loaded lamina.
+        load : float, optional
+            Element load [N] when no ``result`` is given.
+        alpha : float, optional
+            Contact angle [rad] when no ``result`` is given (default: the family angle).
+        n_inner_rpm, n_outer_rpm : float, optional
+            Ring speeds [rpm]; if ``n_inner_rpm`` is given, ``kinematics`` gets ``u_e_m_per_s`` and
+            ``slide_roll = 0`` (pure rolling).
+
+        Returns
+        -------
+        list of Contact
+            Inner and outer contacts carry the same element load (AxisForge has no centrifugal term).
+
+        Raises
+        ------
+        ValueError
+            If both or neither of ``result`` and ``load`` are given, or ``laminae`` is asked for a
+            point contact.
+        """
+        if (result is None) == (load is None):
+            raise ValueError("give either result (ISO/TS 16281) or load, not both")
+        line = _is_line_contact(bearing)
+        if laminae and not line:
+            raise ValueError("laminae applies to roller (line contact) bearings only")
+        subtype = type(bearing.family).__name__
+        D = bearing.Dwe if line else bearing.Dw
+
+        items = []          # (location, load [N], alpha [rad] or None, length [mm] or None)
+        if result is None:
+            items.append(({}, load, alpha, None))
+        else:
+            row_result = _row_of(result, row)
+            phi_global = result.phi_j_global(row) if hasattr(result, "phi_j_global") else None
+            for j in _select(row_result.Q_j, elements):
+                loc = {"row": row, "element_j": j, "phi_local_rad": float(row_result.phi_j[j]),
+                       **({} if phi_global is None else {"phi_global_rad": float(phi_global[j])}),
+                       "alpha_rad": float(row_result.alpha_j[j])}
+                if laminae:
+                    lamina_length = bearing.Lwe / row_result.n_s
+                    for k in np.flatnonzero(row_result.q_jk[j] > 0.0):
+                        items.append(({**loc, "lamina_k": int(k), "x_k_mm": float(row_result.x_k[k])},
+                                      float(row_result.q_jk[j, k]), float(row_result.alpha_j[j]),
+                                      lamina_length))
+                elif row_result.Q_j[j] > 0.0:
+                    items.append((loc, float(row_result.Q_j[j]), float(row_result.alpha_j[j]), None))
+
+        out = []
+        for loc, Q, alpha_j, length in items:
+            alpha_kin = bearing.alpha_0 if alpha_j is None else alpha_j
+            kin = {} if n_inner_rpm is None else {
+                "u_e_m_per_s": entrainment_speed(bearing.Dpw, D, alpha_kin, n_inner_rpm, n_outer_rpm),
+                "slide_roll": 0.0}
+            for race in races:
+                suffix = "".join(f"_{k[0]}{v}" for k, v in loc.items() if k in ("element_j", "lamina_k"))
+                case = contact_case(bearing, race, Q, alpha=alpha_j, length=length,
+                                    label=f"{bearing.label or bearing.designation}_{race}{suffix}")
+                out.append(Contact(cls.element, subtype, {"race": race, **loc}, case, kin))
+        return out

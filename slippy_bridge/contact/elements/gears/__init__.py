@@ -5,17 +5,20 @@ its adapter is not written yet: it needs the position of the contact along the l
 (and, for lubrication, its change in time), the load per unit length with load sharing, and the
 radii of curvature at that position (AxisForge gives the points T1A..T1E and T1T2, not rho(s)).
 """
-from ...base import register
+from axisforge.core.machine_elements.gears.parallel_axis import SpurHelicalGearMeshing
 
-__all__ = []
+from ...base import Contact, ElementAdapter, register
 
-
-def _spur_helical():
-    from axisforge.core.machine_elements.gears.parallel_axis import SpurHelicalGearMeshing
-    return SpurHelicalGearMeshing
+__all__ = ["SpurHelicalContacts"]
 
 
-@register("gear", _spur_helical())
-def _spur_helical_contacts(mesh, *args, **kwargs):
-    raise NotImplementedError("gear contacts: adapter not written yet (position along the line of "
-                              "action, load sharing and rho(s) to be decided; see gears/__init__.py)")
+@register(SpurHelicalGearMeshing)
+class SpurHelicalContacts(ElementAdapter):
+    """Adapter of the AxisForge spur/helical mesh: registered, not written yet (see the module text)."""
+
+    element = "gear"
+
+    @classmethod
+    def contacts(cls, mesh, *args, **kwargs) -> list[Contact]:
+        raise NotImplementedError("gear contacts: adapter not written yet (position along the line of "
+                                  "action, load sharing and rho(s) to be decided; see gears/__init__.py)")

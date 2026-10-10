@@ -1,8 +1,7 @@
-"""Diagnostic figure of one run (one build, one resolution) of ``hertz_vs_bem``.
+"""The two figures of ``hertz_vs_bem``. Appearance comes from ``style/axisforge.mplstyle``.
 
-Three panels: the surface SlipPy built (its own ``show``), the numerical pressure field with
-the Hertz contact (ellipse, or the two edges of the strip for a line contact), and the pressure
-cuts through the apex against the Hertz profile. The array may be rectangular.
+The functions only pass data: no colours, fonts or sizes are set here. A series is identified by
+its line style and marker as well as by its colour.
 """
 from __future__ import annotations
 
@@ -15,90 +14,80 @@ matplotlib.use("Agg")                      # write files only, no window
 import matplotlib.pyplot as plt
 import numpy as np
 
-__all__ = ["plot_run"]
+from slippy_bridge.contact import hertz
+
+__all__ = ["convergence", "pressure_cuts"]
+
+plt.style.use(Path(__file__).resolve().parents[5] / "style" / "axisforge.mplstyle")
+
+_LINES = ("-", "--")                       # one per build
+_MARKERS = ("o", "s", "^", "D")            # one per quantity
 
 
-def plot_run(out_png, surface, p: np.ndarray, h: float, ref: dict, title: str = "") -> None:
-    """Save the diagnostic figure of one run.
+def convergence(records: list[dict], out_png) -> None:
+    """Relative error against Hertz along the mesh sweep and along the domain sweep.
 
     Parameters
     ----------
-    out_png : str or pathlib.Path
-        Output file (folder created if missing).
-    surface : slippy surface
-        The discrete surface of the build; its ``show('profile', 'surface', ax)`` is used if present.
-    p : numpy.ndarray
-        Numerical pressure [Pa] on the grid (rows x columns).
-    h : float
-        Grid spacing [m].
-    ref : dict
-        ``hertz_full`` results: ``contact_radii`` [m] (one may be infinite for a line contact)
-        and ``max_pressure`` [Pa].
-    title : str, optional
-        Figure title.
+    records : list of dict
+        From ``_common.sweep.sweep``: ``build``, ``sweep``, ``span_x``, ``h_m`` and the errors
+        ``err_p0``, ``err_s_x``, ``err_s_y``, ``err_delta`` (fractions).
+    out_png : path
+        Output file; its folder must exist.
 
     Notes
     -----
-    The Hertz profile along a direction is ``p0 sqrt(1 - (s/c)^2)``. The semi-axis ``c`` of each
-    direction is taken from the measured half-extent (the direction where the loaded nodes extend
-    further gets the larger Hertz semi-axis; a direction that the load spans completely gets an
-    infinite one), because the orientation of x and y in the arrays is not assumed. The apex is the
-    node ``n/2`` of each axis (even n).
+    Left: ``|error|`` of the maximum pressure, the two semi-axes and the approach against the grid
+    spacing (logarithmic axes), one line style per build. A quantity that has no finite Hertz value
+    (line contact: ``s_y``, approach) is left out. Right: signed error of the maximum pressure
+    against the half-length of the domain along rolling.
     """
-    ny, nx = p.shape
-    s_r = (np.arange(ny) - ny / 2.0) * h              # coordinate along the rows
-    s_c = (np.arange(nx) - nx / 2.0) * h              # coordinate along the columns
-    radii = sorted((float(r) for r in ref["contact_radii"]), reverse=True)
-    finite = [r for r in radii if math.isfinite(r)]
-    p0 = float(ref["max_pressure"])
+    fig, (ax_h, ax_d) = plt.subplots(1, 2)
+    quantities = (("err_p0", "$p_0$"), ("err_s_x", "$s_x$"), ("err_s_y", "$s_y$"), ("err_delta", r"$\delta$"))
+    for build, ls in zip(dict.fromkeys(r["build"] for r in records), _LINES):
+        mesh = [r for r in records if r["build"] == build and r["sweep"] == "mesh"]
+        domain = [r for r in records if r["build"] == build and r["sweep"] == "domain"]
+        for (key, symbol), marker, colour in zip(quantities, _MARKERS, plt.rcParams["axes.prop_cycle"]):
+            if all(math.isfinite(r[key]) for r in mesh):
+                ax_h.loglog([r["h_m"] * 1e6 for r in mesh], [abs(r[key]) * 100 for r in mesh],
+                            ls=ls, marker=marker, label=f"{symbol}, {build}", **colour)
+        ax_d.plot([r["span_x"] for r in domain], [r["err_p0"] * 100 for r in domain],
+                  ls=ls, marker=_MARKERS[0], label=build)
+    ax_h.set_xlabel(r"$h$ / $\mu$m")
+    ax_h.set_ylabel(r"$|\varepsilon|$ / %")
+    ax_h.legend()
+    ax_d.set_xlabel("domain half-length / $s_x$")
+    ax_d.set_ylabel(r"$\varepsilon_{p_0}$ / %")
+    ax_d.legend()
+    fig.savefig(out_png)
+    plt.close(fig)
 
-    mask = p > 1e-6 * p.max()
-    rows, cols = np.where(mask)
-    half_r, half_c = (rows.max() - rows.min() + 1) * h / 2, (cols.max() - cols.min() + 1) * h / 2
-    span_r, span_c = len(np.unique(rows)) == ny, len(np.unique(cols)) == nx
-    if len(finite) == 1:                              # line contact: the strip axis has no edge
-        c_col = math.inf if span_c else finite[0]       # loaded along every column: the line axis
-        c_row = math.inf if span_r else finite[0]
-    else:
-        c_row, c_col = (finite[0], finite[1]) if half_r >= half_c else (finite[1], finite[0])
-    a_plot = finite[0]
 
-    fig = plt.figure(figsize=(15, 4.5))
-    ax0 = fig.add_subplot(131, projection="3d")
-    if hasattr(surface, "show"):
-        surface.show("profile", "surface", ax0)
-    ax0.set_title("Surface (SlipPy)")
+def pressure_cuts(p: np.ndarray, grid, case, out_png) -> None:
+    """Pressure through the contact centre, along and across rolling, against Hertz.
 
-    ax1 = fig.add_subplot(132)
-    ext = [s_c[0] * 1e3, s_c[-1] * 1e3, s_r[0] * 1e3, s_r[-1] * 1e3]
-    im = ax1.imshow(p * 1e-6, extent=ext, origin="lower", aspect="auto" if ny != nx else "equal")
-    fig.colorbar(im, ax=ax1, label="pressure [MPa]")
-    if math.isfinite(c_row) and math.isfinite(c_col):
-        t = np.linspace(0, 2 * math.pi, 200)
-        ax1.plot(c_col * np.cos(t) * 1e3, c_row * np.sin(t) * 1e3, "w--", lw=1, label="Hertz ellipse")
-    else:
-        edge = c_col if math.isfinite(c_col) else c_row
-        for sgn in (-1, 1):
-            if math.isfinite(c_col):
-                ax1.axvline(sgn * edge * 1e3, color="w", ls="--", lw=1, label="Hertz edge" if sgn < 0 else None)
-            else:
-                ax1.axhline(sgn * edge * 1e3, color="w", ls="--", lw=1, label="Hertz edge" if sgn < 0 else None)
-    ax1.set_xlabel("columns [mm]"); ax1.set_ylabel("rows [mm]"); ax1.legend(loc="upper right")
-
-    ax2 = fig.add_subplot(133)
-    for cut, s_axis, c_h, name in ((p[ny // 2, :], s_c, c_col, "along columns"),
-                                   (p[:, nx // 2], s_r, c_row, "along rows")):
-        ax2.plot(s_axis * 1e3, cut * 1e-6, label=f"numerical, {name}")
-        if math.isfinite(c_h):
-            x = np.linspace(-c_h, c_h, 400)
-            ax2.plot(x * 1e3, p0 * np.sqrt(1 - (x / c_h) ** 2) * 1e-6, "k--", lw=1)
-    ax2.plot([], [], "k--", label="Hertz")
-    ax2.set_xlim(-1.5 * a_plot * 1e3, 1.5 * a_plot * 1e3)
-    ax2.set_xlabel("distance from apex [mm]"); ax2.set_ylabel("pressure [MPa]"); ax2.legend()
-
-    fig.suptitle(title)
-    fig.tight_layout()
-    out = Path(out_png)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=130)
+    Parameters
+    ----------
+    p : ndarray
+        Pressure [Pa] on ``grid`` (rolling along axis 0), from ``static_step.run``.
+    grid : slippy_bridge.contact.Grid
+        The grid of the solution; its centre node ``(n_x//2, n_y//2)`` is the contact centre.
+    case : ContactCase
+        The contact, for the Hertz pressure ``p0 sqrt(1 - (x/s_x)^2 - (y/s_y)^2)``.
+    out_png : path
+        Output file; its folder must exist.
+    """
+    i0, j0 = grid.X.shape[0] // 2, grid.X.shape[1] // 2
+    reference = hertz(case)["pressure"]
+    fig, (ax_x, ax_y) = plt.subplots(1, 2, sharey=True)
+    for ax, coord, cut, symbol in ((ax_x, grid.X[:, j0], p[:, j0], "x"), (ax_y, grid.Y[i0, :], p[i0, :], "y")):
+        fine = np.linspace(coord[0], coord[-1], 801)
+        zero = np.zeros_like(fine)             # the other coordinate: the cut passes through the centre
+        hertz_cut = reference(fine, zero) if symbol == "x" else reference(zero, fine)
+        ax.plot(fine * 1e3, hertz_cut * 1e-6, ls="-", label="Hertz")
+        ax.plot(coord * 1e3, cut * 1e-6, ls="none", marker="o", label="SlipPY")
+        ax.set_xlabel(f"${symbol}$ / mm")
+    ax_x.set_ylabel("$p$ / MPa")
+    ax_x.legend()
+    fig.savefig(out_png)
     plt.close(fig)

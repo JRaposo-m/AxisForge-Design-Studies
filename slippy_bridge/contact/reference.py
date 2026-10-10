@@ -1,6 +1,6 @@
 """Hertz reference of a contact, from SlipPY's ``hertz_full``, oriented on the bridge axes.
 
-Used to size grids, give initial guesses and compare. It is SlipPY's Hertz (with João's local
+Used to size grids, give initial guesses and compare. It is SlipPY's Hertz (with José's local
 fixes in ``slippy/contact/hertz.py``); the independent judge for validation cases stays in
 ``references/contact`` (no SlipPY import).
 
@@ -27,8 +27,9 @@ def relative_radii(case: ContactCase) -> tuple[float, float]:
         If a relative curvature is negative (the bodies do not form a Hertz contact).
     """
     out = []
-    for a, b in zip(case.r1, case.r2):
-        k = (0.0 if math.isinf(a) else 1.0 / a) + (0.0 if math.isinf(b) else 1.0 / b)
+    for r_body1, r_body2 in zip(case.r1, case.r2):
+        k = ((0.0 if math.isinf(r_body1) else 1.0 / r_body1)
+             + (0.0 if math.isinf(r_body2) else 1.0 / r_body2))
         if k < 0:
             raise ValueError(f"negative relative curvature {k}: the bodies do not form a Hertz contact")
         out.append(math.inf if k == 0 else 1.0 / k)
@@ -59,8 +60,8 @@ def hertz(case: ContactCase) -> dict:
     R_x, R_y = relative_radii(case)
 
     def pressure(X, Y):
-        r2 = (X / s_x) ** 2 + (0.0 if math.isinf(s_y) else (Y / s_y) ** 2)
-        return p0 * np.sqrt(np.clip(1.0 - r2, 0.0, None))
+        rho2 = (X / s_x) ** 2 + (0.0 if math.isinf(s_y) else (Y / s_y) ** 2)
+        return p0 * np.sqrt(np.clip(1.0 - rho2, 0.0, None))
 
     return {"p0_Pa": p0, "s_x_m": s_x, "s_y_m": s_y, "R_x_m": R_x, "R_y_m": R_y,
             "delta_m": float(ref.get("total_deflection", math.nan)), "pressure": pressure}
@@ -72,10 +73,10 @@ def _hertz_full(case: ContactCase) -> dict:
 
 
 def _oriented(case: ContactCase, ref: dict) -> tuple[float, float]:
-    rx, ry = relative_radii(case)
+    R_x, R_y = relative_radii(case)
     radii = sorted(float(r) for r in ref["contact_radii"])
-    if math.isinf(rx) or math.isinf(ry):                     # line contact: one infinite axis
-        half = radii[0]
-        return (math.inf, half) if math.isinf(rx) else (half, math.inf)
+    if math.isinf(R_x) or math.isinf(R_y):                   # line contact: one infinite axis
+        s_line = radii[0]
+        return (math.inf, s_line) if math.isinf(R_x) else (s_line, math.inf)
     small, large = radii[0], radii[-1]
-    return (small, large) if rx <= ry else (large, small)
+    return (small, large) if R_x <= R_y else (large, small)

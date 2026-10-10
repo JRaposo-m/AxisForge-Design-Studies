@@ -5,6 +5,8 @@
 * :class:`Contact` - one contact of one machine element: the case plus *which* element, subtype
   and location it is, and (optionally) its kinematics. This is what the elements hand to the
   surface, reference and step modules, and what the outputs record.
+* :class:`ElementAdapter` - the translator of one machine element (bearing, gear) into a list of
+  :class:`Contact`; one subclass per element, stateless.
 * Registry - every machine element subtype that the bridge can translate is registered here by
   its AxisForge class (bearing family, gear mesh), as AxisForge registers its own families.
   :func:`contacts` dispatches to the registered adapter; an unregistered subtype raises.
@@ -14,10 +16,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, ClassVar
 
-__all__ = ["ContactCase", "Contact", "register", "contacts", "registered"]
+__all__ = ["ContactCase", "Contact", "ElementAdapter", "register", "contacts", "registered"]
 
 
 def _pair(value, name: str) -> tuple[float, float]:
@@ -45,10 +48,12 @@ class ContactCase:
         (raceway) at the contact point [m]. ``x`` is the rolling direction. A scalar means
         ``(r, r)``. Sign convention: convex > 0, concave < 0, flat = ``math.inf``. These are
         radii of curvature, **not** ellipsoid semi-axes (compare ``slippy.surface.RoundSurface``).
-    moduli : float or tuple of float
-        Young's moduli ``(E1, E2)`` [Pa]; a scalar applies to both bodies.
-    v : float or tuple of float
-        Poisson's ratios ``(nu1, nu2)`` [-]; a scalar applies to both bodies.
+    E : float or tuple of float
+        Young's moduli ``(E1, E2)`` [Pa]; a scalar applies to both bodies (``moduli`` in SlipPY's
+        ``hertz_full``).
+    nu : float or tuple of float
+        Poisson's ratios ``(nu1, nu2)`` [-]; a scalar applies to both bodies (``v`` in SlipPY's
+        ``hertz_full``).
     load : float
         Normal load [N] for a point contact; load per unit length [N/m] for a line contact.
     angle : float, optional
@@ -70,7 +75,7 @@ class ContactCase:
     --------
     A 12.7 mm steel ball on a flat, 500 N:
 
-    >>> c = ContactCase("ball_flat", r1=6.35e-3, r2=math.inf, moduli=208e9, v=0.3, load=500.0)
+    >>> c = ContactCase("ball_flat", r1=6.35e-3, r2=math.inf, E=208e9, nu=0.3, load=500.0)
     >>> c.hertz_args()["r1"]
     (0.00635, 0.00635)
     """
@@ -78,32 +83,37 @@ class ContactCase:
     label: str
     r1: tuple[float, float]
     r2: tuple[float, float]
-    moduli: tuple[float, float]
-    v: tuple[float, float]
+    E: tuple[float, float]
+    nu: tuple[float, float]
     load: float
     angle: float = 0.0
     line: bool = False
 
     def __post_init__(self) -> None:
-        for name in ("r1", "r2", "moduli", "v"):
+        for name in ("r1", "r2", "E", "nu"):
             object.__setattr__(self, name, _pair(getattr(self, name), name))
         for name in ("r1", "r2"):
             if any(r == 0 or math.isnan(r) for r in getattr(self, name)):
                 raise ValueError(f"{name} contains a zero or NaN radius (use math.inf for flat)")
-        if any(e <= 0 for e in self.moduli):
-            raise ValueError(f"moduli must be positive, got {self.moduli}")
-        if any(not 0.0 < n < 0.5 for n in self.v):
-            raise ValueError(f"v must be in (0, 0.5), got {self.v}")
+        if any(e <= 0 for e in self.E):
+            raise ValueError(f"E must be positive, got {self.E}")
+        if any(not 0.0 < n < 0.5 for n in self.nu):
+            raise ValueError(f"nu must be in (0, 0.5), got {self.nu}")
         if not self.load > 0:
             raise ValueError(f"load must be positive, got {self.load}")
 
     def hertz_args(self) -> dict:
         """Return the keyword arguments for ``slippy.contact.hertz_full(**case.hertz_args())``."""
-        return {"r1": self.r1, "r2": self.r2, "moduli": self.moduli, "v": self.v,
+        return {"r1": self.r1, "r2": self.r2, "moduli": self.E, "v": self.nu,
                 "load": self.load, "angle": self.angle, "line": self.line}
 
     def to_dict(self) -> dict:
-        """Return the case as a JSON-serialisable dict (``inf`` written as the string ``"inf"``)."""
+        """Return the case as a JSON-serialisable dict (``inf`` written as the string ``"inf"``).
+
+        :attr:`E` and :attr:`nu` are written under the keys ``moduli`` and ``v``. This dict is
+        what :meth:`case_hash` hashes, so the keys are kept and the hash of a saved result stays
+        the same.
+        """
 
         def enc(x):
             if isinstance(x, tuple):
@@ -113,7 +123,7 @@ class ContactCase:
             return x
 
         return {"label": self.label, "r1": enc(self.r1), "r2": enc(self.r2),
-                "moduli": list(self.moduli), "v": list(self.v), "load": self.load,
+                "moduli": list(self.E), "v": list(self.nu), "load": self.load,
                 "angle": self.angle, "line": self.line}
 
     def case_hash(self) -> str:
@@ -139,8 +149,10 @@ class Contact:
         AxisForge class of the element subtype (e.g. ``"DeepGrooveBallFamily"``).
     location : dict
         Where the contact is, element-specific, units in the keys. Bearings: ``race``,
-        ``element_j``, ``row``, ``phi_rad``, ``alpha_rad`` (and ``lamina_k``, ``x_mm`` for a roller
-        lamina). Gears: the position along the line of action (to come).
+        ``element_j``, ``row``, ``phi_local_rad`` (and ``phi_global_rad`` from a multi-row result),
+        ``alpha_rad``; for a roller lamina also ``lamina_k`` and ``x_k_mm``, the position of the
+        lamina along the roller axis (AxisForge ``x_k`` [mm]; the roller axis is the bridge ``y``,
+        across rolling). Gears: the position along the line of action (to come).
     case : ContactCase
         The Hertz inputs.
     kinematics : dict, optional
@@ -169,19 +181,52 @@ class Contact:
 # Registry: AxisForge subtype class -> adapter
 # =============================================================================
 
-_ADAPTERS: dict[type, tuple[str, Callable[..., list[Contact]]]] = {}
+class ElementAdapter(ABC):
+    """Translator of one AxisForge machine element into the contacts it contains.
+
+    One subclass per machine element (bearing, gear mesh). An adapter holds no state and is never
+    instantiated: it is the named place of the conversion AxisForge (mm, N, MPa, its own sign of
+    the outer raceway) -> :class:`Contact` (SI, convex > 0, ``x`` = rolling direction), registered
+    with :func:`register` for the AxisForge subtype classes it serves.
+
+    Attributes
+    ----------
+    element : str
+        Machine element the adapter serves (``"bearing"``, ``"gear"``); written to
+        ``Contact.element`` and used as the key of :func:`registered`.
+    """
+
+    element: ClassVar[str]
+
+    @classmethod
+    @abstractmethod
+    def contacts(cls, obj: Any, *args, **kwargs) -> list[Contact]:
+        """Return the requested contacts of the AxisForge object ``obj`` (SI units)."""
 
 
-def register(element: str, *subtypes: type):
+_ADAPTERS: dict[type, type[ElementAdapter]] = {}
+
+
+def register(*subtypes: type):
     """Class-level registration of an adapter for one or more AxisForge subtype classes.
 
-    Used as a decorator on the adapter function ``adapter(obj, *args, **kwargs) -> list[Contact]``.
+    Used as a decorator on an :class:`ElementAdapter` subclass; the machine element is read from
+    its ``element`` attribute.
+
+    Raises
+    ------
+    TypeError
+        If the decorated object is not a subclass of :class:`ElementAdapter`.
+    ValueError
+        If one of the subtypes already has an adapter.
     """
-    def wrap(adapter):
+    def wrap(adapter: type[ElementAdapter]) -> type[ElementAdapter]:
+        if not (isinstance(adapter, type) and issubclass(adapter, ElementAdapter)):
+            raise TypeError(f"register decorates an ElementAdapter subclass, got {adapter!r}")
         for cls in subtypes:
             if cls in _ADAPTERS:
                 raise ValueError(f"{cls.__name__} is already registered")
-            _ADAPTERS[cls] = (element, adapter)
+            _ADAPTERS[cls] = adapter
         return adapter
     return wrap
 
@@ -205,13 +250,13 @@ def contacts(obj: Any, *args, **kwargs) -> list[Contact]:
     if key not in _ADAPTERS:
         raise NotImplementedError(f"no SlipPY adapter for {key.__name__}; registered: "
                                   f"{', '.join(sorted(c.__name__ for c in _ADAPTERS)) or 'none'}")
-    return _ADAPTERS[key][1](obj, *args, **kwargs)
+    return _ADAPTERS[key].contacts(obj, *args, **kwargs)
 
 
 def registered() -> dict[str, list[str]]:
     """Registered subtypes per machine element: ``{"bearing": [...], "gear": [...]}``."""
     from . import elements  # noqa: F401
     out: dict[str, list[str]] = {}
-    for cls, (element, _) in _ADAPTERS.items():
-        out.setdefault(element, []).append(cls.__name__)
+    for cls, adapter in _ADAPTERS.items():
+        out.setdefault(adapter.element, []).append(cls.__name__)
     return {k: sorted(v) for k, v in out.items()}

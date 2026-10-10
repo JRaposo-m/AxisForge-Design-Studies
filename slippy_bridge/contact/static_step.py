@@ -8,9 +8,12 @@ Hertz reference and boolean checks:
 * ``converged`` - SlipPY's own flag;
 * ``load_ok`` - the pressure integrates to the applied load (``rtol 1e-3``);
 * ``edge_clear`` - the pressure is zero on the boundary of the domain (necessary, not sufficient);
-* ``margin_ok`` - the domain spans at least ``margin_x`` Hertz semi-axes along rolling. Empirical
-  (2026-10-10, DGBB inner contact): p0 vs Hertz was -3.2 % at +-2, -0.5 % at +-4, +0.05 % at +-8,
-  with zero pressure on the boundary in every case. A study still checks domain convergence;
+* ``margin_ok`` - the domain extends at least ``span_x_min * s_x`` on each side of the origin
+  along rolling. Empirical (2026-10-10, DGBB inner contact): p0 vs Hertz was -3.2 % at +-2,
+  -0.5 % at +-4, +0.05 % at +-8, with zero pressure on the boundary in every case. The cause is
+  the periodic image loads of SlipPY's default frequency-domain kernel
+  (``Elastic(use_frequency_domain=True)``), not a property of the elastic half-space. A study
+  still checks domain convergence;
 * ``resolution_ok`` - at least ``min_nodes`` nodes across the smaller Hertz semi-axis;
 * ``within_reference`` - p0, s_x, s_y (and the approach for a point contact) within
   ``rtol_reference`` of Hertz (only meaningful for smooth surfaces).
@@ -27,27 +30,27 @@ import numpy as np
 from .base import Contact, ContactCase
 from .outputs import measure, rel_err
 from .reference import hertz
+from .smooth import Grid
 
 __all__ = ["run"]
 
 _ids = itertools.count()
 
 
-def run(contact: Contact | ContactCase, pair, X: np.ndarray, h: float, output_dir, *,
+def run(contact: Contact | ContactCase, surfaces, grid: Grid, output_dir, *,
         normal_load: float | None = None, method: str = "pk", tolerance: float = 1e-9,
-        margin_x: float = 4.0, min_nodes: float = 8.0, rtol_reference: float = 0.03,
+        span_x_min: float = 4.0, min_nodes: float = 8.0, rtol_reference: float = 0.03,
         name: str | None = None, **step_kwargs):
     """Solve one static contact and measure it.
 
     Parameters
     ----------
     contact : Contact or ContactCase
-    pair : (surface_1, surface_2)
-        From ``smooth`` (optionally through ``rough.add_roughness``).
-    X : ndarray
-        Rolling coordinate of the grid (from ``smooth.grid``) [m].
-    h : float
-        Grid spacing [m].
+    surfaces : (surface_1, surface_2)
+        From ``smooth.pair`` (smooth or rough).
+    grid : Grid
+        The grid of the surfaces (``smooth.Grid.around``): its rolling coordinate ``X`` [m] and
+        spacing ``h`` [m] are used.
     output_dir : path
         Where SlipPY writes its .sar/.sdb/.log files (required: SlipPY otherwise writes to cwd).
     normal_load : float, optional
@@ -56,6 +59,19 @@ def run(contact: Contact | ContactCase, pair, X: np.ndarray, h: float, output_di
     method, tolerance, **step_kwargs
         Passed to ``slippy.contact.StaticStep``. A line contact gets
         ``periodic_geometry=True, periodic_axes=(False, True)`` unless given.
+    span_x_min : float
+        Minimum domain half-length on each side of the origin along rolling, in units of the
+        Hertz ``s_x`` [-]; limit of the check ``margin_ok``. Same quantity as ``span_x`` of
+        ``Grid.around``.
+    min_nodes : float
+        Minimum number of nodes across the smaller Hertz semi-axis [-]; limit of the check
+        ``resolution_ok``.
+    rtol_reference : float
+        Relative tolerance of p0, s_x, s_y and the approach against Hertz [-]; limit of the check
+        ``within_reference``.
+    name : str, optional
+        Name of the SlipPY ``ContactModel`` (and of its output files). Default: the case label
+        and a counter.
 
     Returns
     -------
@@ -69,7 +85,8 @@ def run(contact: Contact | ContactCase, pair, X: np.ndarray, h: float, output_di
     ident = contact.record() if isinstance(contact, Contact) else {"label": case.label,
                                                                    "case_hash": case.case_hash(),
                                                                    "line": case.line}
-    s1, s2 = pair
+    s1, s2 = surfaces
+    X, h = grid.X, grid.h
     if case.line:
         step_kwargs.setdefault("periodic_geometry", True)
         step_kwargs.setdefault("periodic_axes", (False, True))
@@ -101,7 +118,7 @@ def run(contact: Contact | ContactCase, pair, X: np.ndarray, h: float, output_di
         "converged": bool(sol.get("converged", False)),
         "load_ok": abs(err["err_load"]) <= 1e-3,
         "edge_clear": bool(edge.max(initial=0.0) <= 1e-6 * m["p0_Pa"]),
-        "margin_ok": bool(min(-X.min(), X.max()) >= margin_x * ref["s_x_m"]),
+        "margin_ok": bool(min(-X.min(), X.max()) >= span_x_min * ref["s_x_m"]),
         "resolution_ok": bool(small / h >= min_nodes),
         "within_reference": all(math.isfinite(err[k]) and abs(err[k]) <= rtol_reference
                                 for k, r in refs.items() if math.isfinite(r)),

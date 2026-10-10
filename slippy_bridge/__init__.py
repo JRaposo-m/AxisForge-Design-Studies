@@ -5,11 +5,14 @@ uses SlipPY". Another contact solver would get its own bridge; the studies chang
 import. Organised by physics, then by machine element:
 
     contact/            dry contact
-        base.py         ContactCase, Contact (element, subtype, location, kinematics), registry
-        elements/       bearings/ (every AxisForge family), gears/ (registered, adapter to come)
+        base.py         ContactCase, Contact (element, subtype, location, kinematics),
+                        ElementAdapter and its registry
+        elements/       bearings/ (BearingContacts, every AxisForge family), gears/
+                        (SpurHelicalContacts, registered, adapter to come)
         reference.py    Hertz (SlipPY hertz_full) on the bridge axes
-        smooth.py       grid, composite and two_profiles surfaces (rolling = array axis 0)
-        rough.py        roughness generation and rough = smooth + roughness
+        smooth.py       Grid and pair(case, grid, build, rough): composite or two_profiles
+                        surfaces, smooth or rough (rolling = array axis 0)
+        rough.py        roughness generation
         static_step.py  SlipPY StaticStep + measurements + boolean checks -> record
         outputs.py      measurements as records (written with axisforge.outputs._format)
     lubrication/        (to come) imports from contact/, never the reverse
