@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from slippy_bridge import ContactCase   # the class lives in the bridge; the study keeps its constants
+from slippy_bridge.contact import ContactCase   # the class lives in the bridge; the study keeps its constants
 
 __all__ = ["ContactCase", "CASES", "N_POWERS", "N_POWERS_BY_CASE", "EXTENT_IN_A", "EXTENT_IN_A_BY_CASE"]
 

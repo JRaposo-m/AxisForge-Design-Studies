@@ -1,4 +1,5 @@
-""":class:`ContactCase` -> SlipPY surfaces, for static BEM and for lubrication alike.
+"""Smooth surfaces of a contact (:class:`ContactCase` -> SlipPY surfaces), for static BEM and
+lubrication alike. Rough surfaces are these plus roughness (``rough.py``).
 
 Two builds of the same contact (finding ``composite_vs_two_profiles_2026-10-10``: equal dry and in
 smooth EHL, because the half-space solvers only see the gap ``h1 + h2``):
@@ -29,28 +30,12 @@ import math
 
 import numpy as np
 
-from .case import ContactCase
+from .base import ContactCase
+from .reference import relative_radii, semi_axes
 
-__all__ = ["semi_axes", "grid", "composite", "two_profiles"]
+__all__ = ["grid", "composite", "two_profiles"]
 
 _ids = itertools.count()       # SlipPY material names must be unique per process
-
-
-def semi_axes(case: ContactCase) -> tuple[float, float]:
-    """Hertz contact semi-axes ``(s_x, s_y)`` [m] along the rolling direction and across it.
-
-    ``inf`` on the axis of a line contact. The values come from ``slippy.contact.hertz_full``; the
-    order of its ``contact_radii`` is not tied to x/y, so the axes are assigned from the relative
-    radii of the case (the shorter semi-axis lies along the smaller relative radius).
-    """
-    import slippy.contact as c
-    rx, ry = _relative(case.r1, case.r2)
-    radii = sorted(float(r) for r in c.hertz_full(**case.hertz_args())["contact_radii"])
-    if math.isinf(rx) or math.isinf(ry):                     # line contact: one infinite axis
-        half = radii[0]
-        return (math.inf, half) if math.isinf(rx) else (half, math.inf)
-    small, large = radii[0], radii[-1]
-    return (small, large) if rx <= ry else (large, small)
 
 
 def grid(case: ContactCase, h: float | None = None, half_x: float = 4.0, half_y: float = 1.3,
@@ -61,7 +46,7 @@ def grid(case: ContactCase, h: float | None = None, half_x: float = 4.0, half_y:
     ----------
     case : ContactCase
     h : float, optional
-        Grid spacing [m]; rounded to the nearest power of two. Default ``s_x / 10``.
+        Grid spacing [m]; rounded down to a power of two (never coarser). Default ``s_x / 10``.
     half_x : float
         Half-length along rolling, in units of ``s_x``. Not only EHL inlet room: SlipPY static BEM
         on a DGBB inner contact gave p0 -3.2 % at 2, -0.5 % at 4, +0.05 % at 8 (grid-independent),
@@ -79,9 +64,9 @@ def grid(case: ContactCase, h: float | None = None, half_x: float = 4.0, half_y:
         The grid spacing used [m].
     """
     s_x, s_y = semi_axes(case)
-    h = 2.0 ** round(math.log2(s_x / 10.0 if h is None else h))
-    n_x = 2 * round(half_x * s_x / h)
-    n_y = n_y_line if case.line else 2 * round(half_y * s_y / h)
+    h = 2.0 ** math.floor(math.log2(s_x / 10.0 if h is None else h))   # never coarser than asked
+    n_x = 2 * math.ceil(half_x * s_x / h) + 2        # both sides at least half_x (centre on a node)
+    n_y = n_y_line if case.line else 2 * math.ceil(half_y * s_y / h) + 2
     x = (np.arange(n_x) - n_x // 2) * h
     y = (np.arange(n_y) - n_y // 2) * h
     X, Y = np.meshgrid(x, y, indexing="ij")
@@ -111,17 +96,6 @@ def _profile(r: tuple[float, float], X: np.ndarray, Y: np.ndarray) -> np.ndarray
     return z
 
 
-def _relative(r1: tuple[float, float], r2: tuple[float, float]) -> tuple[float, float]:
-    """Relative radii ``1/R = 1/r1 + 1/r2`` per direction (``inf`` = flat)."""
-    out = []
-    for a, b in zip(r1, r2):
-        k = (0.0 if math.isinf(a) else 1.0 / a) + (0.0 if math.isinf(b) else 1.0 / b)
-        if k < 0:
-            raise ValueError(f"negative relative curvature {k}: the bodies do not conform to a Hertz contact")
-        out.append(math.inf if k == 0 else 1.0 / k)
-    return tuple(out)
-
-
 def _surfaces(case: ContactCase, z1: np.ndarray, z2: np.ndarray, h: float):
     import slippy.contact as c
     import slippy.surface as s
@@ -143,7 +117,7 @@ def composite(case: ContactCase, X: np.ndarray, Y: np.ndarray, h: float):
     """
     if case.angle != 0.0:
         raise ValueError("the builds assume aligned principal axes (angle = 0)")
-    return _surfaces(case, _profile(_relative(case.r1, case.r2), X, Y), np.zeros_like(X), h)
+    return _surfaces(case, _profile(relative_radii(case), X, Y), np.zeros_like(X), h)
 
 
 def two_profiles(case: ContactCase, X: np.ndarray, Y: np.ndarray, h: float):
