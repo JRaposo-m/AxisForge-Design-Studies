@@ -23,7 +23,7 @@ dev = ["pytest", "jupytext"]
 # Only the shared code is a package. Case and study folders are not: each
 # script imports its own construction.py as a sibling module.
 [tool.setuptools.packages.find]
-include = ["references*", "validation", "validation._support*"]
+include = ["references*", "validation", "validation._support*", "slippy_bridge*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

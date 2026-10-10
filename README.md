@@ -14,6 +14,7 @@ layer between the reader and the library being proven.
 
 ```
 references/     closed-form solutions — the independent judges (beams; Hertz, planned)
+slippy_bridge/  the only AxisForge -> SlipPY link: contact cases from AxisForge bearings, surfaces
 validation/     AxisForge vs a known answer, criteria fixed before running
     _support/     reports, figures, convergence adapters — for the validation cases only
     shafts/  bearings/  gears/
@@ -38,9 +39,10 @@ never shared between folders.
 | Folder | May import from this repository |
 |---|---|
 | `references` | nothing |
-| `validation/<case>` | `references`, `validation._support`, its own files |
-| `examples/<topic>` | `references`, its own files |
-| `studies/<study>` | `references`, its own files |
+| `slippy_bridge` | nothing from this repository (imports axisforge and slippy) |
+| `validation/<case>` | `references`, `validation._support`, `slippy_bridge`, its own files |
+| `examples/<topic>` | `references`, `slippy_bridge`, its own files |
+| `studies/<study>` | `references`, `slippy_bridge`, its own files |
 
 No case or study imports another. Checked on every vault sync
 (`tools/vault_sync.py`) in the `axisforge-design-studies` vault.
