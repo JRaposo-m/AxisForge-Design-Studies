@@ -130,10 +130,17 @@ class Grid:
         """
         s_x, s_y = semi_axes(case)
         h = 2.0 ** math.floor(math.log2(s_x / 10.0 if h is None else h))   # never coarser than asked
+
+        # Node count: the contact centre is the origin and sits on node n//2, because
+        # x = (i - n//2) * h is zero there. With k = ceil(span * s / h) intervals per side:
+        #   n = 2k + 2 (always even) -> nodes -(k+1) ... +k
+        #   the +x side is the short one and still reaches k*h >= span*s; the -x side has one
+        #   node more. With n = 2k the +x side would stop at (k-1)*h < span*s.
+        # Example: k = 3 -> n = 8 -> nodes -4h ... +3h.
         n_x = 2 * math.ceil(span_x * s_x / h) + 2        # both sides at least span_x (centre on a node)
         n_y = n_y_line if case.line else 2 * math.ceil(span_y * s_y / h) + 2
-        x = (np.arange(n_x) - n_x // 2) * h
-        y = (np.arange(n_y) - n_y // 2) * h
+        x = (np.arange(n_x) - n_x // 2) * h              # origin on node n_x//2
+        y = (np.arange(n_y) - n_y // 2) * h              # origin on node n_y//2
         X, Y = np.meshgrid(x, y, indexing="ij")
         return cls(X=X, Y=Y, h=h)
 

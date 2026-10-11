@@ -8,8 +8,12 @@ import pytest
 af_c = pytest.importorskip("axisforge.core")
 pytest.importorskip("slippy")
 
+from axisforge.core.machine_elements.bearings.contact_models.iso16281 import PointContactStiffness  # noqa: E402
 from axisforge.results import BallLoadDistributionResult, RollerLoadDistributionResult  # noqa: E402
+from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.contact_solver import (  # noqa: E402
+    ISO16281BallSolver)
 
+from references.contact.hertz import hertz_point  # noqa: E402
 from slippy_bridge.contact import (BearingContacts, Contact, ContactCase, Grid, contact_case,  # noqa: E402
                                    contacts, entrainment_speed, hertz, measure, pair, register,
                                    registered, rough, semi_axes, static_step)
@@ -27,6 +31,14 @@ def _bearing(family, arrangement, **geometry):
 @pytest.fixture(scope="module")
 def ball():
     return _bearing(af_c.DeepGrooveBallFamily(), "locating", Dw=7.0, Dpw=31.0, Z=9, s=0.010)
+
+
+@pytest.fixture(params=[0.0, 0.015])
+def ball_6210(request, load_case):
+    """The 6210-like ball bearing of ``validation/bearings/iso16281_ball_contact`` (Dw 12.7,
+    Dpw 70 mm, Z 9, grooves 0.52 Dw), at radial clearance s = 0 (alpha_0 = 0) and s = 0.015 mm
+    (alpha_0 = 9.86 deg). Built by the case, so these tests gate the bearing its README names."""
+    return load_case("iso16281_ball_contact").build_bearing(request.param)
 
 
 @pytest.fixture(scope="module")
@@ -139,6 +151,28 @@ def test_ball_contacts_from_result(ball, ball_row):
     assert contacts(ball, ball_row, elements="max", races=("outer",))[0].location["element_j"] == 0
 
 
+def test_contacts_of_a_real_iso16281_solve(ball_6210, load_case):
+    """Solver -> bridge on a solved bearing: both raceways of an element carry its Q_j and alpha_j.
+
+    AxisForge has no centrifugal term, so the inner and the outer contact of a ball share the load
+    and the operating angle; they differ only in the raceway radii. The combined load of the
+    case (radial + axial), so that alpha_j differs from element to element and from alpha_0.
+    """
+    load = load_case("iso16281_ball_contact").LOADS["combined"]                                 # [N]
+    result = ISO16281BallSolver().solve_contact(ball_6210, Fr_xz=load["Fr"], Fr_xy=0.0, Fa=load["Fa"],
+                                                delta_r_init=0.0, delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    assert result.ok
+    row = result.rows[0]
+    loaded = np.flatnonzero(row.Q_j > 0.0)
+    cs = contacts(ball_6210, result)
+    assert len(loaded) > 0 and len(cs) == 2 * len(loaded)
+    assert not np.allclose(row.alpha_j[loaded], ball_6210.alpha_0, rtol=0.01)
+    for j, inner, outer in zip(loaded, cs[0::2], cs[1::2]):
+        for race, c in (("inner", inner), ("outer", outer)):
+            assert (c.location["race"], c.location["element_j"]) == (race, j)
+            assert c.case.load == row.Q_j[j] and c.location["alpha_rad"] == row.alpha_j[j]
+
+
 def test_roller_laminae_from_result(roller, roller_row):
     whole = contacts(roller, roller_row, races=("inner",))
     assert [c.case.load for c in whole] == pytest.approx([500.0 / 5e-3, 200.0 / 5e-3])     # Q_j / Lwe
@@ -211,6 +245,50 @@ def test_hertz_matches_the_closed_forms():
     assert ref["s_x_m"] == pytest.approx(b, rel=1e-9) and math.isinf(ref["s_y_m"])
     assert ref["p0_Pa"] == pytest.approx(2 * w / (math.pi * b), rel=1e-9)
     assert math.isnan(ref["delta_m"])
+
+
+@pytest.mark.parametrize("race", ["inner", "outer"])
+def test_independent_hertz_agrees_with_slippy(ball_6210, race):
+    """The judge (``references.contact.hertz_point``, Johnson ch. 4) against SlipPY's ``hertz_full``
+    on the bridge axes, for the elliptical contact of a ball with each raceway (the outer one has a
+    negative rolling radius). Two independent implementations of the same theory."""
+    case = contact_case(ball_6210, race, load=2436.0)         # [N], Q_max of the bearing at Fr = 5 kN
+    judge, ref = hertz_point(case.r1, case.r2, case.E, case.nu, case.load), hertz(case)
+    for key in ("p0_Pa", "s_x_m", "s_y_m", "delta_m"):
+        assert judge[key] == pytest.approx(ref[key], rel=1e-6), key
+
+
+def test_axisforge_cp_is_hertz_with_a_rounded_constant(ball_6210):
+    """Implementation check, same theory: AxisForge's ``cp`` against the judge's Hertz approach.
+
+    This does not test whether Hertz holds; it tests that AxisForge codes the Hertz load-deflection
+    constant of a ball (``Q = cp delta**1.5``, delta = approach of the two raceways, ISO/TS 16281)
+    as the theory gives it, and that the bridge hands the judge the radii AxisForge used. With the
+    contact cases at the free angle alpha_0 (where AxisForge evaluates the curvatures), the judge
+    gives ``cp_judge = Q / (delta_inner + delta_outer)**1.5`` [N/mm^1.5], independent of Q.
+
+    Finding (flagged, not fixed): the Hertz approach rearranges to
+    ``Q = (pi sqrt(2) / 3) E' (T_i + T_e)**(-3/2) delta**1.5`` with pi sqrt(2)/3 = 1.48096, and
+    AxisForge has the constant 1.48 (``contact_models/iso16281.py:104``): cp is 0.065 % low, the
+    approach 0.043 % high. Whether ISO/TS 16281 prints 1.48 has not been checked. The test removes
+    the constant and requires the rest to agree to 1e-6.
+
+    Per raceway, ``PointContactStiffness`` is rebuilt from the bearing's public attributes (as
+    ``families/family.py`` does) and its curvature sum [1/mm] and ellipticity ``chi`` are compared
+    with the curvature sum of the bridge radii and the judge's semi-axis ratio.
+    """
+    b, Q = ball_6210, 2436.0                                  # [N]
+    stiffness = PointContactStiffness(b.Dw, b.Dpw, b.gamma, b.ri, b.re, b.alpha_0, b.e1, b.e2, b.nu1, b.nu2)
+    approach_mm = 0.0
+    for race in ("inner", "outer"):
+        case = contact_case(b, race, Q)                       # radii at alpha_0
+        judge = hertz_point(case.r1, case.r2, case.E, case.nu, case.load)
+        approach_mm += judge["delta_m"] * 1e3                 # [m] -> [mm], AxisForge length unit
+        assert _curvature_sum(case) * 1e-3 == pytest.approx(getattr(stiffness, f"curvature_sum_{race}"), rel=1e-6)
+        # a groove contact is long across rolling: chi = s_y / s_x >= 1
+        assert judge["s_y_m"] / judge["s_x_m"] == pytest.approx(getattr(stiffness, f"chi_{race}"), rel=1e-6)
+    cp_judge = Q / approach_mm**1.5                           # [N/mm^1.5]
+    assert b.cp * (math.pi * math.sqrt(2.0) / 3.0) / 1.48 / cp_judge == pytest.approx(1.0, rel=1e-6)
 
 
 @pytest.mark.parametrize("r1, x_longer", [((50e-3, 5e-3), True), ((5e-3, 50e-3), False)])

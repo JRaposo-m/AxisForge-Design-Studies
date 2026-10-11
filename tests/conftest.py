@@ -19,6 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CASE_DIRS = {
     "fem_uniform_radial_load": ROOT / "validation" / "shafts" / "fem_uniform_radial_load",
     "fem_stepped_distributed_gear": ROOT / "validation" / "shafts" / "fem_stepped_distributed_gear",
+    "iso16281_ball_contact": ROOT / "validation" / "bearings" / "iso16281_ball_contact",
 }
 
 

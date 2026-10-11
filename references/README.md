@@ -6,7 +6,7 @@ contact, of SlipPY).
 ```
 references/
 ├── beams/      uniform_beam (Macaulay), stepped_beam (piecewise exact), shear_coefficients (κ)
-└── contact/    Hertz — empty until the reference implementation is chosen
+└── contact/    hertz (elliptical point contact, Johnson ch. 4; no line contact yet)
 ```
 
 ## Rules
