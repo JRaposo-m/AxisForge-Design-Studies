@@ -1,0 +1,14 @@
+Data check started at:
+00:08:15 11-10-2026
+Checking model ball_raceway_axisforge:
+Checking step: static
+Checking sub models for step static
+Checking outputs for step static
+Solving model ball_raceway_axisforge, CUDA = False
+Solving step Initial
+Solving step static
+Solving contact by PK method
+Inserting height: 6.180359686681364e-06, total_load: 500.0 into cache, len = 2
+## Solving sub models
+Writing outputs
+Analysis completed successfully at: 00:08:16 11-10-2026

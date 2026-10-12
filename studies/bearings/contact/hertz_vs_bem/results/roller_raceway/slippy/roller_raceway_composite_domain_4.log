@@ -1,0 +1,14 @@
+Data check started at:
+00:08:21 11-10-2026
+Checking model roller_raceway_composite_domain_4:
+Checking step: static
+Checking sub models for step static
+Checking outputs for step static
+Solving model roller_raceway_composite_domain_4, CUDA = False
+Solving step Initial
+Solving step static
+Solving contact by PK method
+Inserting height: 5.635637882020217e-07, total_load: 3.0517578125 into cache, len = 2
+## Solving sub models
+Writing outputs
+Analysis completed successfully at: 00:08:21 11-10-2026
