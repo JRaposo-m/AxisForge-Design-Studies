@@ -5,6 +5,8 @@
 #     text_representation:
 #       extension: .py
 #       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.6
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -136,3 +138,93 @@ APPROACH_COLUMNS = [
 ]
 print(format_table(APPROACH_COLUMNS, approach_records))
 print(f"\nwritten: {(RESULTS / 'contacts.csv').relative_to(HERE)}, {(RESULTS / 'approach.csv').relative_to(HERE)}")
+
+# %% [markdown]
+# ## 4. The bearing in 3D: ball loads, Hertz pressures, contact angle (PyVista)
+#
+# `viz.bearing.bearing_scene` reads the bearing and its solved result directly and builds a scene
+# (`pyvista.MultiBlock`): rings revolved from their section, balls at `phi_j_global`, one enlarged
+# contact ellipse per loaded ball and raceway (Hertz values through `slippy_bridge.contact`), load
+# arrows. `viz.scene.save` writes `results/viz/<case>.vtm` (ParaView) and one PNG per field, with a
+# fixed camera; the three load cases share the colour limits, so colours compare across figures.
+# `viz.scene.explore(scene, vb.FIELDS, clim=clim)` opens the same scene in a window with a field
+# selector.
+#
+# `Fr` and `Fa` are drawn as given to the solver, read as the load on the inner ring; the balls are
+# drawn where `phi_j_global` puts them. Arrow and loaded zone are on the same side by construction
+# of the ball solver; this figure does not test the shaft path of the open review item on `phi_Fr`.
+# Between "moderate" and "heavy" both `Fr` and the diametral clearance `s` change.
+
+# %%
+import pyvista as pv
+from IPython.display import Image, display
+
+from viz import bearing as vb, scene as vs
+
+pv.set_jupyter_backend("static")                          # committed outputs are PNG only (D-0022)
+VIZ = RESULTS / "viz"                                     # git-ignored (D-0020)
+CASE_TEXT = {"radial_moderate": "radial load, moderate", "radial_heavy": "radial load, heavy",
+             "combined": "combined radial and axial load"}
+
+solved = {}                                               # section 1 keeps records only: solved again (ms)
+for name, load in cd.LOADS.items():
+    bearing = cd.build_bearing(load["s"])
+    solved[name] = bearing, ISO16281BallSolver().solve_contact(
+        bearing, Fr_xz=load["Fr"], Fr_xy=0.0, Fa=load["Fa"], delta_r_init=0.0, delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+scenes = {name: vb.bearing_scene(b, r, case=CASE_TEXT[name]) for name, (b, r) in solved.items()}
+clim = vs.clim_of(list(scenes.values()), vb.FIELDS)       # common limits of the three load cases
+for name, scene in scenes.items():
+    vs.save(scene, vb.FIELDS, VIZ, name, clim=clim)
+for name in scenes:                                       # ball load Q [N]
+    display(Image(filename=str(VIZ / f"{name}_Q.png")))
+
+# %% [markdown]
+# Hertz pressure $p_0$ at the inner and the outer contact of every loaded ball (one scale for both
+# raceways; ellipses enlarged, factor in the figure), and the contact angle of the combined case
+# (0 deg for every loaded ball of the two radial cases).
+
+# %%
+for shown in ("radial_moderate_p0", "radial_heavy_p0", "combined_p0", "combined_alpha"):
+    display(Image(filename=str(VIZ / f"{shown}.png")))
+
+# %% [markdown]
+# Axial section through the most loaded ball, contact ellipses at true size: under radial load both
+# contacts sit on the groove bottom; the axial load moves them to opposite flanks, and the contact
+# line through the ball centre shows $\alpha_j$. The ring shoulders are a drawing value (AxisForge
+# has no shoulder geometry).
+
+# %%
+for name in ("radial_heavy", "combined"):
+    side = vb.bearing_scene(*solved[name], case=CASE_TEXT[name], view="side", ellipse_scale=1.0)
+    vs.save(side, {"p0": vb.FIELDS["p0"]}, VIZ, f"{name}_side", clim=clim)
+    display(Image(filename=str(VIZ / f"{name}_side_p0.png")))
+
+# %% [markdown]
+# ## 5. One contact solved with SlipPY: pressure against the Hertz ellipse (PyVista)
+#
+# The most loaded ball of `radial_heavy` on the inner raceway, solved as a smooth dry static step
+# through the bridge (`slippy_bridge.contact.static_step.run`, bridge default grid and domain, a
+# few seconds). The pressure is kept in memory and in `results/viz/*.vtm`; SlipPY's own output files
+# go to a temporary folder. Hill view: height = pressure. Top view: SlipPY minus Hertz on the same
+# nodes. The difference is edge discretisation (one grid node at the contact edge) plus the effect
+# of the finite periodic domain; both solutions share the half-space assumption, so the agreement
+# checks the numerical method, not the Hertz model. No criterion is asserted here.
+
+# %%
+import tempfile
+
+from slippy_bridge.contact import Grid, pair, static_step
+
+from viz import contact as vc
+
+contact = contacts(*solved["radial_heavy"], races=("inner",), elements="max")[0]
+grid = Grid.around(contact.case)                          # bridge defaults
+with tempfile.TemporaryDirectory() as tmp:
+    record, p = static_step.run(contact, pair(contact.case, grid), grid, tmp)
+CONTACT_TEXT = "Ball on the inner raceway, most loaded ball, radial load (heavy)"
+hill = vc.contact_scene(contact, grid, p, case=CONTACT_TEXT)
+top = vc.contact_scene(contact, grid, p, case=CONTACT_TEXT, view="top")
+vs.save(hill, {"p": vc.FIELDS["p"]}, VIZ, "contact_inner_radial_heavy")
+vs.save(top, vc.FIELDS, VIZ, "contact_inner_radial_heavy_top")
+for shown in ("contact_inner_radial_heavy_p", "contact_inner_radial_heavy_top_dp"):
+    display(Image(filename=str(VIZ / f"{shown}.png")))
