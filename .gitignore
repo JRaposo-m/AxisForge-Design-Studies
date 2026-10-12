@@ -13,7 +13,8 @@ venv/
 build/
 dist/
 
-# Everything a study or a validation run generates (figures, tables, reports)
-# goes here, mirroring the path of the code that produced it. Never next to
-# the code.
+# Generated output of a study or validation case: results/ next to it (D-0020).
+studies/**/results/
+validation/**/results/
+# Old location, still used by examples/.
 /artifacts/

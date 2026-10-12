@@ -25,15 +25,15 @@ validation/
   reader must see the whole of it. Repetition between cases is intended.
 - `construction.py` returns the system **not solved**; the scripts choose the
   solver, beam model and mesh.
-- **Imports:** a case may import `references`, `validation._support` and its own
-  sibling `construction`. Never another case.
+- **Imports:** a case may import `references`, `validation._support`, `slippy_bridge`
+  and its own sibling `construction`. Never another case.
 - **The README of each case records:** objective, AxisForge branch + commit of
   the last full run, reference, criteria (fixed before running), result.
 - **Verification vs validation.** Mesh convergence (GCI, observed order) shows
   the discrete model converges — verification. Agreement with the reference is
   validation. A case can do both; the README says which result is which.
 - Regression values (for `pytest`) live in `tests/`, not in the cases.
-- Generated files go to `artifacts/validation/<domain>/<case>/` (git-ignored).
+- Generated files go to `results/` inside the case folder (git-ignored, D-0020).
 
 ## Planned cases (have a known answer → validation, not studies)
 
