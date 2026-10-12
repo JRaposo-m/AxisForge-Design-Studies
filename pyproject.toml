@@ -13,6 +13,7 @@ dependencies = [
     "matplotlib",
     "pandas",
     "ipython",
+    "pyvista",
 ]
 # axisforge and slippy are NOT listed: neither is on PyPI. Install both
 # separately with `pip install -e <repo>` (see README.md#setup).
@@ -23,7 +24,7 @@ dev = ["pytest", "jupytext"]
 # Only the shared code is a package. Case and study folders are not: each
 # script imports its own construction.py as a sibling module.
 [tool.setuptools.packages.find]
-include = ["references*", "validation", "validation._support*", "slippy_bridge*"]
+include = ["references*", "validation", "validation._support*", "slippy_bridge*", "viz*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
