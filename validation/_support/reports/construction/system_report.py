@@ -4,9 +4,9 @@ validation/_support/reports/construction/system_report.py
 Report blocks for a constructed system as a whole.
 
 Four functions, each "the systems report" for one facet of a
-SpurHelicalGearSystem:
+ResolvedTransmission:
 
-  topology_block(system)   -- delegates to SpurHelicalGearSystem.summary()
+  topology_block(system)   -- delegates to ResolvedTransmission.summary()
                               (core already formats topology + resolved
                               state -- source shaft, link count, and,
                               once resolved, per-shaft T_out/rotation_dir/
@@ -23,8 +23,8 @@ SpurHelicalGearSystem:
                               injected.
   mesh_block(link)         -- link-level info (shaft_a -> shaft_b,
                               phi_deg, torque_split, distribute_loads,
-                              label) plus SpurHelicalMeshLink.meshing's
-                              own .summary() (SpurHelicalGearMeshing,
+                              label) plus PairStage.pair's
+                              own .summary() (GearPair,
                               core).
 
 CONTENT ONLY -- this module builds text blocks, it does not write any
@@ -32,10 +32,10 @@ file. text_report.py is the single place that assembles every domain's
 blocks into the one combined construction report .txt and writes it.
 
 Dependency (core only, read-only access):
-  axisforge.core.mechanical_system.parallel_axis.spur_helical.shaft_system
+  axisforge.core.mechanical_system.shaft_system
       ShaftSystem
-  axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system
-      SpurHelicalGearSystem, SpurHelicalMeshLink
+  axisforge.core.mechanical_system.transmission
+      PairStage, ResolvedTransmission
 """
 
 from __future__ import annotations
@@ -43,16 +43,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from axisforge.core.mechanical_system.parallel_axis.spur_helical.shaft_system import (
+    from axisforge.core.mechanical_system.shaft_system import (
         ShaftSystem,
     )
-    from axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system import (
-        SpurHelicalGearSystem, SpurHelicalMeshLink,
+    from axisforge.core.mechanical_system.transmission import (
+        PairStage, ResolvedTransmission,
     )
 
 
-def topology_block(system: "SpurHelicalGearSystem") -> str:
-    """Delegates to SpurHelicalGearSystem.summary()."""
+def topology_block(system: "ResolvedTransmission") -> str:
+    """Delegates to ResolvedTransmission.summary()."""
     return system.summary()
 
 
@@ -76,20 +76,20 @@ def loads_block(ss: "ShaftSystem") -> str:
     return "\n".join(lines)
 
 
-def mesh_block(link: "SpurHelicalMeshLink") -> str:
+def mesh_block(link: "PairStage") -> str:
     """
-    ASCII block for one SpurHelicalMeshLink: the link-level line
+    ASCII block for one PairStage: the link-level line
     (endpoints, phi_deg, torque_split, distribute_loads, label) plus
-    the underlying meshing object's own .summary() (SpurHelicalGearMeshing,
+    the underlying meshing object's own .summary() (GearPair,
     core -- working centre distance, working pressure angle, contact
     ratios).
     """
     lines = [
         f"  {link.shaft_a.name} -> {link.shaft_b.name}   "
         f"phi_deg={link.phi_deg:.2f}   "
-        f"torque_split={link.torque_split!r}   "
+        f"torque_split={None if link.share == 1.0 else link.share!r}   "     # the printed text of before: None = the full torque
         f"distribute_loads={link.distribute_loads}   "
         f"label={link.label!r}",
-        link.meshing.summary(),
+        link.pair.summary(),
     ]
     return "\n".join(lines)

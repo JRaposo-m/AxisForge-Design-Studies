@@ -49,7 +49,7 @@ shows its full construction.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -60,11 +60,11 @@ from axisforge.core.machine_elements.bearings import (
     CylindricalRollerFamily,
     DeepGrooveBallFamily,
 )
-from axisforge.core.machine_elements.gears.parallel_axis.gear_meshing.spurhelical_meshing import (
-    SpurHelicalGearMeshing,
-)
-from axisforge.core.machine_elements.gears.parallel_axis.gear_properties.spur_helical_gear import (
-    SpurHelicalGear,
+from axisforge.core.machine_elements.gears import (
+    CylindricalFamily,
+    CylindricalGearData,
+    Gear,
+    GearPair,
 )
 from axisforge.core.machine_elements.shaft.shaft import Shaft, ShaftSection
 from axisforge.core.materials.base import (
@@ -74,13 +74,12 @@ from axisforge.core.materials.base import (
     available_materials,
     register,
 )
-from axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system import (
-    SpurHelicalGearSystem,
-    SpurHelicalMeshLink,
-)
-from axisforge.core.mechanical_system.parallel_axis.spur_helical.shaft_system import (
+from axisforge.core.mechanical_system import (
     GearElement,
+    PairStage,
+    ResolvedTransmission,
     ShaftSystem,
+    Transmission,
 )
 from axisforge.mesh.shaft.beam_model_settings import BeamModelSettings
 from axisforge.results.fem_results.shaft_results import ShaftResults
@@ -246,7 +245,7 @@ def _shaft(name: str) -> Shaft:
     return shaft
 
 
-def build_system() -> SpurHelicalGearSystem:
+def build_system() -> ResolvedTransmission:
     """Build and resolve the two-shaft gear system of this case.
 
     The system is fully resolved (gear-mesh forces injected) and
@@ -254,9 +253,9 @@ def build_system() -> SpurHelicalGearSystem:
 
     Returns
     -------
-    SpurHelicalGearSystem
-        Resolved system with shafts ``shaft1`` (driver) and ``shaft2``
-        (driven). Loads in N, positions in mm.
+    ResolvedTransmission
+        Resolved system whose ``shafts`` are the loaded ``shaft1``
+        (driver) and ``shaft2`` (driven). Loads in N, positions in mm.
 
     Notes
     -----
@@ -278,11 +277,12 @@ def build_system() -> SpurHelicalGearSystem:
         for brg in _bearings(ss.name):
             ss.add_bearing(brg)
 
-    g1 = SpurHelicalGear(mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVER, b=GEAR_FACE_WIDTH_MM,
-                         position=GEAR_POSITION_MM, label="g_driver")
-    g2 = SpurHelicalGear(mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVEN, b=GEAR_FACE_WIDTH_MM,
-                         position=GEAR_POSITION_MM, label="g_driven")
-    meshing = SpurHelicalGearMeshing(g1, g2, label="stage1")
+    family = CylindricalFamily()
+    g1 = Gear.assemble(family, CylindricalGearData(mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVER, b=GEAR_FACE_WIDTH_MM,
+                                                   position=GEAR_POSITION_MM, label="g_driver"))
+    g2 = Gear.assemble(family, CylindricalGearData(mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVEN, b=GEAR_FACE_WIDTH_MM,
+                                                   position=GEAR_POSITION_MM, label="g_driven"))
+    meshing = GearPair.assemble(family, gear1=g1, gear2=g2, label="stage1")
     ge1 = GearElement(g1, role="driver", label="g_driver")
     ge2 = GearElement(g2, role="driven", label="g_driven")
     ss1.add_gear(ge1)
@@ -292,16 +292,20 @@ def build_system() -> SpurHelicalGearSystem:
         ss.add_load(RadialLoad(TEST_LOAD_POSITION_MM[ss.name], TEST_LOAD_N,
                                theta_deg=TEST_LOAD_THETA_DEG, label="radial_test_load"))
 
-    link = SpurHelicalMeshLink(ss1, ge1, ss2, ge2, meshing, phi_deg=0.0, label="stage1")
-    system = SpurHelicalGearSystem([ss1, ss2], [link], label="case_radial_single_position")
+    link = PairStage(pair=meshing, shaft_a=ss1, gear_a=ge1, shaft_b=ss2, gear_b=ge2, phi_deg=0.0, label="stage1")
+    system = Transmission([ss1, ss2], [link], source=ss1, label="case_radial_single_position")
     system.validate_or_raise()
-    system.resolve(P=POWER_W, rpm=SHAFT1_RPM, rotation_dir_source=ROTATION_DIR_SOURCE)
+    resolved = system.resolve(P_W=POWER_W, n_rpm=SHAFT1_RPM, rotation=ROTATION_DIR_SOURCE)
 
-    driven = system.shafts[-1]
+    # resolve() returns loaded COPIES of the shafts: the output coupling goes on the copy of the
+    # driven shaft (label and source of this study kept; Transmission(sinks=...) would write
+    # "shaft2:T_out" / "gear_mesh"). `resolved.checks` and `resolved.transmission.validate()` were
+    # computed before this coupling: they still report the driven shaft open (Q16)
+    *others, driven = resolved.shafts
     net_torque = sum(ld.magnitude for ld in driven.torque_loads)
-    driven.add_load(TorqueLoad(position=SHAFT_LENGTH_MM, magnitude=-net_torque,
-                               label="output_coupling", source="user"))
-    return system
+    driven = driven.with_loads([TorqueLoad(position=SHAFT_LENGTH_MM, magnitude=-net_torque,
+                                           label="output_coupling", source="user")])
+    return replace(resolved, shafts=(*others, driven))
 
 
 # =============================================================================
@@ -333,13 +337,13 @@ def uniform_nodes(n_elements: int) -> list[float]:
     return [float(x) for x in np.linspace(0.0, SHAFT_LENGTH_MM, n_elements + 1)]
 
 
-def solve(system: SpurHelicalGearSystem, settings: BeamModelSettings,
+def solve(system: ResolvedTransmission, settings: BeamModelSettings,
           n_elements: int | None = None) -> dict[str, ShaftResults]:
     """Solve every shaft of ``system`` with one beam model.
 
     Parameters
     ----------
-    system : SpurHelicalGearSystem
+    system : ResolvedTransmission
         Resolved system from :func:`build_system`.
     settings : BeamModelSettings
         Beam theory, shear correction and integration rule.

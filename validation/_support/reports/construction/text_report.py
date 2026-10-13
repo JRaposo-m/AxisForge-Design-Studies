@@ -28,7 +28,7 @@ or may not have run yet -- the report must stay usable for a system
 that's only been constructed, not solved. A shaft with no matching
 entry simply gets no FEM section (not an error).
 
-Writes with encoding="utf-8" explicitly: SpurHelicalGearSystem.summary()
+Writes with encoding="utf-8" explicitly: ResolvedTransmission.summary()
 and ShaftSystem.summary() (used by systems.topology_block/
 shaft_system_block) use box-drawing / degree / middle-dot Unicode
 glyphs, and Python's default text-file encoding on Windows is the
@@ -36,8 +36,8 @@ system codepage (commonly cp1252), which does not cover them and would
 raise UnicodeEncodeError on write.
 
 Dependency (core only, read-only access):
-  axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system
-      SpurHelicalGearSystem
+  axisforge.core.mechanical_system.transmission
+      ResolvedTransmission
   axisforge.results.fem_results.shaft_results
       ShaftResults
 """
@@ -56,14 +56,14 @@ RULE = "=" * 72
 SUB = "-" * 72
 
 if TYPE_CHECKING:  # pragma: no cover
-    from axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system import (
-        SpurHelicalGearSystem,
+    from axisforge.core.mechanical_system.transmission import (
+        ResolvedTransmission,
     )
     from axisforge.results.fem_results.shaft_results import ShaftResults
 
 
 def write_construction_report(
-    system: "SpurHelicalGearSystem",
+    system: "ResolvedTransmission",
     path: "str | Path",
     title: str = "",
     fem_results: "dict[str, ShaftResults] | None" = None,
@@ -79,7 +79,7 @@ def write_construction_report(
 
     Parameters
     ----------
-    system : SpurHelicalGearSystem
+    system : ResolvedTransmission
         Already built. Purely reads `system` -- does not validate or
         resolve anything.
     path : str | Path
@@ -136,11 +136,12 @@ def write_construction_report(
         sections.append(loads_block(ss))
         sections.append("")
         
-    if system.links:
+    links = system.transmission.path       # the stages of the written power path
+    if links:
         sections.append(RULE)
-        sections.append(f"MESHES ({len(system.links)})")
+        sections.append(f"MESHES ({len(links)})")
         sections.append(RULE)
-        for link in system.links:
+        for link in links:
             sections.append(mesh_block(link))
             sections.append("")
 

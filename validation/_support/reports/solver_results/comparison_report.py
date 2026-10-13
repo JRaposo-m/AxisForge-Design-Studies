@@ -1,7 +1,7 @@
 """
 validation/_support/reports/solver_results/comparison_report.py
 
-Report writer for a TWO-SOLVE comparison of the same SpurHelicalGearSystem
+Report writer for a TWO-SOLVE comparison of the same ResolvedTransmission
 -- e.g. Timoshenko vs Euler-Bernoulli, cowper vs hutchinson, base mesh vs
 refined mesh. Label-agnostic: it never assumes which two configurations
 produced the two sets of results, only that they belong to the same
@@ -19,8 +19,8 @@ SUB = "-" * 88
 _X_TOL = 1e-6   # mm -- two nodes are "the same node" if closer than this
 
 if TYPE_CHECKING:  # pragma: no cover
-    from axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system import (
-        SpurHelicalGearSystem,
+    from axisforge.core.mechanical_system.transmission import (
+        ResolvedTransmission,
     )
     from axisforge.results.fem_results.shaft_results import ShaftResults
 
@@ -208,7 +208,7 @@ def shaft_comparison_block(name: str, result_a, result_b, label_a: str, label_b:
 def write_comparison_report(
     results_a: "dict[str, ShaftResults]",
     results_b: "dict[str, ShaftResults]",
-    system: "SpurHelicalGearSystem",
+    system: "ResolvedTransmission",
     path: "str | Path",
     label_a: str = "a",
     label_b: str = "b",

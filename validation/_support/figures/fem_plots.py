@@ -71,8 +71,8 @@ import numpy as np
 from matplotlib.figure import Figure
 
 if TYPE_CHECKING:  # pragma: no cover
-    from axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system import (
-        SpurHelicalGearSystem,
+    from axisforge.core.mechanical_system.transmission import (
+        ResolvedTransmission,
     )
     from axisforge.results.fem_results.shaft_results import ShaftResults
 
@@ -307,7 +307,7 @@ def write_shaft_figures(
 
 
 def write_fem_plots(
-    system: "SpurHelicalGearSystem",
+    system: "ResolvedTransmission",
     results: "dict[str, ShaftResults]",
     base_dir: "str | Path",
     dpi: int = 150,

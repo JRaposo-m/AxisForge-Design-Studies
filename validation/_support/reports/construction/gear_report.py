@@ -4,16 +4,16 @@ validation/_support/reports/construction/gear_report.py
 Report block for the gears of a constructed system.
 
 gear_block(ge) formats one GearElement -- its kinematic role/rotation
-plus the underlying SpurHelicalGear's own geometry, which has no
+plus the underlying Gear's own geometry, which has no
 summary() in core (only loose attributes + validate()). "spur" vs
 "helical" is inferred the same way
-core/mechanical_system/parallel_axis/spur_helical/gear_system.py's own
+core/mechanical_system/transmission.py's own
 module docstring defines it: beta_n_deg == 0.0 -> spur, > 0.0 -> helical.
 
 Dependency (core only, read-only access):
-  axisforge.core.machine_elements.gears.parallel_axis.gear_properties.spur_helical_gear
-      SpurHelicalGear
-  axisforge.core.mechanical_system.parallel_axis.spur_helical.shaft_system
+  axisforge.core.machine_elements.gears.base
+      Gear
+  axisforge.core.mechanical_system.shaft_system
       GearElement
 """
 
@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from axisforge.core.mechanical_system.parallel_axis.spur_helical.shaft_system import (
+    from axisforge.core.mechanical_system.shaft_system import (
         GearElement,
     )
 
@@ -31,7 +31,7 @@ def gear_block(ge: "GearElement") -> str:
     """
     ASCII block: role, rotation_dir, position, then the gear's own
     geometry (mn, z, x, b, alpha_n_deg, beta_n_deg, d, da, df,
-    material_id). ge.gear is assumed to be a SpurHelicalGear.
+    material_id). ge.gear is assumed to be a Gear.
     """
     g = ge.gear
     tag = ge.label or getattr(g, "label", "") or "gear"

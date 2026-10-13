@@ -18,7 +18,7 @@ def solve_fem(system, theory_key: str = "timoshenko/cowper") -> dict:
 
     Parameters
     ----------
-    system: SpurHelicalGearSystem
+    system: ResolvedTransmission
         From ``system.build_system``.
     theory_key: str
         Key of ``system.THEORY_ARGS``.

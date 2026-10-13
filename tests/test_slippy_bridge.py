@@ -72,13 +72,16 @@ def test_every_axisforge_bearing_family_is_registered():
     from axisforge.core.machine_elements.bearings.families.family import _FAMILY_REGISTRY
     reg = registered()
     assert set(_FAMILY_REGISTRY) == set(reg["bearing"]) and len(reg["bearing"]) >= 8
-    assert "SpurHelicalGearMeshing" in reg["gear"]
+    assert "CylindricalFamily" in reg["gear"]
 
 
 def test_gear_adapter_not_written_yet_raises():
-    from axisforge.core.machine_elements.gears.parallel_axis import SpurHelicalGearMeshing
-    with pytest.raises(NotImplementedError):
-        contacts(SpurHelicalGearMeshing.__new__(SpurHelicalGearMeshing))
+    from axisforge.core.machine_elements.gears import CylindricalFamily, CylindricalGearData, Gear, GearPair
+    family = CylindricalFamily()
+    pair = GearPair.assemble(family, gear1=Gear.assemble(family, CylindricalGearData(2.0, 20)),
+                             gear2=Gear.assemble(family, CylindricalGearData(2.0, 40)))
+    with pytest.raises(NotImplementedError, match="adapter not written yet"):
+        contacts(pair)
 
 
 def test_unregistered_subtype_raises():

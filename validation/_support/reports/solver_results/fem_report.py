@@ -60,8 +60,8 @@ RULE = "=" * 72
 SUB = "-" * 72
 
 if TYPE_CHECKING:  # pragma: no cover
-    from axisforge.core.mechanical_system.parallel_axis.spur_helical.gear_system import (
-        SpurHelicalGearSystem,
+    from axisforge.core.mechanical_system.transmission import (
+        ResolvedTransmission,
     )
     from axisforge.results.fem_results.shaft_results import ShaftResults
 
@@ -281,7 +281,7 @@ def shaft_result_block(result: "ShaftResults") -> str:
 # ---------------------------------------------------------------------------
 
 def write_fem_report(
-    system: "SpurHelicalGearSystem",
+    system: "ResolvedTransmission",
     results: "dict[str, ShaftResults]",
     path: "str | Path",
     title: str = "",

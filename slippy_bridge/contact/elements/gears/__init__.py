@@ -1,20 +1,21 @@
 """Gears: registered subtypes, adapters to come.
 
-The spur/helical mesh is registered so that the bridge knows the element and its subtype, but
+The cylindrical pair (spur, helical, internal: one ``GearPair`` class, its subtype is the family,
+as for a bearing) is registered so that the bridge knows the element and its subtype, but
 its adapter is not written yet: it needs the position of the contact along the line of action
 (and, for lubrication, its change in time), the load per unit length with load sharing, and the
 radii of curvature at that position (AxisForge gives the points T1A..T1E and T1T2, not rho(s)).
 """
-from axisforge.core.machine_elements.gears.parallel_axis import SpurHelicalGearMeshing
+from axisforge.core.machine_elements.gears import CylindricalFamily
 
 from ...base import Contact, ElementAdapter, register
 
 __all__ = ["SpurHelicalContacts"]
 
 
-@register(SpurHelicalGearMeshing)
+@register(CylindricalFamily)
 class SpurHelicalContacts(ElementAdapter):
-    """Adapter of the AxisForge spur/helical mesh: registered, not written yet (see the module text)."""
+    """Adapter of an AxisForge ``GearPair`` of the cylindrical family: registered, not written yet (see the module text)."""
 
     element = "gear"
 

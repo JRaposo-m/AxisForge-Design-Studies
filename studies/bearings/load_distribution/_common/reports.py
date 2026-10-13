@@ -56,7 +56,7 @@ def describe_system(spec, system, study_slot: str = "") -> tuple[list[dict], str
     ----------
     spec: SystemSpec
         The system specification (nominal power).
-    system: SpurHelicalGearSystem
+    system: ResolvedTransmission
         The built system, after ``resolve``. Everything is read from it (``axisforge.outputs``),
         so the description always matches the model that was solved.
     study_slot: str

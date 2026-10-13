@@ -328,10 +328,12 @@ def build_system(spec: SystemSpec):
 
     Returns
     -------
-    system: af_c.SpurHelicalGearSystem
-        Shafts with both bearings, gear-mesh loads resolved and the driven shaft torque
-        closed by an output coupling.
+    system: af_c.ResolvedTransmission
+        Its ``shafts`` are the loaded shafts: both bearings, gear-mesh loads resolved and the
+        driven shaft torque closed by an output coupling.
     """
+    import dataclasses
+
     import axisforge.core as af_c
 
     _materials()
@@ -346,26 +348,31 @@ def build_system(spec: SystemSpec):
 
     # spur gears are built without beta_n_deg, exactly as before the migration
     helix = {} if spec.helix_angle_deg == 0.0 else dict(beta_n_deg=spec.helix_angle_deg)
-    g_driver = af_c.SpurHelicalGear(mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVER, b=GEAR_FACE_WIDTH_MM,
-                                    position=GEAR_POSITION_MM, label="g_driver",
-                                    material_id=GEAR_MATERIAL["material_id"], **helix)
-    g_driven = af_c.SpurHelicalGear(mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVEN, b=GEAR_FACE_WIDTH_MM,
-                                    position=GEAR_POSITION_MM, label="g_driven",
-                                    material_id=GEAR_MATERIAL["material_id"], **helix)
-    meshing = af_c.SpurHelicalGearMeshing(g_driver, g_driven, label="stage1")
+    family = af_c.CylindricalFamily()
+    g_driver = af_c.Gear.assemble(family, af_c.CylindricalGearData(
+        mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVER, b=GEAR_FACE_WIDTH_MM, position=GEAR_POSITION_MM, label="g_driver",
+        material_id=GEAR_MATERIAL["material_id"], **helix))
+    g_driven = af_c.Gear.assemble(family, af_c.CylindricalGearData(
+        mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVEN, b=GEAR_FACE_WIDTH_MM, position=GEAR_POSITION_MM, label="g_driven",
+        material_id=GEAR_MATERIAL["material_id"], **helix))
+    meshing = af_c.GearPair.assemble(family, gear1=g_driver, gear2=g_driven, label="stage1")
     ge_driver = af_c.GearElement(g_driver, role="driver", label="g_driver")
     ge_driven = af_c.GearElement(g_driven, role="driven", label="g_driven")
     ss1.add_gear(ge_driver)
     ss2.add_gear(ge_driven)
 
-    link = af_c.SpurHelicalMeshLink(ss1, ge_driver, ss2, ge_driven, meshing,
-                                    phi_deg=MESH_PHI_DEG, label="stage1")
-    system = af_c.SpurHelicalGearSystem([ss1, ss2], [link], label=spec.label)
+    link = af_c.PairStage(pair=meshing, shaft_a=ss1, gear_a=ge_driver, shaft_b=ss2, gear_b=ge_driven,
+                          phi_deg=MESH_PHI_DEG, label="stage1")
+    system = af_c.Transmission([ss1, ss2], [link], source=ss1, label=spec.label)
     system.validate_or_raise()
-    system.resolve(P=spec.power_W, rpm=SHAFT1_RPM, rotation_dir_source=ROTATION_DIR_SOURCE)
+    resolved = system.resolve(P_W=spec.power_W, n_rpm=SHAFT1_RPM, rotation=ROTATION_DIR_SOURCE)
 
-    # the driven shaft only receives the mesh reaction torque: close it with a sink
-    net = sum(load.magnitude for load in ss2.torque_loads)
-    ss2.add_load(af_c.TorqueLoad(position=ss2.shaft.total_length, magnitude=-net,
-                                 label="output_coupling", source="user"))
-    return system
+    # the driven shaft only receives the mesh reaction torque: close it with a sink. resolve() returns
+    # loaded COPIES: the coupling goes on the copy (label and source of the study kept; Transmission(sinks=...)
+    # would write "shaft_2:T_out" / "gear_mesh"). `resolved.checks` and `resolved.transmission.validate()`
+    # were computed before this coupling: they still report the driven shaft open (Q16)
+    loaded_1, loaded_2 = resolved.shafts
+    net = sum(load.magnitude for load in loaded_2.torque_loads)
+    loaded_2 = loaded_2.with_loads([af_c.TorqueLoad(position=ss2.shaft.total_length, magnitude=-net,
+                                                    label="output_coupling", source="user")])
+    return dataclasses.replace(resolved, shafts=(loaded_1, loaded_2))
