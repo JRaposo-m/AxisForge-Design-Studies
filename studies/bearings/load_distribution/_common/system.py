@@ -332,10 +332,8 @@ def build_system(spec: SystemSpec):
     -------
     system: af_c.ResolvedTransmission
         Its ``shafts`` are the loaded shafts: both bearings, gear-mesh loads resolved and the
-        driven shaft torque closed by an output coupling.
+        driven shaft torque closed by its sink (the output coupling, ``shaft_2:T_out``).
     """
-    import dataclasses
-
     import axisforge.core as af_c
 
     _materials()
@@ -359,23 +357,16 @@ def build_system(spec: SystemSpec):
         mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVEN, b=GEAR_FACE_WIDTH_MM, position=GEAR_POSITION_MM, label="g_driven",
         material_id=GEAR_MATERIAL["material_id"], **helix(-1)))
     meshing = af_c.GearPair.assemble(family, gear1=g_driver, gear2=g_driven, label="stage1")
-    ge_driver = af_c.GearElement(g_driver, role="driver", label="g_driver")
-    ge_driven = af_c.GearElement(g_driven, role="driven", label="g_driven")
+    ge_driver = af_c.GearElement(g_driver, label="g_driver")
+    ge_driven = af_c.GearElement(g_driven, label="g_driven")
     ss1.add_gear(ge_driver)
     ss2.add_gear(ge_driven)
 
     link = af_c.PairStage(pair=meshing, shaft_a=ss1, gear_a=ge_driver, shaft_b=ss2, gear_b=ge_driven,
                           phi_deg=MESH_PHI_DEG, label="stage1")
-    system = af_c.Transmission([ss1, ss2], [link], source=ss1, label=spec.label)
+    # the driven shaft only receives the mesh torque: its output (sink) at the right end closes it
+    # (AxisForge Q16: every output shaft needs a sink; the load is "<shaft>:T_out", source "gear_mesh")
+    system = af_c.Transmission([ss1, ss2], [link], source=ss1, sinks=((ss2, ss2.shaft.total_length),),
+                               label=spec.label)
     system.validate_or_raise()
-    resolved = system.resolve(P_W=spec.power_W, n_rpm=SHAFT1_RPM, rotation=ROTATION_DIR_SOURCE)
-
-    # the driven shaft only receives the mesh reaction torque: close it with a sink. resolve() returns
-    # loaded COPIES: the coupling goes on the copy (label and source of the study kept; Transmission(sinks=...)
-    # would write "shaft_2:T_out" / "gear_mesh"). `resolved.checks` and `resolved.transmission.validate()`
-    # were computed before this coupling: they still report the driven shaft open (Q16)
-    loaded_1, loaded_2 = resolved.shafts
-    net = sum(load.magnitude for load in loaded_2.torque_loads)
-    loaded_2 = loaded_2.with_loads([af_c.TorqueLoad(position=ss2.shaft.total_length, magnitude=-net,
-                                                    label="output_coupling", source="user")])
-    return dataclasses.replace(resolved, shafts=(loaded_1, loaded_2))
+    return system.resolve(P_W=spec.power_W, n_rpm=SHAFT1_RPM, rotation=ROTATION_DIR_SOURCE)

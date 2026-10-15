@@ -49,11 +49,11 @@ shows its full construction.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import numpy as np
 
-from axisforge.core.loads import RadialLoad, TorqueLoad
+from axisforge.core.loads import RadialLoad
 from axisforge.core.machine_elements.bearings import (
     Bearing,
     BearingCatalog,
@@ -259,10 +259,10 @@ def build_system() -> ResolvedTransmission:
 
     Notes
     -----
-    ``shaft2`` only receives the gear reaction torque; an output
-    coupling torque is added at x = L so that torsional equilibrium
-    closes (otherwise the torsion DOF is unconstrained). It does not
-    affect bending.
+    ``shaft2`` only receives the gear reaction torque; its sink at x = L
+    (the output coupling, ``shaft2:T_out``) closes torsional equilibrium
+    (otherwise the torsion DOF is unconstrained). It does not affect
+    bending.
 
     Examples
     --------
@@ -283,8 +283,8 @@ def build_system() -> ResolvedTransmission:
     g2 = Gear.assemble(family, CylindricalGearData(mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVEN, b=GEAR_FACE_WIDTH_MM,
                                                    position=GEAR_POSITION_MM, label="g_driven"))
     meshing = GearPair.assemble(family, gear1=g1, gear2=g2, label="stage1")
-    ge1 = GearElement(g1, role="driver", label="g_driver")
-    ge2 = GearElement(g2, role="driven", label="g_driven")
+    ge1 = GearElement(g1, label="g_driver")
+    ge2 = GearElement(g2, label="g_driven")
     ss1.add_gear(ge1)
     ss2.add_gear(ge2)
 
@@ -293,19 +293,12 @@ def build_system() -> ResolvedTransmission:
                                theta_deg=TEST_LOAD_THETA_DEG, label="radial_test_load"))
 
     link = PairStage(pair=meshing, shaft_a=ss1, gear_a=ge1, shaft_b=ss2, gear_b=ge2, phi_deg=0.0, label="stage1")
-    system = Transmission([ss1, ss2], [link], source=ss1, label="case_radial_single_position")
+    # the output coupling of shaft2 at x = L is its sink (AxisForge Q16: every output shaft needs one;
+    # the load is "shaft2:T_out", source "gear_mesh")
+    system = Transmission([ss1, ss2], [link], source=ss1, sinks=((ss2, SHAFT_LENGTH_MM),),
+                          label="case_radial_single_position")
     system.validate_or_raise()
-    resolved = system.resolve(P_W=POWER_W, n_rpm=SHAFT1_RPM, rotation=ROTATION_DIR_SOURCE)
-
-    # resolve() returns loaded COPIES of the shafts: the output coupling goes on the copy of the
-    # driven shaft (label and source of this study kept; Transmission(sinks=...) would write
-    # "shaft2:T_out" / "gear_mesh"). `resolved.checks` and `resolved.transmission.validate()` were
-    # computed before this coupling: they still report the driven shaft open (Q16)
-    *others, driven = resolved.shafts
-    net_torque = sum(ld.magnitude for ld in driven.torque_loads)
-    driven = driven.with_loads([TorqueLoad(position=SHAFT_LENGTH_MM, magnitude=-net_torque,
-                                           label="output_coupling", source="user")])
-    return replace(resolved, shafts=(*others, driven))
+    return system.resolve(P_W=POWER_W, n_rpm=SHAFT1_RPM, rotation=ROTATION_DIR_SOURCE)
 
 
 # =============================================================================

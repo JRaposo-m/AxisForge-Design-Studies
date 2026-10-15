@@ -3,7 +3,7 @@ validation/_support/reports/construction/gear_report.py
 
 Report block for the gears of a constructed system.
 
-gear_block(ge) formats one GearElement -- its kinematic role/rotation
+gear_block(ge) formats one GearElement -- its position
 plus the underlying Gear's own geometry, which has no
 summary() in core (only loose attributes + validate()). "spur" vs
 "helical" is inferred the same way
@@ -29,17 +29,16 @@ if TYPE_CHECKING:  # pragma: no cover
 
 def gear_block(ge: "GearElement") -> str:
     """
-    ASCII block: role, rotation_dir, position, then the gear's own
+    ASCII block: position, then the gear's own
     geometry (mn, z, x, b, alpha_n_deg, beta_n_deg, d, da, df,
     material_id). ge.gear is assumed to be a Gear.
     """
     g = ge.gear
     tag = ge.label or getattr(g, "label", "") or "gear"
     kind = "helical" if getattr(g, "beta_n_deg", 0.0) > 0.0 else "spur"
-    header = f"  -- {tag} ({kind}, role={ge.role}) "
+    header = f"  -- {tag} ({kind}) "
     lines = [
         header + "-" * max(0, 60 - len(header)),
-        f"    rotation_dir   : {ge.rotation_dir!r}",
         f"    position       : {ge.position:.2f} mm",
         f"    mn / z / x     : {g.mn:.3f} mm / {g.z} / {g.x:.4f}",
         f"    alpha_n / beta_n: {g.alpha_n_deg:.2f} deg / {g.beta_n_deg:.2f} deg",
