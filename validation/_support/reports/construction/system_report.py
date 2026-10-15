@@ -8,9 +8,9 @@ ResolvedTransmission:
 
   topology_block(system)   -- delegates to ResolvedTransmission.summary()
                               (core already formats topology + resolved
-                              state -- source shaft, link count, and,
-                              once resolved, per-shaft T_out/rotation_dir/
-                              shaft_position).
+                              state -- source shaft, stage count, and,
+                              once resolved, per-shaft torque entering
+                              the shaft/rotation/shaft_position).
   shaft_system_block(ss)   -- delegates to ShaftSystem.summary() (core
                               already formats length/speed/design life/
                               axis offset/bearing-gear-load counts).
@@ -22,7 +22,7 @@ ResolvedTransmission:
                               load is never confused with one resolve()
                               injected.
   mesh_block(link)         -- link-level info (shaft_a -> shaft_b,
-                              phi_deg, torque_split, distribute_loads,
+                              phi_deg, share, distribute_loads,
                               label) plus PairStage.pair's
                               own .summary() (GearPair,
                               core).
@@ -79,7 +79,7 @@ def loads_block(ss: "ShaftSystem") -> str:
 def mesh_block(link: "PairStage") -> str:
     """
     ASCII block for one PairStage: the link-level line
-    (endpoints, phi_deg, torque_split, distribute_loads, label) plus
+    (endpoints, phi_deg, share, distribute_loads, label) plus
     the underlying meshing object's own .summary() (GearPair,
     core -- working centre distance, working pressure angle, contact
     ratios).
@@ -87,7 +87,7 @@ def mesh_block(link: "PairStage") -> str:
     lines = [
         f"  {link.shaft_a.name} -> {link.shaft_b.name}   "
         f"phi_deg={link.phi_deg:.2f}   "
-        f"torque_split={None if link.share == 1.0 else link.share!r}   "     # the printed text of before: None = the full torque
+        f"share={link.share!r}   "     # share of the shaft torque taken by the stage (Q46: 1.0 = the full torque)
         f"distribute_loads={link.distribute_loads}   "
         f"label={link.label!r}",
         link.pair.summary(),
