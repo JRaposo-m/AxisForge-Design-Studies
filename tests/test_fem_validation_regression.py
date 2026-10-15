@@ -44,7 +44,7 @@ def test_exact_uniform_midspan(load_case):
     cd = load_case("fem_uniform_radial_load")
     p = cd.section_properties()
     sol = an.solve_shaft(cd.build_system().shafts[0], p.EI, an.kappa_cowper(p.nu) * p.GA)
-    assert round(float(sol.v(100.0)), 4) == 0.3763
+    assert round(float(sol.v(100.0)), 4) == 0.4291      # 0.3763 before the D-0010 mesh loads (Q05)
 
 
 def test_exact_stepped(load_case):

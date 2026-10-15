@@ -24,6 +24,13 @@ Two kinds of entries, kept apart on purpose:
 
 Generated on 2026-10-06 from the AxisForge ``secondary`` branch (commit
 c90c74b), and checked bit-for-bit against the pre-reorganisation scripts.
+Values of ``shaft1`` (the driving shaft) regenerated on 2026-10-15 with the
+mesh loads of D-0010 (José's rulings Q05, Q06 on the AxisForge branch
+``refactor/gears-mechanical-system``): on the driving gear the tangential
+force now points along -Z (theta 270 deg), the direction of the user test
+load, and the radial force along -Y (180 deg), toward its own axis; before,
+they were at 90 and 0 deg. ``shaft2``: |v|max and Mmax unchanged (its radial
+force turned from 180 to 0 deg, so the solution in the XY plane changes sign).
 
 Units: v [mm], M [N.mm].
 """
@@ -38,29 +45,29 @@ RTOL = 1e-9
 FEM_MINIMAL_MESH: dict[str, dict[str, dict[str, tuple[float, float, int]]]] = {
     "fem_uniform_radial_load": {
         "euler_bernoulli": {
-            "shaft1": (0.36621404473011515, 227733.97397869223, 12),
+            "shaft1": (0.4179504223628188, 251222.5365910839, 12),
             "shaft2": (0.36621404473030983, 227733.97397878167, 12),
         },
         "timoshenko/cowper": {
-            "shaft1": (0.34131912833343747, 218245.0583962735, 12),
+            "shaft1": (0.3900226237443234, 241739.93705785024, 12),
             "shaft2": (0.34054536031697663, 218245.0583962735, 12),
         },
         "timoshenko/hutchinson": {
-            "shaft1": (0.34089428970006047, 218245.0583962688, 12),
+            "shaft1": (0.38955396258991, 241739.9370578587, 12),
             "shaft2": (0.3401205218351349, 218245.0583962666, 12),
         },
     },
     "fem_stepped_distributed_gear": {
         "euler_bernoulli": {
-            "shaft1": (0.09520571882452783, 184933.84927520758, 18),
+            "shaft1": (0.15901564552171946, 278636.0144667345, 18),
             "shaft2": (0.10044650435248095, 194021.33543188724, 18),
         },
         "timoshenko/cowper": {
-            "shaft1": (0.09564599513082733, 180194.8618171448, 18),
+            "shaft1": (0.15933695877531648, 273996.99787363224, 18),
             "shaft2": (0.10087248683920662, 188908.95815360008, 18),
         },
         "timoshenko/hutchinson": {
-            "shaft1": (0.09544843990989027, 180194.8618171414, 18),
+            "shaft1": (0.15903308198939153, 273996.9978736333, 18),
             "shaft2": (0.10066628599184625, 188908.95815360002, 18),
         },
     },
@@ -69,11 +76,11 @@ FEM_MINIMAL_MESH: dict[str, dict[str, dict[str, tuple[float, float, int]]]] = {
 # case -> shaft -> (v_max [mm], M_max [N.mm]), Timoshenko with Cowper kappa
 EXACT: dict[str, dict[str, tuple[float, float]]] = {
     "fem_uniform_radial_load": {
-        "shaft1": (0.376339390904566, 227733.9739787203),
+        "shaft1": (0.42912019695192627, 251222.53659113726),
         "shaft2": (0.376339390904566, 227733.9739787203),
     },
     "fem_stepped_distributed_gear": {
-        "shaft1": (0.09998623077464994, 183635.2542293497),
+        "shaft1": (0.166317210609219, 277377.387999758),
         "shaft2": (0.10542019208894254, 192595.10451188826),
     },
 }

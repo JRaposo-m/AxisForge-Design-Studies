@@ -23,10 +23,12 @@ model (hyperstatic coupling); see the family README.
 
 Axial load
 ----------
-``helix_angle_deg = 0`` gives spur gears (Fa = 0). A helical stage gives Fa = Ft tan(beta) at
-the locating bearing, with opposite signs on the two shafts. Fa at the gear pitch radius
-also adds a moment, so with helical gears the two bearings of one shaft no longer carry the
-same Fr even though the gear sits at mid-span.
+``helix_angle_deg = 0`` gives spur gears (Fa = 0). A helical stage gives Fa = F_bt tan(beta_b) at
+the locating bearing, with opposite signs on the two shafts; its sign follows the hand of the
+helix (driving pinion right-hand, wheel left-hand) and the sense of rotation. Fa at the gear
+pitch radius also adds a bending moment (an ``ExternalMoment`` built by AxisForge), so with
+helical gears the two bearings of one shaft no longer carry the same Fr even though the gear
+sits at mid-span.
 """
 from __future__ import annotations
 
@@ -346,15 +348,16 @@ def build_system(spec: SystemSpec):
         shaft_systems[name] = shaft_system
     ss1, ss2 = (shaft_systems[name] for name in SHAFT_NAMES)
 
-    # spur gears are built without beta_n_deg, exactly as before the migration
-    helix = {} if spec.helix_angle_deg == 0.0 else dict(beta_n_deg=spec.helix_angle_deg)
+    # spur gears are built without beta_n_deg, exactly as before the migration; a helical pair needs the
+    # hand of each gear (AxisForge, Q08): driving pinion right-hand, wheel left-hand (José, 2026-10-15)
+    helix = (lambda h: {} if spec.helix_angle_deg == 0.0 else dict(beta_n_deg=spec.helix_angle_deg, hand=h))
     family = af_c.CylindricalFamily()
     g_driver = af_c.Gear.assemble(family, af_c.CylindricalGearData(
         mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVER, b=GEAR_FACE_WIDTH_MM, position=GEAR_POSITION_MM, label="g_driver",
-        material_id=GEAR_MATERIAL["material_id"], **helix))
+        material_id=GEAR_MATERIAL["material_id"], **helix(1)))
     g_driven = af_c.Gear.assemble(family, af_c.CylindricalGearData(
         mn=GEAR_MODULE_MM, z=GEAR_Z_DRIVEN, b=GEAR_FACE_WIDTH_MM, position=GEAR_POSITION_MM, label="g_driven",
-        material_id=GEAR_MATERIAL["material_id"], **helix))
+        material_id=GEAR_MATERIAL["material_id"], **helix(-1)))
     meshing = af_c.GearPair.assemble(family, gear1=g_driver, gear2=g_driven, label="stage1")
     ge_driver = af_c.GearElement(g_driver, role="driver", label="g_driver")
     ge_driven = af_c.GearElement(g_driven, role="driven", label="g_driven")

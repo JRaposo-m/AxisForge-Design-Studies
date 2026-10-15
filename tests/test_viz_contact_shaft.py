@@ -67,10 +67,11 @@ def test_shaft_scene(load_case, tmp_path):
     at_step = np.isclose(rest[:, 0], 115.0) & (np.hypot(rest[:, 1], rest[:, 2]) > 12.0)
     assert shaft["sigma_b"][at_step].max() / shaft["sigma_b"][at_step].min() == pytest.approx((28 / 25) ** 3)
     assert shaft["sigma_b"].max() == pytest.approx(results.sigma_b_max)   # [MPa]
-    # three radial loads; the gear tangential force (+z) comes from below, its tip on the drawn shaft
+    # three radial loads; the gear tangential force on the driving gear (-z since the D-0010 mesh loads, Q05)
+    # comes from above, its tip on the drawn shaft
     labels = list(scene["load_labels"]["label"])                      # a number per arrow, then its legend line
     assert labels[4:] == ["  3", "3: Gear tangential force = 5000 N"] and labels[1].startswith("1: parabolic user load")
-    tail_z = factor * np.interp(100.0, results.x, results.v_xz) - 12.5 - vsh.ARROW_LENGTH_OVER_LENGTH * 200.0
+    tail_z = factor * np.interp(100.0, results.x, results.v_xz) + 12.5 + vsh.ARROW_LENGTH_OVER_LENGTH * 200.0
     assert scene["load_labels"].points[4] == pytest.approx(
         [100.0, factor * np.interp(100.0, results.x, results.v_xy), tail_z])
     paths = vs.save(scene, vsh.FIELDS, tmp_path / "viz", "shaft1")
