@@ -75,7 +75,11 @@ def _hertz_full(case: ContactCase) -> dict:
 def _oriented(case: ContactCase, ref: dict) -> tuple[float, float]:
     R_x, R_y = relative_radii(case)
     radii = sorted(float(r) for r in ref["contact_radii"])
-    if math.isinf(R_x) or math.isinf(R_y):                   # line contact: one infinite axis
+    # the flag decides the contact type; the radii only say which axis is the line axis
+    if case.line != (math.isinf(R_x) != math.isinf(R_y)):
+        raise ValueError(f"case.line is {case.line} but the relative radii are ({R_x}, {R_y}): a line "
+                         "contact needs exactly one infinite relative radius, a point contact none")
+    if case.line:                                            # strip infinite along the straight axis
         s_line = radii[0]
         return (math.inf, s_line) if math.isinf(R_x) else (s_line, math.inf)
     small, large = radii[0], radii[-1]

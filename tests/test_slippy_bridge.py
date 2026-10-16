@@ -300,9 +300,21 @@ def test_semi_axes_follow_the_relative_radii(r1, x_longer):
     assert (s_x > s_y) is x_longer
 
 
-def test_line_axis_follows_the_cylinder():
-    s = semi_axes(ContactCase("c", r1=(5e-3, math.inf), r2=math.inf, E=2.1e11, nu=0.3, load=1e5, line=True))
-    assert math.isinf(s[1]) and math.isfinite(s[0])
+@pytest.mark.parametrize("r1, line_axis", [((5e-3, math.inf), 1), ((math.inf, 5e-3), 0)])
+def test_line_axis_follows_the_cylinder(r1, line_axis):
+    s = semi_axes(ContactCase("c", r1=r1, r2=math.inf, E=2.1e11, nu=0.3, load=1e5, line=True))
+    assert math.isinf(s[line_axis]) and math.isfinite(s[1 - line_axis])
+
+
+@pytest.mark.parametrize("r1, line", [((5e-3, 5e-3), True),           # sphere flagged as a line
+                                      ((5e-3, math.inf), False)])      # cylinder not flagged
+def test_line_flag_inconsistent_with_radii_raises(r1, line):
+    from slippy_bridge.contact.reference import _oriented
+    case = ContactCase("c", r1=r1, r2=math.inf, E=2.1e11, nu=0.3, load=1e5, line=line)
+    with pytest.raises(ValueError):                           # SlipPY's hertz_full refuses it first
+        semi_axes(case)
+    with pytest.raises(ValueError, match="case.line"):        # the bridge's own guard, on any reference
+        _oriented(case, {"contact_radii": (1e-4, 2e-4)})
 
 
 def test_grid_rolling_axis_and_dyadic_spacing(ball):
@@ -372,6 +384,22 @@ def test_roughness_composite_and_two_profiles(ball):
                 dict(build="equivalent")):
         with pytest.raises(ValueError):
             pair(case, g, **bad)
+
+
+@pytest.mark.parametrize("build", ["composite", "two_profiles"])
+def test_kernel_flag_reaches_both_materials(ball, build):
+    """SlipPY stores ``use_frequency_domain`` as ``Material.use_frequency`` (``slippy/core/materials.py:37-40``)."""
+    case = contact_case(ball, "inner", 300.0)
+    g = Grid.around(case)
+    assert all(s.material.use_frequency for s in pair(case, g, build=build))          # SlipPY default kept
+    assert not any(s.material.use_frequency for s in pair(case, g, build=build, use_frequency_domain=False))
+
+
+def test_line_contact_refuses_the_spatial_kernel():
+    """On the periodic line axis the spatial kernel spans one period: a finite strip, not plane strain."""
+    case = ContactCase("roller", r1=(5e-3, math.inf), r2=(30e-3, math.inf), E=210e9, nu=0.3, load=5e4, line=True)
+    with pytest.raises(ValueError, match="use_frequency_domain"):
+        pair(case, Grid.around(case), use_frequency_domain=False)
 
 
 # ---- static step, end to end ---------------------------------------------------------------

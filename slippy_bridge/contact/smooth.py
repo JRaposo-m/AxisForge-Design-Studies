@@ -168,18 +168,22 @@ def _profile(r: tuple[float, float], X: np.ndarray, Y: np.ndarray) -> np.ndarray
     return z
 
 
-def _surfaces(case: ContactCase, z1: np.ndarray, z2: np.ndarray, h: float):
+def _surfaces(case: ContactCase, z1: np.ndarray, z2: np.ndarray, h: float, use_frequency_domain: bool):
     import slippy.contact as c
     import slippy.surface as s
     i = next(_ids)
     s1 = s.Surface(profile=z1, grid_spacing=h)
     s2 = s.Surface(profile=z2, grid_spacing=h)
-    s1.material = c.Elastic(f"{case.label}_body1_{i}", {"E": case.E[0], "v": case.nu[0]})
-    s2.material = c.Elastic(f"{case.label}_body2_{i}", {"E": case.E[1], "v": case.nu[1]})
+    # one kernel choice for both bodies: SlipPY combines their influence matrices
+    s1.material = c.Elastic(f"{case.label}_body1_{i}", {"E": case.E[0], "v": case.nu[0]},
+                            use_frequency_domain=use_frequency_domain)
+    s2.material = c.Elastic(f"{case.label}_body2_{i}", {"E": case.E[1], "v": case.nu[1]},
+                            use_frequency_domain=use_frequency_domain)
     return s1, s2
 
 
-def pair(case: ContactCase, grid: Grid, build: str = "composite", rough=(None, None)):
+def pair(case: ContactCase, grid: Grid, build: str = "composite", rough=(None, None), *,
+         use_frequency_domain: bool = True):
     """The two SlipPY surfaces of a contact on ``grid``, smooth or rough.
 
     The two builds are described in the module text; the roughness is shared between the bodies
@@ -208,6 +212,21 @@ def pair(case: ContactCase, grid: Grid, build: str = "composite", rough=(None, N
         body 1; nothing is flipped here. SlipPY shifts the gap to first touch
         (``slippy/contact/_model_utils.py:174-177``), so with roughness the approach is counted
         from the highest asperity and a constant offset in a roughness array has no effect.
+    use_frequency_domain : bool, optional
+        Elastic kernel of both bodies (``slippy.contact.Elastic``,
+        ``slippy/core/elastic_material.py:27-29, 81``). True (SlipPY default): the influence
+        matrix is defined in the frequency domain, its zero-frequency term set from the summed
+        spatial matrix (``slippy/core/materials.py:156-164``); the kernel is then periodic, so a
+        non-periodic contact also feels images of its own load repeated with period twice the
+        domain (the image error that the domain sweep of
+        ``validation._support.convergence.sweep`` measures). False: the influence matrix is the
+        half-space (Boussinesq) kernel sampled in the spatial domain. On a non-periodic axis
+        SlipPY sizes it at twice the domain and zero-pads the loads
+        (``slippy/core/influence_matrix_utils.py:399-402``), so the convolution is linear and a
+        contact inside the domain has no images. On a periodic axis (the line axis of a line
+        contact) the spatial kernel spans one period only (``periodic_im_repeats = (1, 1)``,
+        ``slippy/core/elastic_material.py:30-35``): the load is a strip ``n_y h`` long, not plane
+        strain (p0 +14 % on the default roller grid), so a line contact refuses False.
 
     Returns
     -------
@@ -218,7 +237,8 @@ def pair(case: ContactCase, grid: Grid, build: str = "composite", rough=(None, N
     Raises
     ------
     ValueError
-        For an unknown ``build``; ``case.angle != 0``; a roughness whose shape is not
+        For an unknown ``build``; ``case.angle != 0``; a line contact with
+        ``use_frequency_domain=False``; a roughness whose shape is not
         ``grid.X.shape``; a SlipPY roughness surface whose ``grid_spacing`` is not ``grid.h``; a
         grid that reaches beyond a body.
 
@@ -232,6 +252,9 @@ def pair(case: ContactCase, grid: Grid, build: str = "composite", rough=(None, N
         raise ValueError(f"build must be 'composite' or 'two_profiles', got {build!r}")
     if case.angle != 0.0:
         raise ValueError("the builds assume aligned principal axes (angle = 0)")
+    if case.line and not use_frequency_domain:
+        raise ValueError("a line contact needs use_frequency_domain=True "
+                         "(the spatial kernel is a finite strip, not plane strain)")
     X, Y, h = grid.X, grid.Y, grid.h
     z_rough = []
     for name, z in zip(("rough[0]", "rough[1]"), rough):
@@ -254,4 +277,4 @@ def pair(case: ContactCase, grid: Grid, build: str = "composite", rough=(None, N
         z2 = np.zeros_like(X)
     else:
         z1, z2 = _profile(case.r1, X, Y) + z_rough[0], _profile(case.r2, X, Y) + z_rough[1]
-    return _surfaces(case, z1, z2, h)
+    return _surfaces(case, z1, z2, h, use_frequency_domain)
