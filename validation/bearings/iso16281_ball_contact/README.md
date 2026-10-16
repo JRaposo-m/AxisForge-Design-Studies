@@ -110,15 +110,81 @@ AxisForge `b3f624a`, run of 2026-10-11). To be replaced by a run from a commit.
   `radial_heavy` 4528 N, 3098 / 2623 MPa, edge angle 22.0 deg; `combined` 4048 N,
   2970 / 2535 MPa, edge angle 39.1 deg.
 
+## 02 sign check (A2)
+
+**Objective.** Check the shaft -> bearing path that `01` does not test (it calls the ball solver
+with `phi_Fr = 0` directly): does the ISO/TS 16281 ball solver put the loaded zone on the side
+where the shaft pushes the inner ring? Open review item A2 (debate
+`80_Inbox/2026-10-16/debate_bridge-structure_2026-10-16.md`, section 1).
+
+**Set-up** (`construction.build_shaft_system`, `SIGN_CHECK`). Plain shaft, d 50 mm, L 200 mm, two
+6210-like bearings of `build_bearing` (s = 0) centred at x = 10 mm (locating) and 190 mm
+(non-locating), one radial point load of 6600 N at mid-span, Fa = 0, no load on the bearing nodes.
+Two load directions (AxisForge `RadialLoad.theta_deg`, from +Y toward +Z): 270 deg (-Z), and 300 deg
+(Fy = +3300 N, Fz = -5715.8 N), so that the Y sign and the sense of rotation of D-0010 are tested too.
+`RigidSupportFEMSolver` (Timoshenko, Cowper, single-point), then per bearing
+`resolve_solver_cls(bearing)(psi_input=True, postprocess=False).solve(..., psi_override={label: 0.0})`.
+`F_r = (Fr_xz, Fr_xy)` is the FEM node force `BearingNodeData.Fr_xz`, `.Fr_xy`: `K d` at the
+bearing node, the force of the support ON THE SHAFT, positive along +Z / +Y
+(`axisforge/results/fem_results/shaft_results.py:50-53`); with no load on the node it equals
+`ShaftResults.R_xz`, `R_xy` (both recorded), and it is what the solver reads. The vector residual is
+formed here because `BearingResult.equilibrium_error` (`load_distribution_results.py:429-432`)
+compares magnitudes only and cannot see a 180 deg error.
+
+**Criterion** (fixed before running): PASS if
+`|sum_j Q_j cos(alpha_j) [cos phi_g, sin phi_g]_j + (Fr_xz, Fr_xy)| <= 1e-3 |Fr|` and argmax Q_j at
+the expected angle `phi_exp = atan2(Fy_load, Fz_load) mod 2 pi` (within half the ball pitch angle,
+pi/Z): 180 deg for theta 270, 150 deg for theta 300. FAIL signature: residual about 2|Fr| and
+argmax Q_j at `phi_exp + pi` (0 deg, 330 deg). The vector residual decides.
+`phi_g = BearingResult.phi_j_global(0)`, measured from +Z toward +Y (D-0010).
+
+**Prediction: FAIL**, from reading AxisForge `c328999`:
+- `contact_solver.py:191-194`: `Fr_xz = node.Fr_xz`, `Fr_xy = node.Fr_xy`,
+  `phi_Fr = float(np.arctan2(Fr_xy, Fr_xz))`, i.e. the direction of the support force on the
+  shaft, not of the load on the inner ring;
+- `axisforge/results/bearings/load_distribution/load_distribution_results.py:288-293` (Warnings of
+  `BearingResult`) and `:446-448` (`phi_j_global`): "the direction of the node force (see the
+  Warnings of the class: 180 deg from the load on the inner ring)"; the Warnings call it an "Open
+  review item, not corrected in the code".
+
+**Scope.** `contact_solver.py:191-194` is in `SolverBase.solve`, shared by the ball, the
+line-contact (roller) and the multi-row solvers, so A2 applies to roller bearings too; this check
+covers the ball solver only. `contact_solver.py:861` is `ISO16281BallSolver.minimum_axial_load`,
+which uses the same `arctan2` on a caller-supplied Fr.
+
+**What A2 changes.** With psi = 0, or psi != 0 on a symmetric single row with Fa = 0, A2 only
+places the loaded zone 180 deg off: `phi_j_global`, loaded-zone plots and the `Contact.location`
+angles passed to `slippy_bridge` (`elements/bearings/families.py:241-243`). With psi from the FEM
+together with Fa != 0 or an angular-contact row, the projection
+`psi = psi_xz cos(phi_Fr) + psi_xy sin(phi_Fr)` (`contact_solver.py:201`) also reverses the tilt
+relative to the load line, so `Q_j`, `alpha_j` and the life can change: not checked here (psi is
+prescribed, psi = 0).
+
+This is evidence for José's A2 ruling, not a fix; AxisForge is unchanged.
+
+**Result.** Smoke run from the commit to be made (hash: to be added), AxisForge `c328999`. **FAIL**
+for both load directions and both bearings, with exactly the predicted signature:
+
+| theta | bearing | `(Fr_xz, Fr_xy)` [N] | residual [N] | \|r\|/\|Fr\| | Q_max [N] at phi_g | expected |
+|---|---|---|---|---|---|---|
+| 270 deg | 6210_A, 6210_B | (3300.000, 6e-13) | (6600.000, 8e-13) | 2.000000 | 1607.9 at 0 deg | 180 deg |
+| 300 deg | 6210_A, 6210_B | (2857.884, -1650.000) | (5715.768, -3300.000) | 2.000000 | 1607.9 at 330 deg | 150 deg |
+
+The solver converged in every case; the ball sum equals `+Fr` instead of `-Fr`, and the peak is
+exactly 180 deg from the expected angle. The Y sign and the sense of rotation are consistent with
+D-0010 (the 300 deg case is off by 180 deg only, not mirrored). Q_max equals the 1608 N of
+`radial_moderate` in `01` (same 3300 N per bearing): the magnitude is right.
+
 ## Files
 
 | File | Role |
 |---|---|
 | `construction.py` | Inputs (top of file), `LOADS`, `build_bearing(s)` (assembled, **not** solved) |
 | `01_contacts_vs_hertz.py` | Solve, contacts through the bridge, Hertz on each; prints the tables, writes `results/contacts.csv` and `results/approach.csv` (git-ignored) |
+| `02_sign_check.py` | A2 sign check: shaft FEM, ball solver per bearing, inner-ring equilibrium residual; prints the verdict per bearing, writes `results/sign_check.csv` (git-ignored) |
 
 ## Running
 
 From this folder (the script imports `construction` as a sibling module):
-`python 01_contacts_vs_hertz.py`. Needs AxisForge and this repository installed
+`python 01_contacts_vs_hertz.py`, `python 02_sign_check.py`. Needs AxisForge and this repository installed
 (`pip install -e`). No BEM solve is run.
