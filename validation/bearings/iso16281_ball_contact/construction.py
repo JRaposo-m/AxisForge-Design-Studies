@@ -3,8 +3,9 @@ Construction -- 6210-like deep groove ball bearing and the load cases of
 ``validation/bearings/iso16281_ball_contact``.
 
 Single source of the inputs of the case, written directly against the AxisForge API. The bearing
-is the one of the study ``studies/bearings/contact/hertz_vs_bem`` (same contact); its numbers are
-repeated here on purpose, a validation case shows its whole construction and imports no study.
+is the one of the case ``validation/contact/hertz_ellipse`` (same bearing, other loads); its
+numbers are repeated here on purpose, a validation case shows its whole construction and imports
+no study.
 
 ``build_bearing(s)`` returns the bearing assembled and NOT solved; the script chooses the solver.
 

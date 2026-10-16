@@ -26,7 +26,7 @@ Checked:
   raceway (concave along rolling);
 - that the bridge hands on `Q_j` and `alpha_j` of a real solve to both raceways.
 
-Not checked: that Hertz is valid here (the job of the BEM study `hertz_vs_bem` and its successor).
+Not checked: that Hertz is valid here (the job of the BEM case `validation/contact/hertz_ellipse`).
 
 | | |
 |---|---|

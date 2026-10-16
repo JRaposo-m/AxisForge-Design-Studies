@@ -1,19 +1,27 @@
 """
-validation/_support/convergence.py -- adapters for AxisForge's mesh
-convergence machinery (``MeshConvergenceStudy``, ``SubmodelSolver``).
+validation/_support/convergence.py -- convergence helpers shared by the
+validation cases.
+
+* ``ResultantView``: adapter for AxisForge's mesh convergence machinery
+  (``MeshConvergenceStudy``, ``SubmodelSolver``). Extracted on 2026-10-06 from
+  the two ``02_verification_*`` notebooks.
+* ``sweep`` and ``RECORD_COLUMNS``: mesh and domain sweep of a smooth SlipPY
+  static contact through ``slippy_bridge.contact`` (SI units). Moved on
+  2026-10-16 from the study ``hertz_vs_bem`` (``_common/sweep.py``) for the
+  three ``validation/contact`` cases.
 
 Only what the validation cases repeated verbatim lives here. The grade loop
 itself stays in each notebook on purpose: it is the documented procedure of
 that study (which quantities, which thresholds, when to stop), not plumbing.
 Promote a loop here when two validation cases need the same one.
-
-Extracted on 2026-10-06 from the two ``02_verification_*`` notebooks.
 """
 from __future__ import annotations
 
 import numpy as np
 
-__all__ = ["ResultantView"]
+from slippy_bridge.contact import Grid, pair, static_step
+
+__all__ = ["ResultantView", "sweep", "RECORD_COLUMNS"]
 
 
 class ResultantView:
@@ -47,3 +55,60 @@ class ResultantView:
 
     def __getattr__(self, name):
         return getattr(self._r, name)
+
+
+# Console tables (``axisforge.outputs._format.format_table``): key, header, format, scale.
+RECORD_COLUMNS = (("build", "build", "s"), ("sweep", "sweep", "s"), ("span_x", "span_x [s_x]", "g"),
+                  ("h_m", "h [um]", ".3f", 1e6), ("n_x", "n_x", ".0f"), ("n_y", "n_y", ".0f"),
+                  ("p0_Pa", "p0 [MPa]", ".2f", 1e-6), ("err_p0", "err p0 [%]", "+.3f", 100.0),
+                  ("err_s_x", "err s_x [%]", "+.3f", 100.0), ("err_s_y", "err s_y [%]", "+.3f", 100.0),
+                  ("err_delta", "err delta [%]", "+.3f", 100.0), ("solve_time_s", "t [s]", ".2f"))
+
+
+def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=4.0) -> list[dict]:
+    """Solve one smooth static contact on a series of grids, for each build.
+
+    Two sweeps around the default grid of the bridge (spacing ``h0`` = largest ``2**k`` not above
+    ``s_x / 10``, half-length ``span_x_0 * s_x`` along rolling):
+
+    * ``"mesh"``: spacing ``f * h0`` for each ``f`` in ``h_levels``, half-length ``span_x_0 * s_x``.
+      Shows the discretisation error.
+    * ``"domain"``: half-length ``span_x * s_x`` for each ``span_x`` in ``span_x_levels``, spacing ``h0``.
+      Shows the dependence on the domain. A half-space BEM should have none once the contact is
+      inside; SlipPY's default frequency-domain kernel repeats the load with period twice the
+      domain, and this sweep measures that image error.
+
+    Parameters
+    ----------
+    contact : Contact or ContactCase
+        The contact (SI units, ``x`` = rolling direction).
+    builds : sequence of {"composite", "two_profiles"}
+        Surface builds of ``slippy_bridge.contact.pair``.
+    h_levels : sequence of float
+        Grid spacings in units of ``h0`` [-]; powers of two keep the spacing dyadic.
+    span_x_levels : sequence of float
+        Half-lengths of the domain along rolling in units of the Hertz semi-axis ``s_x`` [-].
+    output_dir : path
+        Folder for SlipPY's .sar/.sdb/.log files.
+    span_x_0 : float, optional
+        Half-length of the mesh-sweep grids along rolling in units of ``s_x`` [-]; the default 4.0
+        is the default grid of ``Grid.around``.
+
+    Returns
+    -------
+    list of dict
+        One record of ``static_step.run`` per solve (measurements, Hertz reference, relative
+        errors as fractions, checks), plus ``build``, ``sweep`` (``"mesh"`` or ``"domain"``) and
+        ``span_x`` [-]. The default grid appears once in each sweep.
+    """
+    case = getattr(contact, "case", contact)
+    h0 = Grid.around(case).h
+    grids = [("mesh", f * h0, span_x_0) for f in h_levels] + [("domain", h0, span_x) for span_x in span_x_levels]
+    records = []
+    for build in builds:
+        for i, (kind, h, span_x) in enumerate(grids):
+            grid = Grid.around(case, h=h, span_x=span_x)
+            record, _ = static_step.run(contact, pair(case, grid, build=build), grid, output_dir,
+                                        name=f"{case.label}_{build}_{kind}_{i}")
+            records.append({"build": build, "sweep": kind, "span_x": span_x, **record})
+    return records

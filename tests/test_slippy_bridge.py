@@ -407,7 +407,7 @@ def test_contact_case_hash_ignores_label():
 
 def test_contact_case_keeps_slippy_keys_and_the_saved_hash():
     """E and nu go out under SlipPY's names, so the hash of the saved results does not change."""
-    # the ball_flat case of the hertz_vs_bem study: 12.7 mm steel ball on a steel flat, 500 N
+    # the ball_flat case of validation/contact/hertz_point_grid_domain: 12.7 mm steel ball on a steel flat, 500 N
     case = ContactCase("ball_flat", r1=6.35e-3, r2=math.inf, E=210e9, nu=0.3, load=500.0)
     assert {"moduli", "v"} <= set(case.to_dict()) and {"moduli", "v"} <= set(case.hertz_args())
     assert case.case_hash() == "9ccc2ddabd085997"

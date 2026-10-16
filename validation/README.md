@@ -8,6 +8,10 @@ get the known answer?"; an open engineering question belongs in `studies/`.
 ```
 validation/
 ├── _support/          shared by the cases below only: reports, figures, convergence adapters
+├── contact/           SlipPY static BEM against Hertz (through slippy_bridge)
+│   ├── hertz_point_grid_domain/
+│   ├── hertz_ellipse/
+│   └── hertz_line_subsurface/
 ├── shafts/
 │   ├── fem_uniform_radial_load/
 │   └── fem_stepped_distributed_gear/
