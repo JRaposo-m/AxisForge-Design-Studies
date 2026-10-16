@@ -1,4 +1,4 @@
-"""Hertz elliptical point contact, written from the theory: the independent judge.
+"""Hertz point and line contact, written from the theory: the independent judge.
 
 It judges both AxisForge (``PointContactStiffness``, ISO/TS 16281) and SlipPY (``hertz_full``),
 so it shares no code with either: only NumPy and SciPy are imported, and the formulas are those of
@@ -12,7 +12,7 @@ import numpy as np
 from scipy.optimize import brentq
 from scipy.special import ellipk, elliprd
 
-__all__ = ["hertz_point"]
+__all__ = ["hertz_point", "hertz_line"]
 
 
 def hertz_point(r1, r2, E, nu, load) -> dict:
@@ -114,3 +114,82 @@ def hertz_point(r1, r2, E, nu, load) -> dict:
     # the long semi-axis lies along the direction of the smaller relative curvature (flatter gap)
     s_x, s_y = (a, b) if k_x <= k_y else (b, a)
     return {"p0_Pa": float(p0), "s_x_m": s_x, "s_y_m": s_y, "delta_m": float(p0 * b * K / e_star)}
+
+
+def hertz_line(r1, r2, E, nu, w) -> dict:
+    """Hertz solution of a line contact between two elastic cylinders with parallel axes.
+
+    Two smooth bodies, both straight along ``y`` (the line axis), touch along a line and are
+    pressed together by the load ``w`` per unit length. Near the line the gap before loading is
+    ``h(x) = x^2 / (2 R)`` with ``1/R = 1/r1_x + 1/r2_x``. The contact is a strip ``|x| <= s_x`` and
+    the pressure is ``p = p0 sqrt(1 - (x/s_x)^2)``; ``s_x`` is Johnson's semi-width ``a``.
+
+    Parameters
+    ----------
+    r1, r2 : (float, float) or float
+        Principal radii of curvature ``(r_x, r_y)`` of body 1 and body 2 at the contact line [m].
+        ``x`` is the rolling direction, ``y`` the line axis. Convex > 0, concave < 0, flat =
+        ``math.inf``. ``r_y`` must be ``math.inf`` on both bodies, so a scalar is accepted only
+        as ``math.inf`` (a flat).
+    E : (float, float) or float
+        Young's moduli ``(E1, E2)`` [Pa]; a scalar applies to both bodies.
+    nu : (float, float) or float
+        Poisson's ratios ``(nu1, nu2)`` [-]; a scalar applies to both bodies.
+    w : float
+        Normal load per unit length of the line [N/m].
+
+    Returns
+    -------
+    dict
+        ``s_x_m``: semi-width of the contact strip along ``x`` (rolling) [m]; ``s_y_m``: ``inf``
+        (the strip is unbounded along the line axis); ``p0_Pa``: maximum contact pressure [Pa].
+        The keys are those of :func:`hertz_point`. No approach is returned: for a line contact it is
+        not defined by the local (half-space) solution, it depends on the size and support of the
+        bodies (Johnson 1985, Sec. 4.2(c), PDF 110).
+
+    Raises
+    ------
+    ValueError
+        If a body is curved along ``y`` (not a line contact), if ``1/R <= 0`` (the bodies do not
+        form a Hertz contact) or if ``w <= 0``.
+
+    Notes
+    -----
+    Assumptions (Hertz, two-dimensional): plane strain, smooth frictionless surfaces, linear
+    elastic isotropic bodies each treated as a half-space, strip width small against the radii,
+    normal load only, no adhesion.
+
+    With ``E' = 2 E*`` and ``1/E* = (1 - nu1^2)/E1 + (1 - nu2^2)/E2``::
+
+        s_x = (8 w R / (pi E'))^(1/2) = (4 w R / (pi E*))^(1/2)
+        p0  = 2 w / (pi s_x)          = (w E* / (pi R))^(1/2)
+
+    the second line being the load tie ``w = (pi / 2) s_x p0`` of the elliptical pressure.
+
+    References
+    ----------
+    Johnson, Contact Mechanics (1985), Sec. 4.2(c), Eqs (4.43)-(4.45) (book p. 101, PDF 111).
+
+    Examples
+    --------
+    A 10 mm steel roller on the inner raceway of a 70 mm pitch diameter, 5e4 N/m:
+
+    >>> ref = hertz_line((5e-3, math.inf), (30e-3, math.inf), 210e9, 0.3, 5e4)
+    >>> round(ref["s_x_m"] * 1e6, 2), round(ref["p0_Pa"] / 1e6, 1)
+    (48.63, 654.6)
+    """
+    (r1_x, r1_y), (r2_x, r2_y) = np.broadcast_to(r1, 2), np.broadcast_to(r2, 2)
+    (E1, E2), (nu1, nu2) = np.broadcast_to(E, 2), np.broadcast_to(nu, 2)
+    # a line contact needs both bodies straight along the line axis: 1/inf = 0
+    if not (1.0 / r1_y == 0.0 and 1.0 / r2_y == 0.0):
+        raise ValueError(f"both bodies must be straight along y for a line contact, got r_y {r1_y}, {r2_y}")
+    k_x = 1.0 / r1_x + 1.0 / r2_x                 # relative curvature 1/R [1/m]
+    if not k_x > 0.0:
+        raise ValueError(f"relative curvature along x must be positive, got {k_x}")
+    if not w > 0.0:
+        raise ValueError(f"load per unit length must be positive, got {w}")
+    e_star = 1.0 / ((1.0 - nu1**2) / E1 + (1.0 - nu2**2) / E2)      # contact modulus E* [Pa]
+
+    s_x = math.sqrt(4.0 * w / (math.pi * k_x * e_star))             # Eq. (4.43), R = 1/k_x
+    p0 = 2.0 * w / (math.pi * s_x)                                    # Eq. (4.45), w = (pi/2) s_x p0
+    return {"s_x_m": s_x, "s_y_m": math.inf, "p0_Pa": p0}

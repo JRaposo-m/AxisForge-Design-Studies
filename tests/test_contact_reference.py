@@ -4,7 +4,7 @@ import math
 import pytest
 from scipy.integrate import dblquad
 
-from references.contact.hertz import hertz_point
+from references.contact.hertz import hertz_line, hertz_point
 
 # 12.7 mm ball in a groove of radius 0.52 Dw (concave across rolling), rolling radii of a raceway
 # on a 70 mm pitch diameter at zero contact angle: (70 -/+ 12.7) / 2 mm. Radii [m], convex > 0.
@@ -95,3 +95,31 @@ def test_long_axis_lies_across_rolling_in_a_groove_and_follows_the_axes():
 def test_not_a_point_contact_raises(r1, r2):
     with pytest.raises(ValueError):
         hertz_point(r1, r2, load=100.0, **STEEL)
+
+
+# roller of 10 mm on the inner raceway of a 70 mm pitch diameter: (70 - 10) / 2 mm. Radii [m].
+ROLLER = (5e-3, math.inf)
+ROLLER_RACEWAY = (30e-3, math.inf)
+
+
+@pytest.mark.parametrize("material", [STEEL, MIXED])
+def test_line_contact_matches_johnson(material):
+    """Line contact (Johnson, Contact Mechanics (1985), Eqs (4.43)-(4.45)):
+    ``a = (4 P R / (pi E*))**(1/2)``, ``p0 = 2 P / (pi a) = (P E* / (pi R))**(1/2)``, P per unit length."""
+    P = 5e4                                                   # [N/m]
+    R = 1.0 / (1.0 / ROLLER[0] + 1.0 / ROLLER_RACEWAY[0])     # relative radius along rolling [m]
+    e_star = _e_star(**material)
+    ref = hertz_line(ROLLER, ROLLER_RACEWAY, w=P, **material)
+    a = math.sqrt(4.0 * P * R / (math.pi * e_star))
+    assert ref["s_x_m"] == pytest.approx(a, rel=1e-12)
+    assert ref["p0_Pa"] == pytest.approx(2.0 * P / (math.pi * a), rel=1e-12)
+    assert ref["p0_Pa"] == pytest.approx(math.sqrt(P * e_star / (math.pi * R)), rel=1e-12)
+
+
+@pytest.mark.parametrize("r1, r2, w", [(R_BALL, math.inf, 5e4),             # ball on flat: point contact
+                                       (ROLLER, (30e-3, 0.1), 5e4),         # raceway crowned along y
+                                       (ROLLER, (-4e-3, math.inf), 5e4),    # bore tighter than the roller
+                                       (ROLLER, ROLLER_RACEWAY, 0.0)])      # no load
+def test_not_a_line_contact_raises(r1, r2, w):
+    with pytest.raises(ValueError):
+        hertz_line(r1, r2, w=w, **STEEL)
