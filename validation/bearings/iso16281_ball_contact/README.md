@@ -162,7 +162,7 @@ prescribed, psi = 0).
 
 This is evidence for José's A2 ruling, not a fix; AxisForge is unchanged.
 
-**Result.** Smoke run from the commit to be made (hash: to be added), AxisForge `c328999`. **FAIL**
+**Result.** Smoke run from design-studies `5a58504` (branch `validation/phase1-contact`), AxisForge `c328999`. **FAIL**
 for both load directions and both bearings, with exactly the predicted signature:
 
 | theta | bearing | `(Fr_xz, Fr_xy)` [N] | residual [N] | \|r\|/\|Fr\| | Q_max [N] at phi_g | expected |
