@@ -24,11 +24,13 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
+
 import axisforge.core as af_c
 
 from slippy_bridge.contact import ContactCase
 
-__all__ = ["CASE", "H_LEVELS", "SPAN_X_0", "SPAN_X_LEVELS", "RESULTS", "roller_bearing"]
+__all__ = ["CASE", "H_LEVELS", "SPAN_X_0", "SPAN_X_LEVELS", "Z_OVER_A", "RESULTS", "roller_bearing"]
 
 
 # =============================================================================
@@ -58,6 +60,13 @@ LOAD = 5.0e4                         # normal load per unit roller length [N/m]
 H_LEVELS = (2.0, 1.0, 0.5, 0.25)     # mesh sweep: grid spacing in units of h0 [-]
 SPAN_X_0 = 4.0                       # half-length of the reference grid along rolling in units of s_x [-]
 SPAN_X_LEVELS = (2.0, 4.0, 8.0)      # domain sweep: half-length along rolling in units of s_x [-]
+
+# --- subsurface stress: depths below the surface, in units of a ----------------------------
+# 0 to 2a covers the Appendix 4 rows (z/a 0 ... 2.0) and tau1 max at 0.785a; step 0.02a
+Z_OVER_A = np.linspace(0.0, 2.0, 101)
+# the surface row sits at 1e-4 of the first step, as SlipPY's own default depths do
+# (slippy/core/elastic_material.py:328): its kernels are singular at z = 0
+Z_OVER_A[0] = 1e-4 * Z_OVER_A[1]
 
 # --- where the scripts write: results/ next to this case, git-ignored (D-0020) ------
 RESULTS = Path(__file__).resolve().parent / "results"

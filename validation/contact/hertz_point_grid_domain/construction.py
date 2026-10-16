@@ -21,9 +21,12 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
+
 from slippy_bridge.contact import ContactCase
 
-__all__ = ["CASE", "H_LEVELS", "SPAN_X_0", "SPAN_X_LEVELS", "RESULTS"]
+__all__ = ["CASE", "H_LEVELS", "SPAN_X_0", "SPAN_X_LEVELS", "MUSER_H_OVER_A", "MUSER_SPAN", "Z_OVER_A",
+           "RESULTS"]
 
 
 # =============================================================================
@@ -49,6 +52,16 @@ LOAD = 500.0                         # normal load [N]
 H_LEVELS = (2.0, 1.0, 0.5, 0.25)     # mesh sweep: grid spacing in units of h0 [-]
 SPAN_X_0 = 4.0                       # half-length of the reference grid along rolling in units of s_x [-]
 SPAN_X_LEVELS = (2.0, 4.0, 8.0)      # domain sweep: half-length along rolling in units of s_x [-]
+# Muser (2014, PDF 7) resolution rule: spacing a/32 in a cell of side L = 8a, i.e. half-length 4a
+MUSER_H_OVER_A = 1.0 / 32.0          # grid spacing / contact radius [-] (rounded down to 2**k m)
+MUSER_SPAN = 4.0                     # half-length of the cell in units of a, both axes [-]
+
+# --- subsurface stress: depths below the surface, in units of a ----------------------------
+# Johnson's tau1 peaks at 0.48a (nu = 0.3); a step of 0.02a puts a node on it and reaches 2a
+Z_OVER_A = np.linspace(0.0, 2.0, 101)
+# the surface row sits at 1e-4 of the first step, as SlipPY's own default depths do
+# (slippy/core/elastic_material.py:328): its kernels are singular at z = 0
+Z_OVER_A[0] = 1e-4 * Z_OVER_A[1]
 
 # --- where the scripts write: results/ next to this case, git-ignored (D-0020) ------
 RESULTS = Path(__file__).resolve().parent / "results"

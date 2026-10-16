@@ -65,7 +65,8 @@ RECORD_COLUMNS = (("build", "build", "s"), ("sweep", "sweep", "s"), ("span_x", "
                   ("err_delta", "err delta [%]", "+.3f", 100.0), ("solve_time_s", "t [s]", ".2f"))
 
 
-def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=4.0) -> list[dict]:
+def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=4.0,
+          use_frequency_domain=True) -> list[dict]:
     """Solve one smooth static contact on a series of grids, for each build.
 
     Two sweeps around the default grid of the bridge (spacing ``h0`` = largest ``2**k`` not above
@@ -93,13 +94,18 @@ def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=4.0)
     span_x_0 : float, optional
         Half-length of the mesh-sweep grids along rolling in units of ``s_x`` [-]; the default 4.0
         is the default grid of ``Grid.around``.
+    use_frequency_domain : bool, optional
+        Elastic kernel of both bodies, passed to ``slippy_bridge.contact.pair``: True is SlipPY's
+        frequency-domain kernel (periodic images of the load), False the spatial-domain kernel
+        (no images on a non-periodic axis). Not available for a line contact:
+        ``slippy_bridge.contact.smooth.pair`` raises ``ValueError``.
 
     Returns
     -------
     list of dict
         One record of ``static_step.run`` per solve (measurements, Hertz reference, relative
-        errors as fractions, checks), plus ``build``, ``sweep`` (``"mesh"`` or ``"domain"``) and
-        ``span_x`` [-]. The default grid appears once in each sweep.
+        errors as fractions, checks), plus ``build``, ``sweep`` (``"mesh"`` or ``"domain"``),
+        ``span_x`` [-] and ``use_frequency_domain``. The default grid appears once in each sweep.
     """
     case = getattr(contact, "case", contact)
     h0 = Grid.around(case).h
@@ -108,7 +114,9 @@ def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=4.0)
     for build in builds:
         for i, (kind, h, span_x) in enumerate(grids):
             grid = Grid.around(case, h=h, span_x=span_x)
-            record, _ = static_step.run(contact, pair(case, grid, build=build), grid, output_dir,
+            surfaces = pair(case, grid, build=build, use_frequency_domain=use_frequency_domain)
+            record, _ = static_step.run(contact, surfaces, grid, output_dir,
                                         name=f"{case.label}_{build}_{kind}_{i}")
-            records.append({"build": build, "sweep": kind, "span_x": span_x, **record})
+            records.append({"build": build, "sweep": kind, "span_x": span_x,
+                            "use_frequency_domain": use_frequency_domain, **record})
     return records

@@ -9,6 +9,10 @@ Two independent descriptions of the same contact, both returned NOT solved:
   SI is made only inside ``slippy_bridge``; the script checks that the bridge extracts
   :data:`CASE` from it.
 
+It also holds :data:`RATIO_CASES`, the printed case of Hamrock & Brewe (1983) Tables 1-3 for
+``02_ratio``, converted here from cm and N/cm^2 to SI (:data:`CM`, :data:`N_PER_CM2`, the only
+unit conversion of the case).
+
 The values are repeated on purpose (no construction shared between cases, ``validation/README.md``).
 
 Model
@@ -29,7 +33,8 @@ import axisforge.core as af_c
 
 from slippy_bridge.contact import ContactCase
 
-__all__ = ["CASE", "H_LEVELS", "SPAN_X_0", "SPAN_X_LEVELS", "RESULTS", "ball_bearing"]
+__all__ = ["CASE", "H_LEVELS", "SPAN_X_0", "SPAN_X_LEVELS", "RESULTS", "CM", "N_PER_CM2", "ALPHAS",
+           "RATIO_CASES", "ball_bearing"]
 
 
 # =============================================================================
@@ -70,6 +75,29 @@ SPAN_X_LEVELS = (2.0, 4.0, 8.0)      # domain sweep: half-length along rolling i
 RESULTS = Path(__file__).resolve().parent / "results"
 
 CASE = ContactCase("ball_raceway", r1=BALL, r2=INNER_RACEWAY, E=E_STEEL, nu=NU_STEEL, load=LOAD)
+
+
+# =============================================================================
+# Hamrock & Brewe (1983) Tables 1-3 case, converted to SI here and only here
+# =============================================================================
+
+# --- the printed units -> SI ----------------------------------------------------------
+CM = 1e-2                            # [m] per [cm]
+N_PER_CM2 = 1e4                      # [Pa] per [N/cm^2]
+
+# --- the printed case (Tables 2-3 caption, PDF p. 5; R_x also Table 1, PDF p. 4) ---------
+E_PRIME_HB = 2.1972e7 * N_PER_CM2    # E' = 2/((1-nu_a^2)/E_a + (1-nu_b^2)/E_b) = 2 E* [Pa]
+NU_HB = 0.3                          # not printed; any nu gives the same E*, chosen as steel [-]
+# identical bodies: E* = E/(2(1 - nu^2)), so E' = 2E* gives E = E'(1 - nu^2)
+E_HB = E_PRIME_HB * (1.0 - NU_HB**2) # Young's modulus of both bodies [Pa]
+R_X_HB = 1.0 * CM                    # relative radius along rolling [m]
+LOAD_HB = 4.448                      # normal load [N]
+ALPHAS = (5.0, 6.0, 7.0, 8.0, 9.0, 10.0)   # alpha = R_y/R_x, the catalogue range of the tables [-]
+
+# Body 1 carries both relative radii and body 2 is flat, so (R_x, R_y) = (R_X_HB, alpha R_X_HB).
+RATIO_CASES = {alpha: ContactCase(f"hb_alpha_{alpha:g}", r1=(R_X_HB, alpha * R_X_HB),
+                                  r2=(math.inf, math.inf), E=E_HB, nu=NU_HB, load=LOAD_HB)
+               for alpha in ALPHAS}
 
 
 # =============================================================================
