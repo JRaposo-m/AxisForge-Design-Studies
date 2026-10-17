@@ -310,7 +310,7 @@ def test_ehl_centreline_scaffold():
 
 def test_film_survey_scaffold():
     M = np.array([10.0, 30.0, 100.0, 300.0])
-    fig = contact_plots.film_survey(M, 5.0 * M**-0.2, formulas={"own": (M, 5.1 * M**-0.2), "other": (M, 4.8 * M**-0.2)},
+    fig = contact_plots.film_survey(M, 5.0 * M**-0.2, formulas={"Moes 1992": (M, 5.1 * M**-0.2), "Hamrock-Dowson 1977": (M, 4.8 * M**-0.2)},
                                     L=10.0)
     assert_house_form(fig)
     assert "L" in note_text(fig)

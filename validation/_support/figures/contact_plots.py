@@ -253,6 +253,8 @@ def pressure_cuts(p: np.ndarray, grid, judge: dict, out_png=None) -> Figure:
 
 
 # key of a references.contact.hertz stress dict -> (axis label, line style); drawn in this order
+_ROUND_LEVELS = (0.15, 0.20, 0.25, 0.28, 0.29)   # tau1/p0 contour values of Johnson Fig. 4.5b [-]
+
 _STRESS = {
     "sigma_x_over_p0": (r"$\sigma_x/p_0$", "-"),
     "sigma_r_over_p0": (r"$\sigma_r/p_0$", "-"),
@@ -318,7 +320,9 @@ def subsurface_depth(z_over_s_min, theory: dict, *, numerical: dict | None = Non
         k = int(np.argmax(t1))
         ax.plot([t1[k]], [z[k]], linestyle="none", marker="x", color=plt.rcParams["lines.color"])
         # its value in the note line: inside the axes the text would cross the curves
-        maximum = rf"$\times$: $\tau_{{1,\max}} = {t1[k]:.3f}\,p_0$ at $z = {z[k]:.3f}\,s_\mathrm{{min}}$"
+        dz = float(np.min(np.diff(z)))
+        maximum = (rf"$\times$: $\tau_{{1,\max}} = {t1[k]:.3f}\,p_0$ at $z = {z[k]:.3f}\,s_\mathrm{{min}}$ "
+                   rf"on the grid, step $\Delta z = {dz:.2g}\,s_\mathrm{{min}}$")
     # OPEN R-268, R-269: accepted for a numerical field; the SlipPY subsurface field is not passed yet
     for key, (zn, values) in (numerical or {}).items():
         ax.plot(np.asarray(values, dtype=float), np.asarray(zn, dtype=float), linestyle="none", marker="o",
@@ -354,8 +358,8 @@ def subsurface_contours(x_over_s_x, z_over_s_min, tau1_over_p0, *, levels: Seque
         In-plane maximum shear over ``p0`` (``references.contact.hertz.hertz_line_stress`` on the
         grid), rows = depth.
     levels : sequence of float, optional
-        Contour levels [-]; default 0.5, 0.67, 0.83, 0.93 and 0.98 of the maximum, which
-        concentrate on the region of the maximum.
+        Contour levels [-]; default the round values 0.15, 0.20, 0.25, 0.28, 0.29 that lie
+        inside the field (Johnson Fig. 4.5b manner), else 0.5-0.98 of the maximum, rounded.
     note : str, optional
         Line under the figure.
 
@@ -367,13 +371,19 @@ def subsurface_contours(x_over_s_x, z_over_s_min, tau1_over_p0, *, levels: Seque
     Notes
     -----
     Each contour label sits where its contour crosses a column below the maximum (searched from the
-    maximum's column to the left), not near the surface where the low levels crowd.
+    maximum's column to the left), not near the surface where the low levels crowd. The contact
+    strip ``|x/s_x| <= 1`` is drawn as a thick line at the surface. The maximum is read on the grid,
+    so the note gives the grid step: the depth is known to that step (0.787 on a 0.0067 step against
+    Johnson's 0.785).
     """
     x, z = np.asarray(x_over_s_x, dtype=float), np.asarray(z_over_s_min, dtype=float)
     t1 = np.asarray(tau1_over_p0, dtype=float)
     k = np.unravel_index(int(np.argmax(t1)), t1.shape)
-    levels = (np.round(t1[k] * np.array([0.5, 0.67, 0.83, 0.93, 0.98]), 3) if levels is None
-              else np.asarray(levels, dtype=float))
+    if levels is None:
+        levels = [lv for lv in _ROUND_LEVELS if lv < t1[k]]     # round values inside the field
+        if len(levels) < 3:                                      # a field of other magnitude
+            levels = np.round(t1[k] * np.array([0.5, 0.67, 0.83, 0.93, 0.98]), 2)
+    levels = np.asarray(levels, dtype=float)
     fig, ax = plt.subplots()
     cs = ax.contour(x, z, t1, levels=levels, colors=plt.rcParams["lines.color"])
     # each label where its contour crosses a column below the maximum: start on the maximum's column
@@ -391,13 +401,19 @@ def subsurface_contours(x_over_s_x, z_over_s_min, tau1_over_p0, *, levels: Seque
     for label in ax.clabel(cs, fmt="%.3g", inline=True, manual=positions):
         label.set_rotation(0)                              # upright, readable on a downward depth axis
     ax.plot([x[k[1]]], [z[k[0]]], linestyle="none", marker="x", color=plt.rcParams["lines.color"])
-
+    # the contact strip |x/s_x| <= 1 on the surface: a thick line, labelled directly below it
+    ax.plot([-1.0, 1.0], [0.0, 0.0], linestyle="-", linewidth=3.0 * plt.rcParams["lines.linewidth"],
+            color=plt.rcParams["lines.color"], solid_capstyle="butt", clip_on=False)
+    ax.annotate("contact", (0.0, 0.0), xytext=(0, 4), textcoords="offset points", ha="center",
+                va="bottom")                               # above the frame, clear of the contours
     ax.set_xlim(x.min(), x.max())
     ax.set_ylim(z.max(), z.min())                          # depth downward
     ax.set_aspect("equal")
     ax.set_xlabel(r"$x/s_x$")
     ax.set_ylabel(r"$z/s_\mathrm{min}$")
-    maximum = rf"$\times$: $\tau_{{1,\max}} = {t1[k]:.3f}\,p_0$ at $z = {z[k[0]]:.3f}\,s_\mathrm{{min}}$"
+    dz = float(np.min(np.diff(z)))
+    maximum = (rf"$\times$: $\tau_{{1,\max}} = {t1[k]:.3f}\,p_0$ at $z = {z[k[0]]:.3f}\,s_\mathrm{{min}}$ "
+               rf"on the grid, step $\Delta z = {dz:.2g}\,s_\mathrm{{min}}$")
     _note(fig, "; ".join(t for t in (maximum, note) if t))
     return fig
 
@@ -423,7 +439,8 @@ def ehl_centreline(x_over_s_x, p_over_p_h, h_m, *, h_c_formula_m: float | None =
     x_over_s_x : array_like
         Position along rolling over the Hertz semi-axis ``s_x`` [-] (inlet negative).
     p_over_p_h : array_like
-        Pressure over the Hertz maximum pressure ``p_h`` [-] (numerical: filled markers).
+        Pressure over the Hertz maximum pressure ``p_h`` (= ``p0`` of the dry Hertz contact under the
+        same load, the EHL name) [-] (numerical: filled markers).
     h_m : array_like
         Film thickness [m]; drawn in um.
     h_c_formula_m : float, optional
@@ -446,12 +463,13 @@ def ehl_centreline(x_over_s_x, p_over_p_h, h_m, *, h_c_formula_m: float | None =
     ax_h.plot(x, h_um, linestyle="none", marker="o", markevery=every)
     if h_c_formula_m is not None:
         ax_h.axhline(h_c_formula_m * 1e6, linestyle=":", linewidth=plt.rcParams["axes.linewidth"])
-        ax_h.annotate(r"$h_c$ formula", (1.0, h_c_formula_m * 1e6), xycoords=("axes fraction", "data"),
-                      xytext=(-3, 2), textcoords="offset points", ha="right", va="bottom")
+        # labelled at the left (inlet) end, where the film is thick and clear of the markers
+        ax_h.annotate(r"$h_c$ formula", (0.0, h_c_formula_m * 1e6), xycoords=("axes fraction", "data"),
+                      xytext=(3, 2), textcoords="offset points", ha="left", va="bottom")
     ax_p.set_ylabel(r"$p/p_h$")
     ax_h.set_ylabel(r"$h$ ($\mu$m)")
     ax_h.set_xlabel(r"$x/s_x$")
-    _note(fig, note)
+    _note(fig, "; ".join(t for t in (r"$p_h$: Hertz maximum pressure $p_0$ of the same contact", note) if t))
     return fig
 
 
@@ -459,8 +477,9 @@ def film_survey(M, H_numerical, *, formulas: dict, film: str = "central", L: flo
                 note: str | None = None) -> Figure:
     """Dimensionless film thickness against the load parameter, numerical against formulas (log-log).
 
-    Nijenbanning et al. 1994 Fig. 12 manner: numerical points as filled markers, the own (first)
-    formula as a solid line, the others dashed and dotted, decade tick labels.
+    Nijenbanning et al. 1994 Fig. 12 manner: numerical points as filled markers, the first formula
+    as a solid line, the others dashed and dotted, each labelled directly at its right end; decade
+    tick labels on ``M``.
 
     Conventions (pitfall): ``M``, ``L``, ``H`` are in Moes form, with the speed parameter ``U``
     built from the mean speed ``u_e = (u1 + u2)/2`` (SlipPY's ``rolling_speed`` is the mean); some
@@ -478,7 +497,8 @@ def film_survey(M, H_numerical, *, formulas: dict, film: str = "central", L: flo
     H_numerical : array_like
         Dimensionless film thickness of the numerical solutions [-], Moes form.
     formulas : dict
-        ``{label: (M, H)}`` of published formulas [-] for the same film, the first drawn solid.
+        ``{label: (M, H)}`` of published formulas [-] for the same film, the first drawn solid; the
+        label is the formula's name, e.g. ``"Moes 1992"``.
     film : {"central", "minimum"}
         Which film thickness ``H`` is: written in the ordinate label (``H_c`` or ``H_min``).
     L : float, optional
@@ -497,14 +517,17 @@ def film_survey(M, H_numerical, *, formulas: dict, film: str = "central", L: flo
         raise ValueError(f"film must be 'central' or 'minimum', got {film!r}")
     fig, ax = plt.subplots()
     for (label, (m, h)), linestyle in zip(formulas.items(), ("-", "--", ":", "-.")):
-        ax.loglog(np.asarray(m, dtype=float), np.asarray(h, dtype=float), linestyle=linestyle, label=label)
-    ax.loglog(np.asarray(M, dtype=float), np.asarray(H_numerical, dtype=float), linestyle="none", marker="o",
-              label="numerical")
+        m, h = np.asarray(m, dtype=float), np.asarray(h, dtype=float)
+        ax.loglog(m, h, linestyle=linestyle)
+        ax.annotate(label, (m[-1], h[-1]), xytext=(4, 0), textcoords="offset points", ha="left", va="center")
+    M, H = np.asarray(M, dtype=float), np.asarray(H_numerical, dtype=float)
+    ax.loglog(M, H, linestyle="none", marker="o")
+    # below the last point: the formula labels sit at the right ends of their lines
+    ax.annotate("numerical", (M[-1], H[-1]), xytext=(0, -6), textcoords="offset points", ha="center", va="top")
     # H spans less than a decade: plain numbers on its ticks (not "4x10^0"); M keeps decade labels
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%g"))
     ax.yaxis.set_minor_formatter(mticker.FormatStrFormatter("%g"))
     ax.set_xlabel(r"$M$")
     ax.set_ylabel(symbols[film])
-    ax.legend(loc="upper right")                           # frameless; H falls with M, upper right is free
     _note(fig, "; ".join(t for t in ((f"$L$ = {L:g}" if L is not None else None), note) if t))
     return fig

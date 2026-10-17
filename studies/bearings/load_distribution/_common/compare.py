@@ -74,13 +74,13 @@ def compare_types(question_dir: Path, type_names: Sequence[str], *,
     same_axes = x_columns is None
     plt.style.use(plots.STYLE_PATH)                   # the house sheet: the only source of the look
     datasets = load_types(question_dir, type_names, same_axes=same_axes)
-    question = next(iter(datasets.values())).meta["question"]
     out_dir = question_dir / "compare" / "plots"
     if same_axes:
         axis_order = next(iter(datasets.values())).meta["axis_order"]
         x_axis = axis_order[0]
         rows = {name: d.rows for name, d in datasets.items()}
-        note = f"{question}: " + " vs ".join(type_names)
+        # readable words, not the study's code names (the LD _note writes underscores as spaces)
+        note = f"{plots.short_axis_name(x_axis)} sweep: " + " vs ".join(type_names)
         if len(axis_order) == 1:
             plots.plot_compare(rows, out_dir / x_axis, x_axis=x_axis, note=note)
             return datasets
@@ -96,5 +96,5 @@ def compare_types(question_dir: Path, type_names: Sequence[str], *,
         names = list(figure_types.get(column, type_names))
         plots.plot_compare({name: datasets[name].rows for name in names},
                            out_dir / f"vs_{column}", x_axis=column,
-                           note=f"{question}: " + " vs ".join(names))
+                           note=f"{plots.short_axis_name(column)}: " + " vs ".join(names))
     return datasets

@@ -274,7 +274,8 @@ class LoadDistributionStudy(ABC):
         names = self.axis_names
         x_axis = names[0]
         group_axis = names[1] if len(names) > 1 else None
-        note = f"{self.question}: {plots.KIND_NAME.get(self.spec.kind, self.spec.kind)}"
+        # readable words, not the study's code names: "<swept quantity> sweep, <bearing type>"
+        note = f"{plots.short_axis_name(x_axis)} sweep, {plots.KIND_NAME.get(self.spec.kind, self.spec.kind)}"
         plt.style.use(plots.STYLE_PATH)               # the house sheet: the only source of the look
         plots.plot_summary(data.rows, plots_dir / "summary", x_axis=x_axis,
                            group_axis=group_axis, note=note)

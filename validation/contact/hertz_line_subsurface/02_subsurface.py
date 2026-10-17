@@ -270,8 +270,7 @@ write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
 z_plot = np.linspace(0.0, 2.0, 401)                                 # depth / a [-]
 fig = contact_plots.subsurface_depth(z_plot, hertz_line_stress(0.0 * z_plot, z_plot),
                                      published=[(0.300, 0.785, "Johnson 1985, Table 4.1")],
-                                     note=r"line contact, axis $x = 0$; in-plane $\tau_1$ "
-                                          r"($\sigma_y = \nu(\sigma_x + \sigma_z)$ not drawn)")
+                                     note=r"line contact, axis $x = 0$; $\sigma_y$ not drawn")
 fig.savefig(RESULTS / f"{NAME}_depth.png")
 plt.close(fig)                                    # shown once, by the line below
 fig

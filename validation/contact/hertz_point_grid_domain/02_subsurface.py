@@ -216,9 +216,9 @@ write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
 # %%
 z_plot = np.linspace(0.0, 3.0, 601)                                 # depth / a [-]
 fig = contact_plots.subsurface_depth(z_plot, hertz_point_axis_stress(z_plot, NU),
-                                     published=[(0.31, 0.48, "Johnson 1985 (printed)")],
+                                     published=[(0.31, 0.48, "Johnson 1985, eq. 3.45 (printed values)")],
                                      note=rf"circular contact, axis $r = 0$, $\nu$ = {NU:g}; "
-                                          r"$\sigma_\theta = \sigma_r$ on the axis")
+                                          r"$\sigma_\theta = \sigma_r$")
 fig.savefig(RESULTS / f"{NAME}_depth.png")
 plt.close(fig)                                    # shown once, by the line below
 fig

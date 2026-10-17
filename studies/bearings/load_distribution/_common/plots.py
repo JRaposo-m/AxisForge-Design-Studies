@@ -56,16 +56,18 @@ KIND_NAME = {"ball": "deep groove ball", "angular": "angular contact ball",
              "roller": "cylindrical roller"}
 MARKERS = ("o", "s", "^", "D", "v", "<", ">")     # one per line of a family (with the cycle's line style)
 
-# (column, axis label, logarithmic y, file name) of the summary figures
+# (column, axis label, factor from the column unit to the plot unit, file name) of the summary figures
 SUMMARY_METRICS = [
-    ("n_loaded", r"loaded elements $n$", False, "n_loaded"),
-    ("zone_half_angle_deg", "loaded zone half-angle (deg)", False, "zone_half_angle"),
-    ("Q_max_N", r"largest element load $Q_\mathrm{max}$ (N)", False, "Q_max"),
-    ("Q_max_over_Fr_per_Z", r"$Q_\mathrm{max}/(F_r/Z)$", False, "Q_max_over_mean"),
-    ("delta_r_mm", r"radial approach $\delta_r$ (mm)", False, "delta_r"),
-    ("Kr_N_per_mm", r"secant radial stiffness $K_r$ (N/mm)", False, "Kr"),
-    ("L10r_Mrev", r"reference life $L_{10r}$ ($10^6$ rev)", True, "L10r"),
+    ("n_loaded", r"loaded elements $n$", 1.0, "n_loaded"),
+    ("zone_half_angle_deg", "loaded zone half-angle (deg)", 1.0, "zone_half_angle"),
+    ("Q_max_N", r"largest element load $Q_\mathrm{max}$ (N)", 1.0, "Q_max"),
+    ("Q_max_over_Fr_per_Z", r"$Q_\mathrm{max}/(F_r/Z)$", 1.0, "Q_max_over_mean"),
+    ("delta_r_mm", r"radial approach $\delta_r$ ($\mu$m)", 1e3, "delta_r"),               # mm -> um
+    ("Kr_N_per_mm", r"secant radial stiffness $K_r$ (kN/mm)", 1e-3, "Kr"),             # N/mm -> kN/mm
+    ("L10r_Mrev", r"reference life $L_{10r}$ ($10^6$ rev)", 1.0, "L10r"),
 ]
+# metrics that change in steps (counts of elements): markers only, no connecting line
+STEP_METRICS = {"n_loaded", "zone_half_angle_deg"}
 AXIS_LABEL = {
     "s_mm": "radial internal clearance $s$ (mm)",
     "psi_mrad": r"inner-ring tilt $\psi$ (mrad)",
@@ -122,6 +124,14 @@ def _note(fig, text: str) -> None:
     fig.text(0.5, 0.0, words, ha="center", va="top", wrap=True)
 
 
+def _step_note(key: str, rows: list[dict]) -> str:
+    """Why the zone half-angle moves in steps: it is the angle of the last loaded element."""
+    if key != "zone_half_angle_deg" or not rows:
+        return ""
+    Z = int(rows[0]["Z"])
+    return f"zone half-angle set by the element positions: steps of 360/Z = {360.0 / Z:.3g} deg (Z = {Z})"
+
+
 def _integer_ticks(ax, key: str) -> None:
     """Count metrics (loaded elements) take integer ticks only, with one count of room each side
     (a constant count would otherwise autoscale to a range below one; the integer locator needs at
@@ -172,7 +182,7 @@ def plot_summary(rows: list[dict], out_dir: Path, *, x_axis: str, group_axis: st
     shaft = reference_shaft(rows)
     rows = [r for r in rows if r["shaft"] == shaft]
     groups = _groups(rows, group_axis)
-    for key, label, log, file_name in SUMMARY_METRICS:
+    for key, label, scale, file_name in SUMMARY_METRICS:
         fig, ax = plt.subplots()
         drawn = False
         for marker, (value, group) in zip(MARKERS, groups):
@@ -181,18 +191,17 @@ def plot_summary(rows: list[dict], out_dir: Path, *, x_axis: str, group_axis: st
                 continue
             drawn = True
             name = None if value is None else f"{short_axis_name(group_axis)} = {value:g}"
-            ax.plot(x, y, marker=marker, label=name)       # line style and colour from the cycle
+            # line style and colour from the cycle; a stepped metric is markers only
+            ax.plot(x, y * scale, marker=marker, label=name, **({"linestyle": "none"} if key in STEP_METRICS else {}))
         if not drawn:
             plt.close(fig)
             continue
-        if log:
-            ax.set_yscale("log")
         _integer_ticks(ax, key)
         ax.set_xlabel(axis_label(x_axis))
         ax.set_ylabel(label)
         if group_axis is not None:
             fig.legend(*ax.get_legend_handles_labels(), loc="outside right upper")
-        _note(fig, f"{note} ({shaft})" if note else shaft)
+        _note(fig, "; ".join(t for t in (f"{note} ({shaft})" if note else shaft, _step_note(key, rows)) if t))
         _save(fig, out_dir / f"{file_name}.png")
 
 
@@ -247,17 +256,25 @@ def _draw_bearing(ax, phi_deg, Q, q_ref, kind, Z, compact=False):
         ax.plot([th, th], [R_OUTER + 0.04, r], color=ink, linestyle=":", linewidth=thin, zorder=2)
     if not compact:                                               # value of every loaded element
         for th, r, q in zip(theta[loaded], r_load[loaded], Q[loaded]):
-            ax.text(th, r + 0.13, f"{q:.0f}", ha="center", va="center", zorder=5)   # radially outside
+            ax.text(th, r + 0.2, f"{q:.0f}", ha="center", va="center", zorder=5)   # radially outside, clear of the line
 
     # radial load on the inner ring
     ax.annotate("", xy=(0.0, R_INNER - 0.12), xytext=(0.0, 0.0), arrowprops=dict(arrowstyle="-|>", color=ink))
     ax.text(np.radians(25.0), 0.22, r"$F_r$")
 
-    ax.set_ylim(0.0, R_BAR + BAR_SPAN + 0.15)
+    ax.set_ylim(0.0, R_BAR + BAR_SPAN + 0.15)            # the same radial scale in every drawing
     ax.set_yticks([])
     angles = np.array([0, 90, 270]) if compact else np.arange(0, 360, 30)
-    # labels in (-180, 180]: the bottom-opposite direction reads 180 deg, not -180
-    ax.set_thetagrids(angles, [f"{180 if a == 180 else (a + 180) % 360 - 180:d}°" for a in angles])
+    # azimuth labels written just outside the load envelope at their angle (not at the frame edge),
+    # beyond the value labels; in (-180, 180]: the bottom-opposite direction reads 180 deg, not -180
+    ax.set_thetagrids(angles, [""] * len(angles))
+    for a in angles:
+        # the highest point of the load line within +-20 deg, so the label also clears the value
+        # label of a loaded element next to this angle
+        near = np.abs((theta - np.radians(a) + np.pi) % (2.0 * np.pi) - np.pi) <= np.radians(20.0)
+        r = max(R_BAR, float(r_load[near].max()) if near.any() else R_BAR)
+        ax.text(np.radians(a), r + (0.25 if compact else 0.45), f"{180 if a == 180 else (a + 180) % 360 - 180:d}°",
+                ha="center", va="center")
     ax.grid(False)                                      # set_thetagrids switches the polar grid back on
     ax.spines["polar"].set_visible(False)
 
@@ -397,13 +414,21 @@ def plot_lamina_profile(lam_rows: list[dict], plots_dir: Path, *, x_axis: str,
         fig, ax = plt.subplots()
         for i, v in enumerate(values):
             pts = sorted((r for r in rows if r[x_axis] == v), key=lambda r: r["x_mm"])
-            # marker list (7) against the cycle's line styles (5): distinct pairs up to 35 lines
-            ax.plot([r["x_mm"] for r in pts], [r["q_N"] for r in pts], marker=MARKERS[i % len(MARKERS)],
-                    label=f"{v:g}")
+            x, q = np.array([r["x_mm"] for r in pts]), np.array([r["q_N"] for r in pts])
+            # marker list (7) against the cycle's line styles (5): distinct pairs up to 35 lines;
+            # about 10 markers per curve, so the laminae do not hide the line
+            ax.plot(x, q, marker=MARKERS[i % len(MARKERS)], markevery=max(1, len(x) // 10))
+            # direct label written ON its own curve (the line breaks under it, so it cannot be read
+            # as the neighbour's), each curve at its own position from its peak toward the right
+            # end, so the labels of neighbouring curves do not stack
+            k = int(np.argmax(q))
+            target = x[k] + 0.8 * (x.max() - x[k]) * i / max(len(values) - 1, 1)
+            j = int(np.argmin(np.abs(x - target)))
+            ax.annotate(f"{v:g}", (x[j], q[j]), ha="center", va="center",
+                        bbox=dict(boxstyle="square,pad=0.1", facecolor=plt.rcParams["axes.facecolor"], edgecolor="none"))
         ax.set_xlabel(r"position along the roller $x_k$ (mm)")
         ax.set_ylabel(r"lamina load $q_k$ (N)")
-        fig.legend(*ax.get_legend_handles_labels(), title=axis_label(x_axis), loc="outside right upper")
-        _note(fig, f"{note}: most loaded roller ({shaft}{suffix})")
+        _note(fig, f"{note}: most loaded roller ({shaft}{suffix}); curves labelled with {axis_label(x_axis)}")
         _save(fig, path)
 
 
@@ -440,7 +465,7 @@ def plot_compare(datasets: dict[str, list[dict]], out_dir: Path, *, x_axis: str,
             value = max(r[group_axis] for r in rows) if group_value is None else group_value
             rows = [r for r in rows if r[group_axis] == value]
         selected[name] = rows
-    for key, label, log, file_name in SUMMARY_METRICS:
+    for key, label, scale, file_name in SUMMARY_METRICS:
         fig, ax = plt.subplots()
         drawn = False
         for name, rows in selected.items():
@@ -449,13 +474,13 @@ def plot_compare(datasets: dict[str, list[dict]], out_dir: Path, *, x_axis: str,
                 continue
             drawn = True
             kind = rows[0]["kind"] if rows else ""
-            style = KIND_STYLE.get(kind, dict(marker="D", linestyle=":"))
-            ax.plot(x, y, label=KIND_NAME.get(kind, name), **style)
+            style = dict(KIND_STYLE.get(kind, dict(marker="D", linestyle=":")))
+            if key in STEP_METRICS:                        # a stepped metric is markers only
+                style["linestyle"] = "none"
+            ax.plot(x, y * scale, label=KIND_NAME.get(kind, name), **style)
         if not drawn:
             plt.close(fig)
             continue
-        if log:
-            ax.set_yscale("log")
         _integer_ticks(ax, key)
         ax.set_xlabel(axis_label(x_axis))
         ax.set_ylabel(label)
