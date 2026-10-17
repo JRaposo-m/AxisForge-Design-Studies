@@ -1,0 +1,190 @@
+case_id,kind,quantity,symbol,value,unit,condition,source_key,location,pdf_page,read_from,note
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.361e-02,-,contact=line;M=20;L=10;density=incompressible;level=5;n=225,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,9.771e-02,-,contact=line;M=20;L=10;density=incompressible;level=5;n=225,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.076e-02,-,contact=line;M=20;L=10;density=D-H;level=5;n=225,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.242e-02,-,contact=line;M=20;L=10;density=D-H;level=5;n=225,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.103e-02,-,contact=line;M=20;L=10;density=J-V;level=5;n=225,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,7.912e-02,-,contact=line;M=20;L=10;density=J-V;level=5;n=225,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.435e-02,-,contact=line;M=20;L=10;density=incompressible;level=6;n=449,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,9.885e-02,-,contact=line;M=20;L=10;density=incompressible;level=6;n=449,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.928e-02,-,contact=line;M=20;L=10;density=D-H;level=6;n=449,VennerBos1994,Table 1,6,image+text-agree,"APPARENT MISPRINT: printed 7.928x10^-2 (image and text agree) breaks the monotone sequence 7.076, ?, 7.339, 7.354 ...; possibly 7.298 (digit transposition), not verifiable; coarse level, do not use"
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.367e-02,-,contact=line;M=20;L=10;density=D-H;level=6;n=449,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.266e-02,-,contact=line;M=20;L=10;density=J-V;level=6;n=449,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,7.993e-02,-,contact=line;M=20;L=10;density=J-V;level=6;n=449,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.457e-02,-,contact=line;M=20;L=10;density=incompressible;level=7;n=897,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,9.913e-02,-,contact=line;M=20;L=10;density=incompressible;level=7;n=897,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.339e-02,-,contact=line;M=20;L=10;density=D-H;level=7;n=897,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.392e-02,-,contact=line;M=20;L=10;density=D-H;level=7;n=897,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.303e-02,-,contact=line;M=20;L=10;density=J-V;level=7;n=897,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.016e-02,-,contact=line;M=20;L=10;density=J-V;level=7;n=897,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.466e-02,-,contact=line;M=20;L=10;density=incompressible;level=8;n=1793,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,9.923e-02,-,contact=line;M=20;L=10;density=incompressible;level=8;n=1793,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.354e-02,-,contact=line;M=20;L=10;density=D-H;level=8;n=1793,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.399e-02,-,contact=line;M=20;L=10;density=D-H;level=8;n=1793,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.316e-02,-,contact=line;M=20;L=10;density=J-V;level=8;n=1793,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.022e-02,-,contact=line;M=20;L=10;density=J-V;level=8;n=1793,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.468e-02,-,contact=line;M=20;L=10;density=incompressible;level=9;n=3585,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,9.923e-02,-,contact=line;M=20;L=10;density=incompressible;level=9;n=3585,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.360e-02,-,contact=line;M=20;L=10;density=D-H;level=9;n=3585,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.400e-02,-,contact=line;M=20;L=10;density=D-H;level=9;n=3585,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.320e-02,-,contact=line;M=20;L=10;density=J-V;level=9;n=3585,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.023e-02,-,contact=line;M=20;L=10;density=J-V;level=9;n=3585,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.468e-02,-,contact=line;M=20;L=10;density=incompressible;level=10;n=7169,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,9.923e-02,-,contact=line;M=20;L=10;density=incompressible;level=10;n=7169,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.363e-02,-,contact=line;M=20;L=10;density=D-H;level=10;n=7169,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.401e-02,-,contact=line;M=20;L=10;density=D-H;level=10;n=7169,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.321e-02,-,contact=line;M=20;L=10;density=J-V;level=10;n=7169,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.024e-02,-,contact=line;M=20;L=10;density=J-V;level=10;n=7169,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.468e-02,-,contact=line;M=20;L=10;density=incompressible;level=11;n=14337,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,9.923e-02,-,contact=line;M=20;L=10;density=incompressible;level=11;n=14337,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.364e-02,-,contact=line;M=20;L=10;density=D-H;level=11;n=14337,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.401e-02,-,contact=line;M=20;L=10;density=D-H;level=11;n=14337,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.321e-02,-,contact=line;M=20;L=10;density=J-V;level=11;n=14337,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.024e-02,-,contact=line;M=20;L=10;density=J-V;level=11;n=14337,VennerBos1994,Table 1,6,image+text-agree,
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.468e-02,-,contact=line;M=20;L=10;density=incompressible;level=12;n=28673,VennerBos1994,Table 1,6,image+text-agree,finest grid: converged reference
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,9.923e-02,-,contact=line;M=20;L=10;density=incompressible;level=12;n=28673,VennerBos1994,Table 1,6,image+text-agree,finest grid: converged reference
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.364e-02,-,contact=line;M=20;L=10;density=D-H;level=12;n=28673,VennerBos1994,Table 1,6,image+text-agree,finest grid: converged reference
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.401e-02,-,contact=line;M=20;L=10;density=D-H;level=12;n=28673,VennerBos1994,Table 1,6,image+text-agree,finest grid: converged reference
+V-EHL-03,reference,"minimum film thickness, dimensionless",H_m,7.321e-02,-,contact=line;M=20;L=10;density=J-V;level=12;n=28673,VennerBos1994,Table 1,6,image+text-agree,finest grid: converged reference
+V-EHL-03,reference,"central film thickness, dimensionless",H_c,8.024e-02,-,contact=line;M=20;L=10;density=J-V;level=12;n=28673,VennerBos1994,Table 1,6,image+text-agree,finest grid: converged reference
+V-EHL-03,parameter,Moes load parameter,M,20,-,contact=line,VennerBos1994,text,5,image,
+V-EHL-03,parameter,Moes materials parameter,L,10,-,contact=line,VennerBos1994,text,5,image,
+V-EHL-03,parameter,Dowson-Higginson load parameter,W,8.94e-05,-,contact=line;M=20,VennerBos1994,text,5,image,
+V-EHL-03,parameter,materials parameter,G,4730,-,contact=line;M=20,VennerBos1994,text,5,image,
+V-EHL-03,parameter,Dowson-Higginson speed parameter,U,1.0e-11,-,contact=line;M=20,VennerBos1994,text,5,image,
+V-EHL-03,parameter,maximum Hertzian pressure,p_h,1.05,GPa,contact=line;M=20,VennerBos1994,text,5,image,repeated on PDF p. 7
+V-EHL-03,parameter,computational domain,-,-4<=X<=1.5,-,contact=line;M=20,VennerBos1994,text,6,image,
+V-EHL-03,parameter,number of grid levels,-,12,-,contact=line;M=20,VennerBos1994,text,6,image,FMG with double discretization; 15 nodes on the coarsest grid
+V-EHL-03,parameter,grid (finest),n,28673,-,contact=line;M=20,VennerBos1994,Table 1,6,image,
+V-EHL-03,reference,central density at p_h,rho_bar_c,1.21,-,contact=line;M=20;density=D-H,VennerBos1994,text,7,image,
+V-EHL-03,reference,central density at p_h,rho_bar_c,1.27,-,contact=line;M=20;density=J-V,VennerBos1994,text,7,image,
+V-EHL-03,reference,ratio central to minimum film thickness,H_c/H_m,1.33,-,contact=line;M=20;density=incompressible,VennerBos1994,text,6,image,"text says ""ratio of minimum to central"" but the values are H_c/H_m (Table 1)"
+V-EHL-03,reference,ratio central to minimum film thickness,H_c/H_m,1.14,-,contact=line;M=20;density=D-H,VennerBos1994,text,6,image,see wording note above
+V-EHL-03,reference,ratio central to minimum film thickness,H_c/H_m,1.10,-,contact=line;M=20;density=J-V,VennerBos1994,text,6,image,see wording note above
+V-EHL-03,reference,relative reduction of H_c vs incompressible,-,15,%,contact=line;M=20;density=D-H,VennerBos1994,text,6,image,"printed ""about 15% smaller"""
+V-EHL-03,reference,additional reduction of H_c vs D-H,-,4,%,contact=line;M=20;density=J-V,VennerBos1994,text,6,image,
+V-EHL-03,reference,difference of H_m between laws,-,1,%,contact=line;M=20,VennerBos1994,text,6,image,"printed ""about 1%"""
+V-EHL-03,reference,"predicted central film thickness, Eq. (19)",H_c,8.2e-02,-,contact=line;M=20;density=D-H,VennerBos1994,text,7,image,
+V-EHL-03,reference,"predicted central film thickness, Eq. (19)",H_c,7.8e-02,-,contact=line;M=20;density=J-V,VennerBos1994,text,7,image,predictions within 3% of numerical results (text)
+V-EHL-03,formula,compressible central film thickness prediction (line),H_c^c,,-,contact=line,VennerBos1994,Eq. (19),7,image,"H_c^i / H_c^c = rho_bar_c, with rho_bar_c = rho_bar(p_h)"
+V-EHL-03,formula,compressible minimum film thickness prediction (line),H_m^c,,-,contact=line,VennerBos1994,Eq. (20),8,image,"H_m^c = min(H_c^c, H_m^i)"
+V-EHL-03,parameter,Roelands pressure-viscosity index,alpha,1.7e-08,not printed,viscosity=Roelands,VennerBos1994,text,2,image,"unit not printed (presumably Pa^-1); same value repeated on PDF pp. 9, 11, 13"
+V-EHL-03,parameter,Roelands pressure-viscosity exponent,z,0.69,-,viscosity=Roelands,VennerBos1994,text,2,image,
+V-EHL-03,parameter,Dowson-Higginson density constant (numerator and denominator),-,0.59e09,not printed,density=D-H,VennerBos1994,Eq. (4),2,image,"printed 0.59x10^9; unit not printed (Pa implied, multiplies with P*p_h)"
+V-EHL-03,parameter,Dowson-Higginson density coefficient,-,1.34,-,density=D-H,VennerBos1994,Eq. (4),2,image,
+V-EHL-03,formula,Dowson-Higginson dimensionless density,rho_bar,,-,density=D-H,VennerBos1994,Eq. (4),2,image,rho_bar = (0.59e9 + 1.34*P*p_h)/(0.59e9 + P*p_h)
+V-EHL-03,parameter,Jacobson-Vinet bulk modulus parameter,B_0,1.7e09,not printed,density=J-V,VennerBos1994,text,3,image,unit not printed (Pa implied)
+V-EHL-03,parameter,Jacobson-Vinet lubricant parameter,eta_prime,10.0,-,density=J-V,VennerBos1994,text,3,image,
+V-EHL-03,formula,Jacobson-Vinet density-pressure relation,p,,-,density=J-V,VennerBos1994,Eq. (12),3,image,p = 3*B_0*rho_bar^(2/3)*(1 - rho_bar^(-1/3))*exp[eta_prime*(1 - rho_bar^(-1/3))]; inverted numerically (Newton-Raphson)
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,3.547e-03,-,contact=line;M=200;L=10;density=incompressible;level=5;n=225,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.435e-03,-,contact=line;M=200;L=10;density=incompressible;level=5;n=225,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,4.281e-03,-,contact=line;M=200;L=10;density=D-H;level=5;n=225,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,4.484e-03,-,contact=line;M=200;L=10;density=D-H;level=5;n=225,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,3.767e-03,-,contact=line;M=200;L=10;density=J-V;level=5;n=225,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,3.676e-03,-,contact=line;M=200;L=10;density=J-V;level=5;n=225,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.119e-03,-,contact=line;M=200;L=10;density=incompressible;level=6;n=449,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,6.985e-03,-,contact=line;M=200;L=10;density=incompressible;level=6;n=449,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.011e-03,-,contact=line;M=200;L=10;density=D-H;level=6;n=449,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.649e-03,-,contact=line;M=200;L=10;density=D-H;level=6;n=449,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,4.789e-03,-,contact=line;M=200;L=10;density=J-V;level=6;n=449,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,4.789e-03,-,contact=line;M=200;L=10;density=J-V;level=6;n=449,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.506e-03,-,contact=line;M=200;L=10;density=incompressible;level=7;n=897,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,7.393e-03,-,contact=line;M=200;L=10;density=incompressible;level=7;n=897,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.410e-03,-,contact=line;M=200;L=10;density=D-H;level=7;n=897,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.908e-03,-,contact=line;M=200;L=10;density=D-H;level=7;n=897,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.008e-03,-,contact=line;M=200;L=10;density=J-V;level=7;n=897,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.008e-03,-,contact=line;M=200;L=10;density=J-V;level=7;n=897,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.585e-03,-,contact=line;M=200;L=10;density=incompressible;level=8;n=1793,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,7.488e-03,-,contact=line;M=200;L=10;density=incompressible;level=8;n=1793,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.466e-03,-,contact=line;M=200;L=10;density=D-H;level=8;n=1793,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.979e-03,-,contact=line;M=200;L=10;density=D-H;level=8;n=1793,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.069e-03,-,contact=line;M=200;L=10;density=J-V;level=8;n=1793,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.069e-03,-,contact=line;M=200;L=10;density=J-V;level=8;n=1793,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.609e-03,-,contact=line;M=200;L=10;density=incompressible;level=9;n=3585,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,7.513e-03,-,contact=line;M=200;L=10;density=incompressible;level=9;n=3585,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.502e-03,-,contact=line;M=200;L=10;density=D-H;level=9;n=3585,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.998e-03,-,contact=line;M=200;L=10;density=D-H;level=9;n=3585,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.086e-03,-,contact=line;M=200;L=10;density=J-V;level=9;n=3585,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.086e-03,-,contact=line;M=200;L=10;density=J-V;level=9;n=3585,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.625e-03,-,contact=line;M=200;L=10;density=incompressible;level=10;n=7169,VennerBos1994,Table 2,8,image+text-agree,"incompressible H_m peaks at level 10 then decreases (5.625, 5.618, 5.612, 5.610); as printed, plausibly genuine (exit-spike resolution), not flagged as misprint"
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,7.520e-03,-,contact=line;M=200;L=10;density=incompressible;level=10;n=7169,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.512e-03,-,contact=line;M=200;L=10;density=D-H;level=10;n=7169,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,6.003e-03,-,contact=line;M=200;L=10;density=D-H;level=10;n=7169,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.090e-03,-,contact=line;M=200;L=10;density=J-V;level=10;n=7169,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.090e-03,-,contact=line;M=200;L=10;density=J-V;level=10;n=7169,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.618e-03,-,contact=line;M=200;L=10;density=incompressible;level=11;n=14337,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,7.521e-03,-,contact=line;M=200;L=10;density=incompressible;level=11;n=14337,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.516e-03,-,contact=line;M=200;L=10;density=D-H;level=11;n=14337,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,6.004e-03,-,contact=line;M=200;L=10;density=D-H;level=11;n=14337,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.091e-03,-,contact=line;M=200;L=10;density=J-V;level=11;n=14337,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.091e-03,-,contact=line;M=200;L=10;density=J-V;level=11;n=14337,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.612e-03,-,contact=line;M=200;L=10;density=incompressible;level=12;n=28673,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,7.521e-03,-,contact=line;M=200;L=10;density=incompressible;level=12;n=28673,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.517e-03,-,contact=line;M=200;L=10;density=D-H;level=12;n=28673,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,6.005e-03,-,contact=line;M=200;L=10;density=D-H;level=12;n=28673,VennerBos1994,Table 2,8,image+text-agree,"text layer ""6.OO5"" (letter O); image reads 6.005"
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.091e-03,-,contact=line;M=200;L=10;density=J-V;level=12;n=28673,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.091e-03,-,contact=line;M=200;L=10;density=J-V;level=12;n=28673,VennerBos1994,Table 2,8,image+text-agree,
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.610e-03,-,contact=line;M=200;L=10;density=incompressible;level=13;n=57345,VennerBos1994,Table 2,8,image+text-agree,finest grid: converged reference
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,7.521e-03,-,contact=line;M=200;L=10;density=incompressible;level=13;n=57345,VennerBos1994,Table 2,8,image+text-agree,finest grid: converged reference
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.518e-03,-,contact=line;M=200;L=10;density=D-H;level=13;n=57345,VennerBos1994,Table 2,8,image+text-agree,finest grid: converged reference
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,6.005e-03,-,contact=line;M=200;L=10;density=D-H;level=13;n=57345,VennerBos1994,Table 2,8,image+text-agree,finest grid: converged reference
+V-EHL-04,reference,"minimum film thickness, dimensionless",H_m,5.091e-03,-,contact=line;M=200;L=10;density=J-V;level=13;n=57345,VennerBos1994,Table 2,8,image+text-agree,finest grid: converged reference
+V-EHL-04,reference,"central film thickness, dimensionless",H_c,5.091e-03,-,contact=line;M=200;L=10;density=J-V;level=13;n=57345,VennerBos1994,Table 2,8,image+text-agree,finest grid: converged reference
+V-EHL-04,parameter,Moes load parameter,M,200,-,contact=line,VennerBos1994,text,7,image,
+V-EHL-04,parameter,Moes materials parameter,L,10,-,contact=line,VennerBos1994,text,7,image,
+V-EHL-04,parameter,Dowson-Higginson load parameter,W,8.94e-04,-,contact=line;M=200,VennerBos1994,text,7,image,
+V-EHL-04,parameter,materials parameter,G,4730,-,contact=line;M=200,VennerBos1994,text,7,image,
+V-EHL-04,parameter,Dowson-Higginson speed parameter,U,1.0e-11,-,contact=line;M=200,VennerBos1994,text,7,image,
+V-EHL-04,parameter,maximum Hertzian pressure,p_h,3.3,GPa,contact=line;M=200,VennerBos1994,text,7,image,repeated on PDF p. 8
+V-EHL-04,parameter,computational domain,-,-2.5<=X<=1.5,-,contact=line;M=200,VennerBos1994,text,8,image,
+V-EHL-04,parameter,number of grid levels,-,13,-,contact=line;M=200,VennerBos1994,text,8,image,FMG with double discretization
+V-EHL-04,parameter,grid (finest),n,57345,-,contact=line;M=200,VennerBos1994,Table 2,8,image,
+V-EHL-04,reference,central density at p_h,rho_bar_c,1.29,-,contact=line;M=200;density=D-H,VennerBos1994,text,8,image,
+V-EHL-04,reference,central density at p_h,rho_bar_c,1.52,-,contact=line;M=200;density=J-V,VennerBos1994,text,8,image,
+V-EHL-04,reference,ratio central to minimum film thickness,H_c/H_m,1.33,-,contact=line;M=200;density=incompressible,VennerBos1994,text,8,image,"text says ""ratio of minimum to central"" but the values are H_c/H_m"
+V-EHL-04,reference,ratio central to minimum film thickness,H_c/H_m,1.09,-,contact=line;M=200;density=D-H,VennerBos1994,text,8,image,see wording note above
+V-EHL-04,reference,ratio central to minimum film thickness,H_c/H_m,1,-,contact=line;M=200;density=J-V,VennerBos1994,text,8,image,"printed ""(obviously) equals one"": J-V minimum is at the centre"
+V-EHL-04,reference,reduction of H_m (J-V) vs incompressible and D-H,-,8,%,contact=line;M=200;density=J-V,VennerBos1994,text,8,image,"printed ""some 8% smaller"""
+V-EHL-04,reference,"predicted central film thickness, Eq. (19)",H_c,5.83e-03,-,contact=line;M=200;density=D-H,VennerBos1994,text,8,image,
+V-EHL-04,reference,"predicted central film thickness, Eq. (19)",H_c,4.95e-03,-,contact=line;M=200;density=J-V,VennerBos1994,text,8,image,predictions differ from numerical results by less than 3% (text)
+V-EHL-04,reference,pressure above which J-V minimum moves to the centre,p_h,1.5,GPa,contact=line;density=J-V,VennerBos1994,text,9,image,"printed p_h ~ 1.5 GPa, from Eq. (21)"
+V-EHL-04,parameter,Roelands pressure-viscosity index,alpha,1.7e-08,not printed,viscosity=Roelands,VennerBos1994,text,2,image,"unit not printed (presumably Pa^-1); same value repeated on PDF pp. 9, 11, 13"
+V-EHL-04,parameter,Roelands pressure-viscosity exponent,z,0.69,-,viscosity=Roelands,VennerBos1994,text,2,image,
+V-EHL-04,parameter,Dowson-Higginson density constant (numerator and denominator),-,0.59e09,not printed,density=D-H,VennerBos1994,Eq. (4),2,image,"printed 0.59x10^9; unit not printed (Pa implied, multiplies with P*p_h)"
+V-EHL-04,parameter,Dowson-Higginson density coefficient,-,1.34,-,density=D-H,VennerBos1994,Eq. (4),2,image,
+V-EHL-04,formula,Dowson-Higginson dimensionless density,rho_bar,,-,density=D-H,VennerBos1994,Eq. (4),2,image,rho_bar = (0.59e9 + 1.34*P*p_h)/(0.59e9 + P*p_h)
+V-EHL-04,parameter,Jacobson-Vinet bulk modulus parameter,B_0,1.7e09,not printed,density=J-V,VennerBos1994,text,3,image,unit not printed (Pa implied)
+V-EHL-04,parameter,Jacobson-Vinet lubricant parameter,eta_prime,10.0,-,density=J-V,VennerBos1994,text,3,image,
+V-EHL-04,formula,Jacobson-Vinet density-pressure relation,p,,-,density=J-V,VennerBos1994,Eq. (12),3,image,p = 3*B_0*rho_bar^(2/3)*(1 - rho_bar^(-1/3))*exp[eta_prime*(1 - rho_bar^(-1/3))]; inverted numerically (Newton-Raphson)
+V-EHL-06,parameter,lubricant compressibility,-,compressible,-,,Canzi2010,Table 2 caption,3,image+text-agree,formula column = Moes Eq. (4) corrected by Eq. (11)
+V-EHL-06,parameter,dimensionless piezoviscous parameter,ᾱ,20,-,swept (one of the values the table spans),Canzi2010,Table 2,3,image+text-agree,
+V-EHL-06,parameter,dimensionless piezoviscous parameter,ᾱ,10,-,swept (one of the values the table spans),Canzi2010,Table 2,3,image+text-agree,
+V-EHL-06,parameter,dimensionless piezoviscous parameter,ᾱ,5,-,swept (one of the values the table spans),Canzi2010,Table 2,3,image+text-agree,
+V-EHL-06,parameter,1D Moes load parameter,M1,17.97,-,swept (one of the values the table spans),Canzi2010,Table 2,3,image+text-agree,
+V-EHL-06,parameter,1D Moes load parameter,M1,52.55,-,swept (one of the values the table spans),Canzi2010,Table 2,3,image+text-agree,
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), calculated",H_c,4.91,-,alpha_bar=20;M1=17.97;col=calculated,Canzi2010,Table 2,3,image+text-agree,numerical (multigrid) reference
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), Moes formula compressible-corrected",H_c,4.77,-,alpha_bar=20;M1=17.97;col=Moes formula,Canzi2010,Table 2,3,image+text-agree,"formula prediction, not the numerical reference"
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), calculated",H_c,2.90,-,alpha_bar=20;M1=52.55;col=calculated,Canzi2010,Table 2,3,image+text-agree,numerical (multigrid) reference
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), Moes formula compressible-corrected",H_c,2.98,-,alpha_bar=20;M1=52.55;col=Moes formula,Canzi2010,Table 2,3,image+text-agree,"formula prediction, not the numerical reference"
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), calculated",H_c,3.13,-,alpha_bar=10;M1=17.97;col=calculated,Canzi2010,Table 2,3,image+text-agree,numerical (multigrid) reference
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), Moes formula compressible-corrected",H_c,3.20,-,alpha_bar=10;M1=17.97;col=Moes formula,Canzi2010,Table 2,3,image+text-agree,"formula prediction, not the numerical reference"
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), calculated",H_c,1.93,-,alpha_bar=10;M1=52.55;col=calculated,Canzi2010,Table 2,3,image+text-agree,numerical (multigrid) reference
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), Moes formula compressible-corrected",H_c,2.06,-,alpha_bar=10;M1=52.55;col=Moes formula,Canzi2010,Table 2,3,image+text-agree,"formula prediction, not the numerical reference"
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), calculated",H_c,2.20,-,alpha_bar=5;M1=17.97;col=calculated,Canzi2010,Table 2,3,image+text-agree,numerical (multigrid) reference
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), Moes formula compressible-corrected",H_c,2.30,-,alpha_bar=5;M1=17.97;col=Moes formula,Canzi2010,Table 2,3,image+text-agree,"formula prediction, not the numerical reference"
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), calculated",H_c,1.46,-,alpha_bar=5;M1=52.55;col=calculated,Canzi2010,Table 2,3,image+text-agree,numerical (multigrid) reference
+V-EHL-06,reference,"central film thickness, dimensionless (Moes), Moes formula compressible-corrected",H_c,1.54,-,alpha_bar=5;M1=52.55;col=Moes formula,Canzi2010,Table 2,3,image+text-agree,"formula prediction, not the numerical reference"
+V-EHL-06,formula,sum velocity,u_Σ,,-,,Canzi2010,Appendix Notation,7,image,"u_Σ = u1 + u2 (sum velocity); used in H, L, M1, M2; SlipPY mean speed must be doubled"
+V-EHL-06,formula,dimensionless film thickness (Moes),H,,-,,Canzi2010,Eq. (5),2,image,"H = (h/R_x)(η0 u_Σ/(E' R_x))^(-1/2); Notation p.7 gives same as h/R_x (E'R_x/η0u_Σ)^(1/2); Figs 1-5 instead plot h/R_x (Hamrock-Dowson), text p.4"
+V-EHL-06,formula,reduced modulus,E',,-,,Canzi2010,Appendix Notation,7,image,2/E' = (1-ν1^2)/E1 + (1-ν2^2)/E2
+V-EHL-06,formula,dimensionless material parameter (Moes),L,,-,,Canzi2010,"Eq. (2), Eq. (13)",2,image,L = α E' (η0 u_Σ/(E' R_x))^(1/4)
+V-EHL-06,formula,dimensionless piezoviscous parameter,ᾱ,,-,,Canzi2010,Appendix Notation,7,image,"ᾱ = α p_h; Notation prints unit of α as ""(Pa)"" - misprint, should be Pa^-1"
+V-EHL-06,formula,compressibility correction,H_Ccomp,,-,,Canzi2010,Eq. (11),2,image,"H_Ccomp = H_Cincomp / ρ̄(p_h); ρ̄ = ρ/ρ0, Dowson-Higginson"
+V-EHL-06,parameter,viscosity-pressure law,-,Roelands,-,,Canzi2010,text,3,image+text-agree,"Roelands z, α, p0 not printed"
+V-EHL-06,parameter,density-pressure law,-,Dowson-Higginson,-,,Canzi2010,text,3,image+text-agree,constants not printed (standard D-H assumed)
+V-EHL-06,parameter,discretization,-,"uniform grid, second-order",-,,Canzi2010,text,3,image+text-agree,domain size and coarsest grid not printed; multilevel solver
+V-EHL-06,formula,1D load parameter (Moes),M1,,-,,Canzi2010,Eq. (1),1,image,M1 = (W/(E' R_x))(η0 u_Σ/(E' R_x))^(-1/2); W = w1 load per unit length (Notation p.7)
+V-EHL-06,formula,"piezoviscous parameter, line",ᾱ,,-,,Canzi2010,Eq. (3),2,image,ᾱ = α p_h = L sqrt(M1/(2π))
+V-EHL-06,formula,Moes line central film formula,H_c,,-,,Canzi2010,Eq. (4),2,image,H_c = [(H_RI^(7/3) + H_EI^(7/3))^(3s/7) + (H_RP^(-7/2) + H_EP^(-7/2))^(-2s/7)]^(1/s)
+V-EHL-06,formula,asymptotes,"H_RI,H_RP,H_EI,H_EP",,-,,Canzi2010,Eqs. (6)-(9),2,image,H_RI = 3 M1^-1; H_RP = 1.28666 L^(2/3); H_EI = 2.62105 M1^(-1/5); H_EP = 1.31106 M1^(-1/8) L^(3/4)
+V-EHL-06,formula,blending exponent,s,,-,,Canzi2010,Eq. (10),2,image,s = (1/5)(7 + 8 exp(-2 H_EI/H_RI))
