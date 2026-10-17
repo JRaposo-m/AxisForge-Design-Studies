@@ -102,18 +102,29 @@ pd.DataFrame(rows, columns=["Shaft", "Load", "Source", "x_lo / mm", "x_hi / mm",
                             "|F| / N", "F_xy / N", "F_xz / N"])
 
 # %%
+# one style per load type, the same on both shafts (input load intensities: formula lines)
+# colour by a fixed index of the sheet's cycle ("C0".."C2"), so a load type looks the same on
+# both shafts whatever the order of its loads
+LOAD_STYLE = {"parabolic": dict(linestyle="-", kwargs=dict(color="C0")),
+              "Ft": dict(linestyle="--", kwargs=dict(color="C1")),
+              "Fr": dict(linestyle="-.", kwargs=dict(color="C2"))}
+LOAD_NAME = {"parabolic": "parabolic load", "Ft": r"gear mesh $F_t$", "Fr": r"gear mesh $F_r$"}
+
 def layout_figure(shaft: str):
     ss = next(s for s in system.shafts if s.name == shaft)
     x = np.linspace(0.0, cd.SHAFT_LENGTH_MM, 4001)
-    linestyles = {"parabolic_user_load": "-"}             # input load intensities: formula lines
     series = []
     for ld in ss.distributed_radial_loads:
         q = np.array([abs(ld.q(xi)) if ld.x_lo <= xi <= ld.x_hi else 0.0 for xi in x])
-        series.append(fg.Series(label=f"{ld.label} ({abs(ld.magnitude):.0f} N)", x=x, y=q, kind="theory",
-                                linestyle=linestyles.get(ld.label, "--" if ld.label.endswith("Ft") else "-.")))
+        kind = "Ft" if ld.label.endswith(":Ft") else "Fr" if ld.label.endswith(":Fr") else "parabolic"
+        # bending plane(s) of the load, from its resultant components
+        planes = [p for p, plane in (("xy", LoadPlane.XY), ("xz", LoadPlane.XZ))
+                  if abs(float(ld.resultant_component(plane))) > 1e-9 * abs(float(ld.magnitude))]
+        series.append(fg.Series(label=f"{LOAD_NAME[kind]}, {abs(ld.magnitude):.0f} N ({'+'.join(planes)} plane)",
+                                x=x, y=q, kind="theory", **LOAD_STYLE[kind]))
     edges = [segs[0].x_lo] + [s.x_hi for s in segs]
     return fg.shaft_layout(edges, [s.d for s in segs], series,
-                           note=f"{shaft}: geometry and distributed load intensities |q(x)|",
+                           note=rf"{shaft.replace('shaft', 'shaft ')}: geometry and distributed load intensities $|q(x)|$",
                            supports=SUPPORTS, support_names=("A", "B"))
 
 fig_layout_1 = layout_figure("shaft1")
@@ -224,13 +235,20 @@ summary
 # the EB result, normalised by the maximum EB deflection.
 
 # %%
-STYLE = {   # FEM nodal fields, dense: drawn as lines (no markers), one line style per model
-    "euler_bernoulli": dict(label="Euler–Bernoulli", kind="numerical", linestyle="-", marker="none"),
-    "timoshenko/cowper": dict(label=r"Timoshenko, $\kappa$ Cowper", kind="numerical", linestyle="--",
-                              marker="none"),
-    "timoshenko/hutchinson": dict(label=r"Timoshenko, $\kappa$ Hutchinson", kind="numerical", linestyle="-.",
-                                  marker="none"),
+STYLE = {   # FEM nodal values: filled markers only, one marker per model
+    "euler_bernoulli": dict(label="Euler–Bernoulli", kind="numerical", marker="o"),
+    "timoshenko/cowper": dict(label=r"Timoshenko, $\kappa$ Cowper", kind="numerical", marker="s"),
+    "timoshenko/hutchinson": dict(label=r"Timoshenko, $\kappa$ Hutchinson", kind="numerical", marker="^"),
 }
+
+def overlap_note(series, tol=1e-3):
+    """Note text when a model's nodal values coincide with another's within ``tol`` of the maximum
+    (the markers then hide each other); nodes near zero (supports) do not count."""
+    v = [np.asarray(s.y, dtype=float) for s in series]
+    scale = max(np.max(np.abs(y)) for y in v)
+    away = np.abs(v[0]) > 0.05 * scale                # off the supports, where every model is 0
+    close = any(np.any((np.abs(a - b) < tol * scale) & away) for i, a in enumerate(v) for b in v[i + 1:])
+    return f"; markers overlap where the models agree within {100 * tol:g} %" if close else ""
 
 def shear_figure(shaft: str):
     ref = results["euler_bernoulli"][shaft]
@@ -244,7 +262,7 @@ def shear_figure(shaft: str):
                                     **STYLE[name]))
     return fg.field_comparison(
         series, deltas,
-        note=f"{shaft}: resultant deflection, minimal mesh ({len(ref.x_nodes)} nodes)",
+        note=f"{shaft}: resultant deflection, minimal mesh ({len(ref.x_nodes)} nodes)" + overlap_note(series),
         ylabel=r"$v$ (mm)",
         delta_label=r"$(v - v_\mathrm{EB})/\max|v_\mathrm{EB}|$ (%)",
         supports=SUPPORTS, support_names=("A", "B"),
@@ -304,7 +322,7 @@ for shaft, r in shafts.items():
     fig = fg.shaft_fields(r.x, r.v, r.theta_xz, r.theta_xy, r.M, r.sigma_b,
                           bearings_mm={NAMES[x]: x for x in r.bearing_positions},
                           gears_mm={"gear": cd.GEAR_POSITION_MM}, R_N=list(r.R),
-                          note=rf"{shaft}, Timoshenko (Cowper $\kappa$), minimal mesh ({len(r.x_nodes)} nodes); "
+                          note=rf"{shaft.replace('shaft', 'shaft ')}, Timoshenko (Cowper $\kappa$), minimal mesh ({len(r.x_nodes)} nodes); "
                                "same scales on both shafts; slopes have opposite signs: the mesh forces on the two "
                                "shafts are equal and opposite and outweigh the parabolic load")
     for ax, lim in zip(fig.axes, limits):

@@ -35,6 +35,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from matplotlib.ticker import MaxNLocator  # noqa: E402
 
 # The look comes only from the house sheet: the study entry points (``study.figures``,
 # ``compare.compare_types``) call ``plt.style.use(STYLE_PATH)`` once before drawing. A study cannot
@@ -111,8 +112,25 @@ def _save(fig, path: Path) -> None:
 
 
 def _note(fig, text: str) -> None:
-    """The figure's information line (what a title used to carry), under the axes."""
-    fig.text(0.5, 0.0, text, ha="center", va="top", wrap=True)
+    """The figure's information line (what a title used to carry), under the axes.
+
+    Code identifiers in it (``clearance_and_alpha``, ``shaft_1``, ``deep_groove``) are written as
+    words: underscores outside ``$...$`` mathtext become spaces (inside, they are subscripts).
+    """
+    parts = text.split("$")
+    words = "$".join(part.replace("_", " ") if k % 2 == 0 else part for k, part in enumerate(parts))
+    fig.text(0.5, 0.0, words, ha="center", va="top", wrap=True)
+
+
+def _integer_ticks(ax, key: str) -> None:
+    """Count metrics (loaded elements) take integer ticks only, with one count of room each side
+    (a constant count would otherwise autoscale to a range below one; the integer locator needs at
+    least two integers in range, or it falls back to decimal ticks)."""
+    if key == "n_loaded":
+        y = np.concatenate([np.asarray(line.get_ydata(), dtype=float) for line in ax.lines])
+        y = y[np.isfinite(y)]
+        ax.set_ylim(y.min() - 1.0, y.max() + 1.0)
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
 
 def _series(rows, x_key, key):
@@ -169,6 +187,7 @@ def plot_summary(rows: list[dict], out_dir: Path, *, x_axis: str, group_axis: st
             continue
         if log:
             ax.set_yscale("log")
+        _integer_ticks(ax, key)
         ax.set_xlabel(axis_label(x_axis))
         ax.set_ylabel(label)
         if group_axis is not None:
@@ -218,14 +237,17 @@ def _draw_bearing(ax, phi_deg, Q, q_ref, kind, Z, compact=False):
     # sweep): the radius above the dashed zero circle is Q_j / q_ref
     r_load = R_BAR + BAR_SPAN * Q / q_ref
     ax.plot(circle, np.full_like(circle, R_BAR), color=ink, linestyle="--", linewidth=thin, zorder=1)
-    order = np.argsort(theta)                                     # closed line, straight segments
-    ax.plot(np.append(theta[order], theta[order][0] + 2.0 * np.pi),
-            np.append(r_load[order], r_load[order][0]), color=ink, linestyle="-", marker=".", zorder=3)
+    # closed line interpolated in radius along the angle (periodic), so between two elements it stays
+    # above the zero circle and never cuts into the rings as a straight chord would
+    theta_dense = np.linspace(0.0, 2.0 * np.pi, 721)
+    ax.plot(theta_dense, np.interp(theta_dense, theta % (2.0 * np.pi), r_load, period=2.0 * np.pi),
+            color=ink, linestyle="-", zorder=3)
+    ax.plot(theta, r_load, color=ink, linestyle="none", marker=".", zorder=3)
     for th, r in zip(theta[loaded], r_load[loaded]):              # thin stem to its element
         ax.plot([th, th], [R_OUTER + 0.04, r], color=ink, linestyle=":", linewidth=thin, zorder=2)
     if not compact:                                               # value of every loaded element
         for th, r, q in zip(theta[loaded], r_load[loaded], Q[loaded]):
-            ax.text(th, r + 0.11, f"{q:.0f}", ha="center", va="center", zorder=5)
+            ax.text(th, r + 0.13, f"{q:.0f}", ha="center", va="center", zorder=5)   # radially outside
 
     # radial load on the inner ring
     ax.annotate("", xy=(0.0, R_INNER - 0.12), xytext=(0.0, 0.0), arrowprops=dict(arrowstyle="-|>", color=ink))
@@ -234,7 +256,8 @@ def _draw_bearing(ax, phi_deg, Q, q_ref, kind, Z, compact=False):
     ax.set_ylim(0.0, R_BAR + BAR_SPAN + 0.15)
     ax.set_yticks([])
     angles = np.array([0, 90, 270]) if compact else np.arange(0, 360, 30)
-    ax.set_thetagrids(angles, [f"{(a + 180) % 360 - 180:d}°" for a in angles])
+    # labels in (-180, 180]: the bottom-opposite direction reads 180 deg, not -180
+    ax.set_thetagrids(angles, [f"{180 if a == 180 else (a + 180) % 360 - 180:d}°" for a in angles])
     ax.grid(False)                                      # set_thetagrids switches the polar grid back on
     ax.spines["polar"].set_visible(False)
 
@@ -433,6 +456,7 @@ def plot_compare(datasets: dict[str, list[dict]], out_dir: Path, *, x_axis: str,
             continue
         if log:
             ax.set_yscale("log")
+        _integer_ticks(ax, key)
         ax.set_xlabel(axis_label(x_axis))
         ax.set_ylabel(label)
         fig.legend(*ax.get_legend_handles_labels(), loc="outside right upper")

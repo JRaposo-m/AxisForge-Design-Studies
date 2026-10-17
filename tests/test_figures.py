@@ -56,10 +56,11 @@ def assert_house_form(fig):
 # =============================================================================
 
 
-def _records(n_mesh, n_domain):
-    """Sweep records of two builds with errors that shrink with h and with the domain."""
+def _records(n_mesh, n_domain, scale_second=1.5):
+    """Sweep records of two builds with errors that shrink with h and with the domain; the second
+    build's mesh errors are ``scale_second`` times the first's (1.0: the same series)."""
     out = []
-    for build, sign in (("composite", 1.0), ("two_profiles", -1.0)):
+    for build, sign in (("composite", 1.0), ("two_profiles", -scale_second)):
         for k in range(n_mesh):
             h = 2e-6 * 2.0**-k                                # [m]
             out.append(dict(build=build, sweep="mesh", span_x=4.0, h_m=h, err_p0=sign * 1e3 * h,
@@ -71,10 +72,16 @@ def _records(n_mesh, n_domain):
 
 
 def test_contact_convergence_draws_mesh_and_domain_panels(tmp_path):
-    fig = contact_plots.convergence(_records(3, 3), tmp_path / "c.png")
+    fig = contact_plots.convergence(_records(3, 3), tmp_path / "c.png", criterion=("E3 (p0)", 1.0), default_span=4.0)
     assert_house_form(fig)
     assert len(fig.axes) == 3                                 # one mesh panel per build + domain
+    assert fig.axes[0].get_ylim() == fig.axes[1].get_ylim()   # one error scale for the mesh panels
     assert (tmp_path / "c.png").is_file()
+
+
+def test_contact_convergence_draws_identical_builds_once():
+    fig = contact_plots.convergence(_records(3, 3, scale_second=1.0))
+    assert len(fig.axes) == 2 and "drawn once" in fig.texts[-1].get_text()
 
 
 def test_contact_convergence_never_draws_an_empty_axes():
@@ -162,7 +169,7 @@ def _ld_rows(kind="roller"):
     rows, q_rows, lam_rows = [], [], []
     for s in (0.0, 0.02, 0.04):
         rows.append(dict(shaft="shaft_1", kind=kind, Z=5, s_mm=s, ok=True, n_loaded=3, zone_half_angle_deg=80.0,
-                         Fr_N=1000.0, Q_max_N=500.0 + 1e3 * s, Q_max_over_Fr_per_Z=2.5, delta_r_mm=0.01 + s / 2,
+                         Fr_N=1000.0, Q_max_N=500.0 + 1e3 * s, Q_max_over_Fr_per_Z=(500.0 + 1e3 * s) / (1000.0 / 5), delta_r_mm=0.01 + s / 2,
                          Kr_N_per_mm=1e5, L10r_Mrev=100.0))
         for phi, Q in ((0.0, 500.0), (72.0, 250.0), (144.0, 0.0), (-144.0, 0.0), (-72.0, 250.0)):
             q_rows.append(dict(shaft="shaft_1", s_mm=s, phi_deg=phi, Q_N=Q))
@@ -254,3 +261,9 @@ def test_shaft_fields():
                           bearings_mm={"A": 10.0, "B": 190.0}, gears_mm={"gear": 100.0}, R_N=[1000.0, 900.0])
     assert_house_form(fig)
     assert len(fig.axes) == 4 and "R_" in fig.texts[-1].get_text()
+
+
+def test_words_keeps_mathtext_subscripts():
+    """Code identifiers become words; underscores inside $...$ stay subscripts."""
+    from validation._support.figures import _words
+    assert _words(r"radial_heavy; $Q_\mathrm{max}$ = 1 N, 6210_A") == r"radial heavy; $Q_\mathrm{max}$ = 1 N, 6210 A"

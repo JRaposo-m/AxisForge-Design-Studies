@@ -216,13 +216,20 @@ summary
 # the supports, where $v = 0$).
 
 # %%
-STYLE = {   # FEM nodal fields, dense: drawn as lines (no markers), one line style per model
-    "euler_bernoulli": dict(label="Euler–Bernoulli", kind="numerical", linestyle="-", marker="none"),
-    "timoshenko/cowper": dict(label=r"Timoshenko, $\kappa$ Cowper", kind="numerical", linestyle="--",
-                              marker="none"),
-    "timoshenko/hutchinson": dict(label=r"Timoshenko, $\kappa$ Hutchinson", kind="numerical", linestyle="-.",
-                                  marker="none"),
+STYLE = {   # FEM nodal values: filled markers only, one marker per model
+    "euler_bernoulli": dict(label="Euler–Bernoulli", kind="numerical", marker="o"),
+    "timoshenko/cowper": dict(label=r"Timoshenko, $\kappa$ Cowper", kind="numerical", marker="s"),
+    "timoshenko/hutchinson": dict(label=r"Timoshenko, $\kappa$ Hutchinson", kind="numerical", marker="^"),
 }
+
+def overlap_note(series, tol=1e-3):
+    """Note text when a model's nodal values coincide with another's within ``tol`` of the maximum
+    (the markers then hide each other); nodes near zero (supports) do not count."""
+    v = [np.asarray(s.y, dtype=float) for s in series]
+    scale = max(np.max(np.abs(y)) for y in v)
+    away = np.abs(v[0]) > 0.05 * scale                # off the supports, where every model is 0
+    close = any(np.any((np.abs(a - b) < tol * scale) & away) for i, a in enumerate(v) for b in v[i + 1:])
+    return f"; markers overlap where the models agree within {100 * tol:g} %" if close else ""
 
 def shear_figure(shaft: str):
     ref = results["euler_bernoulli"][shaft]
@@ -236,7 +243,7 @@ def shear_figure(shaft: str):
                                     **STYLE[name]))
     return fg.field_comparison(
         series, deltas,
-        note=f"{shaft}: resultant deflection, minimal mesh ({len(results['euler_bernoulli'][shaft].x_nodes)} nodes)",
+        note=f"{shaft}: resultant deflection, minimal mesh ({len(results['euler_bernoulli'][shaft].x_nodes)} nodes)" + overlap_note(series),
         ylabel=r"$v$ (mm)",
         delta_label=r"$(v - v_\mathrm{EB})/\max|v_\mathrm{EB}|$ (%)",
         supports=(cd.BALL_POSITION_MM, cd.ROLLER_POSITION_MM), support_names=("A", "B"),

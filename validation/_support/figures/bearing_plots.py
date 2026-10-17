@@ -33,7 +33,7 @@ import numpy as np
 from axisforge.outputs.solvers.bearings.load_distribution.load_distribution_results import wrap_angle
 from matplotlib.figure import Figure
 
-from validation._support.figures import _note, _stacked
+from validation._support.figures import _note, _stacked, _words
 
 __all__ = ["A2_NOTE", "SIGN_CHECK_NOTE", "contact_ellipses", "element_loads", "sign_check"]
 
@@ -95,7 +95,7 @@ def sign_check(phi_global_rad: Sequence, Q_N: Sequence, *, phi_Fr_rad: Sequence[
             # name at the least loaded element of the zone (low in the panel, clear of the direction
             # labels in the top band): first series to its left, second to its right
             j = int(np.argmin(np.where(Q > 0.0, Q, np.inf))) if (Q > 0.0).any() else int(np.argmax(Q))
-            ax.annotate(series[k], (phi[j], Q[j]), xytext=(-6 if k % 2 == 0 else 6, 0), textcoords="offset points",
+            ax.annotate(_words(series[k]), (phi[j], Q[j]), xytext=(-6 if k % 2 == 0 else 6, 0), textcoords="offset points",
                         ha="right" if k % 2 == 0 else "left", va="center")
             top = max(top, Q.max())
         ax.set_ylim(top=1.3 * top)                         # free band at the top for the labels
@@ -108,7 +108,8 @@ def sign_check(phi_global_rad: Sequence, Q_N: Sequence, *, phi_Fr_rad: Sequence[
                         textcoords="offset points", ha="left", va="center")
         ax.set_ylabel(r"$Q_j$ (N)")
         if i < len(labels):
-            ax.text(0.07, 0.92, labels[i], transform=ax.transAxes, ha="left", va="top")
+            # beside the panel tag, above the frame: clear of the direction lines and their labels
+            ax.text(0.04, 1.02, _words(labels[i]), transform=ax.transAxes, ha="left", va="bottom")
     # half a tick step beyond 0 and 360 deg, so that a direction at 0 deg is not hidden by the frame
     axes[-1].set_xlim(-22.5, 382.5)
     axes[-1].set_xticks(np.arange(0.0, 361.0, 45.0))

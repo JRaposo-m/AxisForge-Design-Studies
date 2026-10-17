@@ -161,7 +161,7 @@ print(f"\nwritten: {(RESULTS / 'contacts.csv').relative_to(HERE)}, {(RESULTS / '
 for name, recs in elements.items():
     fig = bearing_plots.element_loads([e["phi_rad"] for e in recs], [e["Q_N"] for e in recs],
                                       delta_mm=[e["delta_mm"] for e in recs], alpha_rad=[e["alpha_rad"] for e in recs],
-                                      note=f"{name}; {bearing_plots.A2_NOTE}")
+                                      note=f"{name} load case; {bearing_plots.A2_NOTE}")
     fig.savefig(RESULTS / f"01_element_loads_{name}.png")
     display(fig)
     plt.close(fig)
@@ -171,7 +171,7 @@ for name in elements:
     rows = [r for r in contact_records if r["case"] == name]
     fig = bearing_plots.contact_ellipses([r["phi_local_rad"] for r in rows], [r["race"] for r in rows],
                                          [r["p0_Pa"] for r in rows], [r["s_x_m"] for r in rows],
-                                         [r["s_y_m"] for r in rows], note=f"{name}; {bearing_plots.A2_NOTE}")
+                                         [r["s_y_m"] for r in rows], note=f"{name} load case; {bearing_plots.A2_NOTE}")
     fig.savefig(RESULTS / f"01_contact_ellipses_{name}.png")
     display(fig)
     plt.close(fig)

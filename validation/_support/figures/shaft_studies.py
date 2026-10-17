@@ -34,7 +34,7 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 
-from validation._support.figures import _note, _stacked
+from validation._support.figures import _note, _stacked, _supports, _tag
 
 # kind -> default drawing (semantics of style/README.md); a Series may override line style and marker
 _KINDS = {
@@ -79,21 +79,19 @@ class Series:
             raise ValueError(f"Series.kind must be one of {sorted(_KINDS)}, got {self.kind!r}")
 
 
+_MAX_MARKERS = 40          # a dense series (fine FEM mesh) shows about this many markers, not one per node
+
+
 def _draw(ax, s: Series, **extra):
     style = dict(_KINDS[s.kind])
     if s.linestyle is not None:
         style["linestyle"] = s.linestyle
     if s.marker is not None:
         style["marker"] = s.marker
-    return ax.plot(s.x, s.y, label=s.label, **style, **s.kwargs, **extra)[0]
-
-
-def _supports(ax, positions: Sequence[float], names: Sequence[str]) -> None:
-    """Dotted verticals at the given positions; names just above the frame, off the data."""
-    for x0, name in zip(positions, names):
-        ax.axvline(x0, linestyle=":", linewidth=plt.rcParams["axes.linewidth"], zorder=0)
-        ax.annotate(name, xy=(x0, 1.0), xycoords=("data", "axes fraction"),
-                    xytext=(0, 2), textcoords="offset points", ha="center", va="bottom")
+    n = len(s.x)
+    if style["marker"] not in (None, "none") and n > _MAX_MARKERS:
+        style["markevery"] = n // _MAX_MARKERS
+    return ax.plot(s.x, s.y, label=s.label, **{**style, **s.kwargs}, **extra)[0]
 
 
 def field_comparison(series: Sequence[Series], deltas: Sequence[Series], *,
@@ -105,7 +103,8 @@ def field_comparison(series: Sequence[Series], deltas: Sequence[Series], *,
     Parameters
     ----------
     series : sequence of Series
-        Curves of the field itself, e.g. v(x) for several models.
+        Curves of the field itself, e.g. v(x) for several models. Numerical series (FEM nodes)
+        are markers; a theory series is a line.
     deltas : sequence of Series
         Differences to the reference, already computed by the caller
         (e.g. relative error in %). A delta with the label of a series takes
@@ -139,7 +138,8 @@ def field_comparison(series: Sequence[Series], deltas: Sequence[Series], *,
     axd.set_ylabel(delta_label)
     axd.set_xlabel(xlabel)
     for a, tag in ((ax, "(a)"), (axd, "(b)")):
-        a.text(0.02, 0.95, tag, transform=a.transAxes, va="top")
+        _tag(a, tag)
+        a.ticklabel_format(useOffset=False, style="plain")   # no "+1e3" or "x10^n" text over the panel
     fig.legend(*ax.get_legend_handles_labels(), loc="outside upper center", ncols=min(3, len(series)))
     _note(fig, note)
     return fig
@@ -244,7 +244,7 @@ def shaft_layout(edges: Sequence[float], diameters: Sequence[float],
     axq.set_ylabel(load_label)
     axq.set_xlabel(xlabel)
     for a, tag in ((ax, "(a)"), (axq, "(b)")):
-        a.text(0.02, 0.95, tag, transform=a.transAxes, va="top")
+        _tag(a, tag)
     fig.legend(*axq.get_legend_handles_labels(), loc="outside right upper")
     _note(fig, note)
     return fig
@@ -314,6 +314,6 @@ def shaft_fields(x_mm, v_mm, theta_xz_rad, theta_xy_rad, M_Nmm, sigma_b_MPa, *,
         ax.set_ylabel(label)
     axes[-1].set_xlabel(r"$x$ (mm)")
     reactions = ("" if R_N is None else
-                 "reactions " + ", ".join(rf"$R_\mathrm{{{name}}}$ = {r:.0f} N" for name, r in zip(bearings_mm, R_N)))
+                 "reactions " + ", ".join(rf"$R_\mathrm{{{name}}} = {r:.0f}$ N" for name, r in zip(bearings_mm, R_N)))
     _note(fig, "; ".join(t for t in (note, reactions) if t))
     return fig

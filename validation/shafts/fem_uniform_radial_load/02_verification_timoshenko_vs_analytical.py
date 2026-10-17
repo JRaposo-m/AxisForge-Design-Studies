@@ -114,23 +114,17 @@ pd.DataFrame(
                                              rel_max_err(base.M, exact.M(x))]})
 
 # %% [markdown]
-# The FEM curve joins the nodal values with straight lines, which is the
-# displacement field of the two-node linear element itself (exact per bending
-# plane; for the resultant it is a close approximation). The lower panel shows
-# the deviation of that interpolated field from the exact solution along the
-# whole shaft, with the nodal values marked.
+# The FEM result is drawn at its nodes only (filled markers), the exact solution as
+# a line. The lower panel shows the deviation of the nodal values from the exact
+# solution, normalised by its maximum: no field between the nodes is drawn.
 
 # %%
-v_fem_xd = np.interp(xd, x, base.v)           # linear-element interpolation between nodes
 scale = np.max(exact.v(xd))
 FEM_BASE = f"FEM, minimal mesh ({len(base.x_nodes)} nodes)"
 fig_base = fg.field_comparison(
     [fg.Series(label="analytical", x=xd, y=exact.v(xd), kind="theory"),
-     # nodal values (filled markers) joined by the linear-element interpolation
-     fg.Series(label=FEM_BASE, x=x, y=base.v, kind="numerical", linestyle="--")],
-    [fg.Series(label=FEM_BASE, x=xd, y=100 * (v_fem_xd - exact.v(xd)) / scale, kind="numerical",
-               linestyle="--", marker="none"),
-     fg.Series(label=FEM_BASE, x=x, y=100 * (np.asarray(base.v) - exact.v(x)) / scale, kind="numerical")],
+     fg.Series(label=FEM_BASE, x=x, y=base.v, kind="numerical")],            # nodal values only
+    [fg.Series(label=FEM_BASE, x=x, y=100 * (np.asarray(base.v) - exact.v(x)) / scale, kind="numerical")],
     note=rf"{SHAFT}: Timoshenko (Cowper $\kappa$) resultant deflection, minimal mesh",
     ylabel=r"$v$ (mm)",
     delta_label=r"$(v - v_\mathrm{ref})/\max|v_\mathrm{ref}|$ (%)",
@@ -275,21 +269,23 @@ def true_error_series(rec, name, label, marker):
     err = [abs(h[name] - exact_values[name]) / exact_values[name] for h in rec.point_metrics_history]
     return fg.Series(label=label, x=n_el, y=err, kind="numerical", marker=marker)
 
-def gci_series(rec, name, label, linestyle):
-    # GCI is an estimate from a formula (Roache), not a measured error: a line
+def gci_series(rec, name, label, marker):
+    # GCI is an estimate (Roache), not a measured error: open markers of the same shape as the true
+    # error of the same quantity, joined by a thin dotted line
     n_el = [len(grades[g].x_nodes) - 1 for g in rec.levels[2:]]
     gci = [g[name].GCI_f_m for g in rec.gci_history]
-    return fg.Series(label=label, x=n_el, y=gci, kind="other", linestyle=linestyle)
+    return fg.Series(label=label, x=n_el, y=gci, kind="other", linestyle=":", marker=marker,
+                     kwargs=dict(markerfacecolor="none"))
 
 fig_gci = fg.convergence(
     [len(grades[g].x_nodes) - 1 for g in m_rec.levels],
     [true_error_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: true error", "o"),
-     gci_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: GCI$_{fm}$", "--"),
+     gci_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: GCI$_{fm}$", "o"),
      true_error_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: true error", "s"),
-     gci_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: GCI$_{fm}$", ":")],
+     gci_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: GCI$_{fm}$", "s")],
     note=f"{SHAFT}: true relative error vs. GCI estimate (span {x_lo:.0f}-{x_hi:.0f} mm)",
-    ylabel="relative error",
-    xlabel=r"number of elements in the span",
+    ylabel=r"$|\varepsilon|$",
+    xlabel=r"$N_\mathrm{e}$ (elements in the span)",
     reference_orders={},
 )
 
@@ -320,9 +316,9 @@ summary
 FEM_CONV = f"FEM, converged mesh ({len(converged.x_nodes)} nodes)"
 fig_conv = fg.field_comparison(
     [fg.Series(label="analytical", x=xd, y=exact.v(xd), kind="theory"),
-     fg.Series(label=FEM_CONV, x=xc, y=converged.v, kind="numerical", linestyle="--", marker="none")],
+     fg.Series(label=FEM_CONV, x=xc, y=converged.v, kind="numerical")],       # nodal values only
     [fg.Series(label=FEM_CONV, x=xc, y=100 * (np.asarray(converged.v) - exact.v(xc)) / np.max(exact.v(xd)),
-               kind="numerical", linestyle="--", marker="none")],
+               kind="numerical")],
     note=rf"{SHAFT}: Timoshenko (Cowper $\kappa$) resultant deflection, GCI-converged mesh",
     ylabel=r"$v$ (mm)",
     delta_label=r"$(v - v_\mathrm{ref})/\max|v_\mathrm{ref}|$ (%)",
