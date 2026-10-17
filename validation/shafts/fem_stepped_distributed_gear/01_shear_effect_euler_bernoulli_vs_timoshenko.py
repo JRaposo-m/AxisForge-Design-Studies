@@ -37,6 +37,9 @@
 # convergence of the Timoshenko element is treated in notebook 02.
 
 # %%
+import pathlib
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from IPython.display import Markdown, display
@@ -275,6 +278,40 @@ for (shaft, name), sol in exact.items():
 check = pd.DataFrame(rows, columns=["Shaft", "Model", "v_max exact / mm", "v_max FEM / mm",
                                     "nodal error v", "nodal error M"])
 check
+
+# %% [markdown]
+# ### 4.4 Fields along each shaft (Timoshenko, Cowper $\kappa$)
+#
+# Resultant deflection, nodal rotation per bending plane, resultant bending moment and nominal
+# bending stress on the minimal mesh, with the bearings (A ball, B roller) and the gear marked;
+# support reactions in the line under the figure. Written to `results/01_shaft_fields_<shaft>.png`.
+
+# %%
+# the case folder: the script's own folder, or the working directory when run as a notebook
+HERE = pathlib.Path(__file__).resolve().parent if "__file__" in globals() else pathlib.Path.cwd()
+RESULTS = HERE / "results"                        # git-ignored (D-0020)
+RESULTS.mkdir(exist_ok=True)
+NAMES = {cd.BALL_POSITION_MM: "A", cd.ROLLER_POSITION_MM: "B"}
+shafts = {shaft: results["timoshenko/cowper"][shaft] for shaft in ("shaft1", "shaft2")}
+# same y limits per panel on both shafts, from the values of both (plot units of shaft_fields)
+fields = [lambda r: 1e3 * r.v, lambda r: 1e3 * np.r_[r.theta_xz, r.theta_xy], lambda r: 1e-3 * r.M, lambda r: r.sigma_b]
+pad = 0.05                                        # 5 % of the range above and below the extreme values
+limits = []
+for f in fields:
+    lo, hi = min(min(f(r).min(), 0.0) for r in shafts.values()), max(f(r).max() for r in shafts.values())
+    limits.append((lo - pad * (hi - lo), hi + pad * (hi - lo)))
+for shaft, r in shafts.items():
+    fig = fg.shaft_fields(r.x, r.v, r.theta_xz, r.theta_xy, r.M, r.sigma_b,
+                          bearings_mm={NAMES[x]: x for x in r.bearing_positions},
+                          gears_mm={"gear": cd.GEAR_POSITION_MM}, R_N=list(r.R),
+                          note=rf"{shaft}, Timoshenko (Cowper $\kappa$), minimal mesh ({len(r.x_nodes)} nodes); "
+                               "same scales on both shafts; slopes have opposite signs: the mesh forces on the two "
+                               "shafts are equal and opposite and outweigh the parabolic load")
+    for ax, lim in zip(fig.axes, limits):
+        ax.set_ylim(lim)
+    fig.savefig(RESULTS / f"01_shaft_fields_{shaft}.png")
+    display(fig)
+    plt.close(fig)
 
 # %% [markdown]
 # ## 5. Conclusions

@@ -48,6 +48,7 @@
 import math
 import pathlib
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 import axisforge.mesh as af_m
@@ -57,8 +58,12 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281 imp
 from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.dispatch import resolve_solver_cls
 from axisforge.solvers.machine_elements.shaft.fem_solvers.global_solver.rigid_support import RigidSupportFEMSolver
 
+from validation._support.figures import bearing_plots
+from validation._support.style import use_style
+
 import construction as cd
 
+use_style()                                       # house paper style (style/README.md)
 # the case folder: the script's own folder, or the working directory when run as a notebook
 HERE = pathlib.Path(__file__).resolve().parent if "__file__" in globals() else pathlib.Path.cwd()
 RESULTS = HERE / "results"                                          # git-ignored (D-0020)
@@ -135,6 +140,31 @@ print(format_table([("theta_deg", "theta [deg]", ".0f"), ("label", "bearing", ""
                     ("phi_g_rad", "phi_g [deg]", ".1f", DEG), ("Q_N", "Q [N]", ".1f"),
                     ("alpha_rad", "alpha [deg]", ".3f", DEG)],
                    [e for e in element_rows if e["Q_N"] > 0.0]))
+
+# %% [markdown]
+# The same ball loads as a figure, one panel per load direction with both bearings: the load
+# direction used by the solver $\varphi_{F_r}$ (dashed) against the expected $\varphi_\mathrm{exp}$
+# (dotted), and the residual $|r|/|F_r|$ of each bearing in the panel label.
+
+# %%
+thetas = list(dict.fromkeys(r["theta_deg"] for r in records))
+by_theta = {t: [r for r in records if r["theta_deg"] == t] for t in thetas}
+for t, recs in by_theta.items():     # one line per direction in the panel: both bearings must share it
+    assert all(abs(r["phi_Fr_rad"] - recs[0]["phi_Fr_rad"]) < 1e-9 for r in recs), t
+    assert all(abs(r["phi_expected_rad"] - recs[0]["phi_expected_rad"]) < 1e-9 for r in recs), t
+elements = {(t, r["label"]): [e for e in element_rows if (e["theta_deg"], e["label"]) == (t, r["label"])]
+            for t, recs in by_theta.items() for r in recs}
+fig = bearing_plots.sign_check(
+    [[[e["phi_g_rad"] for e in elements[t, r["label"]]] for r in recs] for t, recs in by_theta.items()],
+    [[[e["Q_N"] for e in elements[t, r["label"]]] for r in recs] for t, recs in by_theta.items()],
+    phi_Fr_rad=[recs[0]["phi_Fr_rad"] for recs in by_theta.values()],
+    phi_expected_rad=[recs[0]["phi_expected_rad"] for recs in by_theta.values()],
+    series=[r["label"] for r in by_theta[thetas[0]]],
+    labels=[rf"$\theta$ = {t:.0f} deg; $|r|/|F_r|$ = " + ", ".join(f"{r['residual_ratio']:.3f}" for r in recs)
+            + " (" + ", ".join(r["label"] for r in recs) + ")" for t, recs in by_theta.items()])
+fig.savefig(RESULTS / "02_sign_check.png")
+plt.close(fig)                                    # shown once, by the line below
+fig
 
 # %% [markdown]
 # ## 3. Equilibrium of the inner ring and the verdict

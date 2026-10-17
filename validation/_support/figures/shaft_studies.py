@@ -1,6 +1,7 @@
 """
 validation/_support/figures/shaft_studies.py -- report figures for the
-shaft FEM validation cases (field comparison, convergence, shaft layout).
+shaft FEM validation cases (field comparison, convergence, shaft layout,
+fields along one shaft).
 
 Moved here on 2026-10-06 from the two copies of ``figures.py`` that lived in
 each case folder (the stepped-shaft copy, a superset of the uniform one, is
@@ -32,6 +33,8 @@ import matplotlib.ticker as mticker
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
+
+from validation._support.figures import _note, _stacked
 
 # kind -> default drawing (semantics of style/README.md); a Series may override line style and marker
 _KINDS = {
@@ -86,15 +89,11 @@ def _draw(ax, s: Series, **extra):
 
 
 def _supports(ax, positions: Sequence[float], names: Sequence[str]) -> None:
+    """Dotted verticals at the given positions; names just above the frame, off the data."""
     for x0, name in zip(positions, names):
         ax.axvline(x0, linestyle=":", linewidth=plt.rcParams["axes.linewidth"], zorder=0)
-        ax.annotate(name, xy=(x0, 0.98), xycoords=("data", "axes fraction"),
-                    xytext=(3, 0), textcoords="offset points", ha="left", va="top")
-
-
-def _note(fig: Figure, note: str | None) -> None:
-    if note:
-        fig.text(0.5, 0.0, note, ha="center", va="top", wrap=True)
+        ax.annotate(name, xy=(x0, 1.0), xycoords=("data", "axes fraction"),
+                    xytext=(0, 2), textcoords="offset points", ha="center", va="bottom")
 
 
 def field_comparison(series: Sequence[Series], deltas: Sequence[Series], *,
@@ -248,4 +247,73 @@ def shaft_layout(edges: Sequence[float], diameters: Sequence[float],
         a.text(0.02, 0.95, tag, transform=a.transAxes, va="top")
     fig.legend(*axq.get_legend_handles_labels(), loc="outside right upper")
     _note(fig, note)
+    return fig
+
+
+def shaft_fields(x_mm, v_mm, theta_xz_rad, theta_xy_rad, M_Nmm, sigma_b_MPa, *,
+                 bearings_mm: dict[str, float], gears_mm: dict[str, float] | None = None,
+                 R_N: Sequence[float] | None = None, note: str | None = None) -> Figure:
+    """Deflection, slopes, bending moment and bending stress along one shaft (4 stacked panels).
+
+    Shows where each field peaks relative to the bearings and the gear: the deflection at the gear
+    mesh, the slopes at the bearings (misalignment input of the bearing), the moment and the
+    nominal stress at the shoulders.
+
+    Parameters
+    ----------
+    x_mm : array_like
+        Node positions along the shaft [mm] (``ShaftResults.x``).
+    v_mm : array_like
+        Resultant transverse deflection ``hypot(v_xz, v_xy)`` per node [mm]; drawn in um.
+    theta_xz_rad, theta_xy_rad : array_like
+        Nodal rotation in the XZ and the XY plane [rad]; drawn in mrad, one line style per plane.
+        No resultant slope is drawn: the two plane rotations do not combine into one physical
+        angle without a plane of reference (FG-43).
+    M_Nmm : array_like
+        Resultant bending moment per node [N mm]; drawn in N m.
+    sigma_b_MPa : array_like
+        Nominal bending stress ``M / W`` per node [MPa]; at a change of section ``W`` is that of the
+        section to the right of the node (``ShaftResults`` Warnings), so the stress steps there.
+    bearings_mm, gears_mm : dict of str to float
+        Name -> axial position [mm] of each bearing and gear, drawn as dotted verticals named in
+        panel (a).
+    R_N : sequence of float, optional
+        Resultant support reaction per bearing [N], in the order of ``bearings_mm``; written in the
+        note line.
+    note : str, optional
+        Further text for the note line (shaft, beam theory, mesh).
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The caller closes it.
+
+    Notes
+    -----
+    FEM nodal values are numerical results: filled markers only, no connecting line (the element
+    interpolation between nodes is not drawn). Limit lines (allowable stress, slope limits) are not
+    drawn (FG-33). The caller may set equal y limits on figures to compare (``fig.axes[k]``).
+    """
+    x = np.asarray(x_mm, dtype=float)
+    panels = [  # (values in plot units, label, [(marker, direct label)])
+        ([np.asarray(v_mm, dtype=float) * 1e3], r"$|v|$ ($\mu$m)", [("o", None)]),                     # [mm] -> [um]
+        ([np.asarray(theta_xz_rad, dtype=float) * 1e3, np.asarray(theta_xy_rad, dtype=float) * 1e3],   # [rad] -> [mrad]
+         r"$\theta$ (mrad)", [("o", r"$\theta_{xz}$"), ("s", r"$\theta_{xy}$")]),
+        ([np.asarray(M_Nmm, dtype=float) * 1e-3], r"$M$ (N m)", [("o", None)]),                         # [N mm] -> [N m]
+        ([np.asarray(sigma_b_MPa, dtype=float)], r"$\sigma_b$ (MPa)", [("o", None)]),
+    ]
+    fig, axes = _stacked(len(panels))
+    marks = {**bearings_mm, **(gears_mm or {})}
+    for k, (ax, (ys, label, styles)) in enumerate(zip(axes, panels)):
+        for y, (marker, name) in zip(ys, styles):
+            ax.plot(x, y, linestyle="none", marker=marker)
+            if name:                                       # direct label beside the last node
+                ax.annotate(name, (x[-1], y[-1]), xytext=(6, 0), textcoords="offset points", va="center")
+        _supports(ax, list(marks.values()), list(marks) if k == 0 else [""] * len(marks))
+        ax.axhline(0.0, linewidth=plt.rcParams["axes.linewidth"])
+        ax.set_ylabel(label)
+    axes[-1].set_xlabel(r"$x$ (mm)")
+    reactions = ("" if R_N is None else
+                 "reactions " + ", ".join(rf"$R_\mathrm{{{name}}}$ = {r:.0f} N" for name, r in zip(bearings_mm, R_N)))
+    _note(fig, "; ".join(t for t in (note, reactions) if t))
     return fig

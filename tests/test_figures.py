@@ -201,3 +201,56 @@ def test_ld_plot_compare(ld_plots, saved, tmp_path):
     assert len(saved) == len(ld_plots.SUMMARY_METRICS)
     for fig in saved.values():
         assert_house_form(fig)
+
+
+# =============================================================================
+# bearing_plots and shaft_studies.shaft_fields
+# =============================================================================
+
+PHI = np.linspace(-math.pi, math.pi, 9, endpoint=False)       # 9 elements, local azimuth [rad]
+Q = np.clip(1000.0 * np.cos(PHI), 0.0, None)                  # loaded zone around phi = 0 [N]
+
+
+def test_sign_check_one_panel_per_load_direction():
+    """Two load directions, two bearings each (drawn over each other): two panels."""
+    from validation._support.figures import bearing_plots
+    phi_g = PHI % (2 * math.pi)
+    fig = bearing_plots.sign_check([[phi_g, phi_g]] * 2, [[Q, Q]] * 2, phi_Fr_rad=[0.0, 0.0],
+                                   phi_expected_rad=[math.pi, math.pi], series=["A", "B"], labels=["case 1", "case 2"])
+    assert_house_form(fig)
+    assert len(fig.axes) == 2 and bearing_plots.SIGN_CHECK_NOTE in fig.texts[-1].get_text()
+
+
+@pytest.mark.parametrize("kind, n_axes, text", [("ball, alpha drifts", 3, "floored at 0"),
+                                                ("ball, alpha constant", 2, "constant over the loaded zone"),
+                                                ("roller", 2, "loaded")])
+def test_element_loads_alpha_panel(kind, n_axes, text):
+    """The alpha panel only when alpha varies over the loaded zone; never for rollers."""
+    from validation._support.figures import bearing_plots
+    roller = kind == "roller"
+    delta = np.clip(1e-5 * Q, 0.0, None) - (2e-3 if roller else 0.0)       # roller: negative approach = gap [mm]
+    alpha = None if roller else 0.3 + (0.01 * np.cos(PHI) if "drifts" in kind else 0.0 * PHI)   # [rad]
+    fig = bearing_plots.element_loads(PHI, Q, delta_mm=delta, alpha_rad=alpha)
+    assert_house_form(fig)
+    assert len(fig.axes) == n_axes
+    note = fig.texts[-1].get_text()
+    assert f"loaded {int((Q > 0).sum())} of 9" in note and bearing_plots.A2_NOTE in note and text in note
+
+
+def test_contact_ellipses_two_races():
+    from validation._support.figures import bearing_plots
+    phi = np.concatenate([PHI[Q > 0]] * 2)
+    race = ["inner"] * int((Q > 0).sum()) + ["outer"] * int((Q > 0).sum())
+    p0 = np.concatenate([2e9 * np.ones((Q > 0).sum()), 1.6e9 * np.ones((Q > 0).sum())])     # [Pa]
+    fig = bearing_plots.contact_ellipses(phi, race, p0, 3e-4 + 0 * p0, 2.5e-3 + 0 * p0)
+    assert_house_form(fig)
+    assert len(fig.axes) == 3
+
+
+def test_shaft_fields():
+    x = np.linspace(0.0, 200.0, 11)                            # [mm]
+    fig = fg.shaft_fields(x, 1e-3 * np.sin(np.pi * x / 200), 1e-3 * np.cos(np.pi * x / 200), 0 * x,
+                          1e5 * np.sin(np.pi * x / 200), 50 * np.sin(np.pi * x / 200),
+                          bearings_mm={"A": 10.0, "B": 190.0}, gears_mm={"gear": 100.0}, R_N=[1000.0, 900.0])
+    assert_house_form(fig)
+    assert len(fig.axes) == 4 and "R_" in fig.texts[-1].get_text()

@@ -38,6 +38,8 @@ import math
 import pathlib
 from collections import defaultdict
 
+import matplotlib.pyplot as plt
+from IPython.display import display
 from axisforge.outputs._format import format_table, write_records_csv
 from axisforge.outputs.solvers.bearings.load_distribution.load_distribution_results import element_records
 from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.contact_solver import (
@@ -47,8 +49,12 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.con
 from references.contact.hertz import hertz_point
 from slippy_bridge.contact import contact_case, contacts
 from slippy_bridge.contact.outputs import rel_err
+from validation._support.figures import bearing_plots
+from validation._support.style import use_style
 
 import construction as cd
+
+use_style()                                       # house paper style (style/README.md)
 
 # the case folder: the script's own folder, or the working directory when run as a notebook
 HERE = pathlib.Path(__file__).resolve().parent if "__file__" in globals() else pathlib.Path.cwd()
@@ -71,6 +77,7 @@ RESULTS.mkdir(exist_ok=True)
 
 # %%
 contact_records, approach_records = [], []
+elements = {}                                             # case -> element_records (figures, section 4)
 for name, load in cd.LOADS.items():
     bearing = cd.build_bearing(load["s"])
     result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=load["Fr"], Fr_xy=0.0, Fa=load["Fa"],
@@ -91,7 +98,8 @@ for name, load in cd.LOADS.items():
             # r2[1] is the groove radius [m], concave (negative): its magnitude. s_y as an arc.
             "edge_angle_rad": alpha_j + judge["s_y_m"] / abs(c.case.r2[1]),
         })
-    for e in element_records(result):                     # AxisForge: delta_mm = approach of the two raceways
+    elements[name] = element_records(result)
+    for e in elements[name]:                              # AxisForge: delta_mm = approach of the two raceways
         if e["j"] in approach_alpha0_m:                   # loaded balls only
             approach_records.append({
                 "case": name, "solver_ok": bool(result.ok), "j": e["j"], "Q_N": e["Q_N"],
@@ -140,7 +148,36 @@ print(format_table(APPROACH_COLUMNS, approach_records))
 print(f"\nwritten: {(RESULTS / 'contacts.csv').relative_to(HERE)}, {(RESULTS / 'approach.csv').relative_to(HERE)}")
 
 # %% [markdown]
-# ## 4. The bearing in 3D: ball loads, Hertz pressures, contact angle (PyVista)
+# ## 4. Around the bearing: element loads and contact ellipses
+#
+# Per load case, against the local azimuth $\varphi_j$ (0 on the load line): ball load $Q_j$, total
+# approach $\delta_j$ and contact angle $\alpha_j$ (AxisForge), then $p_0$, $s_x$, $s_y$ per raceway
+# (Hertz on the bridge contacts, section 1). Written to `results/01_element_loads_<case>.png` and
+# `results/01_contact_ellipses_<case>.png`. The combined case has an axial load given directly to
+# the solver ($\psi = 0$, no shaft path): A2 (R-003, R-101) does not enter here; the stamp is kept
+# by rule.
+
+# %%
+for name, recs in elements.items():
+    fig = bearing_plots.element_loads([e["phi_rad"] for e in recs], [e["Q_N"] for e in recs],
+                                      delta_mm=[e["delta_mm"] for e in recs], alpha_rad=[e["alpha_rad"] for e in recs],
+                                      note=f"{name}; {bearing_plots.A2_NOTE}")
+    fig.savefig(RESULTS / f"01_element_loads_{name}.png")
+    display(fig)
+    plt.close(fig)
+
+# %%
+for name in elements:
+    rows = [r for r in contact_records if r["case"] == name]
+    fig = bearing_plots.contact_ellipses([r["phi_local_rad"] for r in rows], [r["race"] for r in rows],
+                                         [r["p0_Pa"] for r in rows], [r["s_x_m"] for r in rows],
+                                         [r["s_y_m"] for r in rows], note=f"{name}; {bearing_plots.A2_NOTE}")
+    fig.savefig(RESULTS / f"01_contact_ellipses_{name}.png")
+    display(fig)
+    plt.close(fig)
+
+# %% [markdown]
+# ## 5. The bearing in 3D: ball loads, Hertz pressures, contact angle (PyVista)
 #
 # `viz.bearing.bearing_scene` reads the bearing and its solved result directly and builds a scene
 # (`pyvista.MultiBlock`): rings revolved from their section, balls at `phi_j_global`, one enlarged
@@ -200,7 +237,7 @@ for name in ("radial_heavy", "combined"):
     display(Image(filename=str(VIZ / f"{name}_side_p0.png")))
 
 # %% [markdown]
-# ## 5. One contact solved with SlipPY: pressure against the Hertz ellipse (PyVista)
+# ## 6. One contact solved with SlipPY: pressure against the Hertz ellipse (PyVista)
 #
 # The most loaded ball of `radial_heavy` on the inner raceway, solved as a smooth dry static step
 # through the bridge (`slippy_bridge.contact.static_step.run`, bridge default grid and domain, a

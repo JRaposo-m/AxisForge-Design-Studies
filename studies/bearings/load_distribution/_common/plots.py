@@ -43,7 +43,7 @@ STYLE_PATH = Path(__file__).resolve().parents[4] / "style" / "axisforge.mplstyle
 
 # Same text as ``validation._support.figures.bearing_plots.A2_NOTE`` (a study cannot import
 # validation; one string twice until the A2 ruling, FG-34).
-A2_NOTE = "A2: global azimuth sign under review (R-003); phi_j local, 0 on the load line"
+A2_NOTE = r"A2: global direction of $\varphi_j = 0$ under review (R-003); $\varphi_j$ local, 0 on the load line"
 
 # series identity by marker and line style (the sheet's cycle adds the colour)
 KIND_STYLE = {

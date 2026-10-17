@@ -22,6 +22,8 @@ import matplotlib.ticker as mticker
 import numpy as np
 from matplotlib.figure import Figure
 
+from validation._support.figures import _note
+
 __all__ = ["convergence", "pressure_cuts"]
 
 _MARKERS = ("o", "s", "^", "D")            # one per quantity, resp. per build
@@ -127,7 +129,7 @@ def convergence(records: list[dict], out_png=None) -> Figure:
             if n_panels else "no series with 3 or more points: nothing to draw")
     if skipped:
         note += "; not drawn (< 3 points): " + ", ".join(skipped)
-    fig.text(0.5, 0.0, note, ha="center", va="top", wrap=True)
+    _note(fig, note)
     if out_png is not None:
         fig.savefig(out_png)
     return fig
@@ -196,7 +198,7 @@ def pressure_cuts(p: np.ndarray, grid, judge: dict, out_png=None) -> Figure:
              ("" if line else f", $y/s_y$ = {y_c:.3g}") +
              f"; Hertz (references.contact.hertz): $p_0$ = {p0 * 1e-6:.4g} MPa, $s_x$ = {s_x * 1e6:.4g} $\\mu$m" +
              ("" if line else f", $s_y$ = {s_y * 1e6:.4g} $\\mu$m"))
-    fig.text(0.5, 0.0, where, ha="center", va="top", wrap=True)
+    _note(fig, where)
     if out_png is not None:
         fig.savefig(out_png)
     return fig
