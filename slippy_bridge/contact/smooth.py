@@ -43,9 +43,11 @@ from axisforge.results._base import DC
 from .base import ContactCase
 from .reference import relative_radii, semi_axes
 
-__all__ = ["Grid", "pair"]
+__all__ = ["Grid", "pair", "SPAN_X_0"]
 
 _ids = itertools.count()       # SlipPY material names must be unique per process
+
+SPAN_X_0 = 4.0  # [-] half-lengths of s_x; R-055: the static BEM image error is -0.5 % in p0 at 4 (Grid.around)
 
 
 @dataclass(**DC)
@@ -101,7 +103,8 @@ class Grid:
                 raise ValueError(f"Grid: the step of {name} along axis {axis} is not h = {self.h}")
 
     @classmethod
-    def around(cls, case: ContactCase, h: float | None = None, span_x: float = 4.0, span_y: float = 1.3,
+    def around(cls, case: ContactCase, h: float | None = None,
+               span_x: float | tuple[float, float] = SPAN_X_0, span_y: float = 1.3,
                n_y_line: int = 16) -> Grid:
         """Grid around the contact centre, sized in Hertz semi-axes of ``case``.
 
@@ -110,9 +113,12 @@ class Grid:
         case : ContactCase
         h : float, optional
             Grid spacing [m]; rounded down to a power of two (never coarser). Default ``s_x / 10``.
-        span_x : float
+        span_x : float or (float, float)
             Domain half-length along rolling, in units of ``s_x`` [-] (not SlipPY's ``span``, which
-            is the size of the influence matrix in nodes). Not only EHL inlet room: SlipPY static BEM
+            is the size of the influence matrix in nodes). Default ``SPAN_X_0``. A tuple
+            ``(inlet, outlet)`` (planned, R-048) sizes the two sides apart, for the long inlet of an
+            EHL contact; it raises NotImplementedError today (OPEN R-048). Which side is the inlet
+            for a +x entrainment is OPEN R-073 (see the comment in the body). Not only EHL inlet room: SlipPY static BEM
             on a DGBB inner contact gave p0 -3.2 % at 2, -0.5 % at 4, +0.05 % at 8 (grid-independent),
             although the pressure is zero outside the contact. The cause is the periodic image
             loads of SlipPY's default frequency-domain kernel
@@ -128,6 +134,10 @@ class Grid:
         Grid
             ``X`` (rolling) varies along axis 0, ``Y`` along axis 1; centre on a node.
         """
+        # OPEN R-073: inlet side for +x entrainment inferred, not checked in SlipPY
+        if isinstance(span_x, tuple):
+            # OPEN R-048: (inlet, outlet) node counts and the origin on a node; GL-06 the centre is then not n//2
+            raise NotImplementedError("Grid.around(span_x=(inlet, outlet)): scaffold, OPEN R-048")
         s_x, s_y = semi_axes(case)
         h = 2.0 ** math.floor(math.log2(s_x / 10.0 if h is None else h))   # never coarser than asked
 

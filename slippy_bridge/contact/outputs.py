@@ -34,8 +34,9 @@ def _semi_axis(p_cut: np.ndarray, h: float, i0: int, thr: float) -> float:
     return (edges[0] - edges[1]) / 2.0
 
 
-def measure(p: np.ndarray, h: float, line: bool = False) -> dict:
-    """Measure a pressure field on the bridge grid (rolling along axis 0).
+def measure(p: np.ndarray, h: float, line: bool = False, *, gap: np.ndarray | None = None,
+            X: np.ndarray | None = None, Y: np.ndarray | None = None) -> dict:
+    """Measure a pressure field (and, for a lubricated contact, its film) on the bridge grid.
 
     Parameters
     ----------
@@ -45,18 +46,36 @@ def measure(p: np.ndarray, h: float, line: bool = False) -> dict:
         Grid spacing [m].
     line : bool
         Line contact (periodic along axis 1): ``s_y_m`` is ``inf``.
+    gap : ndarray, optional
+        Film thickness (the gap between the deformed surfaces) on the same nodes [m], from an EHL
+        solve. None (dry contact): only the pressure keys are returned, exactly as before.
+    X, Y : ndarray, optional
+        Node coordinates of the grid [m] (``Grid.X``, ``Grid.Y``); with ``gap``, they locate the
+        contact centre and the minimum film.
 
     Returns
     -------
     dict
         ``p0_Pa``, ``s_x_m`` and ``s_y_m`` (semi-axes along and across rolling), ``load_N``,
-        ``apex_offset_nodes`` (pressure maximum vs grid centre).
+        ``apex_offset_nodes`` (pressure maximum vs grid centre). With ``gap`` (planned, R-033):
+        ``h_c_m``, the central film at the node where ``X == 0`` and ``Y == 0`` (raise if there is
+        none: an asymmetric inlet/outlet domain no longer has its centre at node n//2, GL-06);
+        ``h_min_m = gap.min()``, the minimum film (in the outlet constriction of an EHL contact);
+        ``x_h_min_m``, ``y_h_min_m``, its position (``y_h_min_m`` is ``nan`` for a line).
+
+    Raises
+    ------
+    NotImplementedError
+        If ``gap`` is given: scaffold (OPEN R-033 R-048 GL-06).
     """
+    if gap is not None:
+        raise NotImplementedError("measure(gap=...): scaffold, OPEN R-033 R-048 GL-06")
     p = np.asarray(p, dtype=float)
     i0, j0 = np.unravel_index(int(np.argmax(p)), p.shape)
     thr = 1e-6 * p[i0, j0]
     s_x = _semi_axis(p[:, j0], h, i0, thr)
     s_y = math.inf if line else _semi_axis(p[i0, :], h, j0, thr)
+    # OPEN R-048 GL-06: the centre is node n//2 only for a symmetric span_x (Grid.around); not for (inlet, outlet)
     c0, c1 = p.shape[0] // 2, p.shape[1] // 2
     offset = abs(i0 - c0) if line else math.hypot(i0 - c0, j0 - c1)
     return {"p0_Pa": float(p[i0, j0]), "s_x_m": s_x, "s_y_m": s_y, "load_N": float(p.sum() * h**2),
