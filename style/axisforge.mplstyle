@@ -1,72 +1,78 @@
-# AxisForge -- matplotlib style for report figures (PROVISIONAL location).
-# One file decides how every figure looks; plotting functions only pass data.
-# Load with: matplotlib.pyplot.style.use("<path>/axisforge.mplstyle")
-#
-# Sizing: 6.3 in wide = A4 text width (160 mm). Fonts are sized for that
-# width at 100 % scale -- do not rescale figures in the document.
+# AxisForge -- house paper style for report and thesis figures (accepted by Jose 2026-10-17).
+# Derived from the classic contact/EHL papers (Johnson 1985, Venner & Bos 1994, Nijenbanning 1994,
+# Polonsky & Keer 1999, Mueser 2017). One file decides how every figure looks; figure functions
+# only pass data. Load with: matplotlib.pyplot.style.use("<repo>/style/axisforge.mplstyle")
+# Semantics (set per plot, not here): numerical result = filled markers; formula/theory = lines
+# (own solid, others dashed/dotted); published/experiment = open markers. Colour never carries
+# identity alone. See style/README.md.
 
-# --- figure / export --------------------------------------------------------
-figure.figsize      : 6.3, 3.4
+# --- figure / export ---
+figure.figsize      : 5.9, 3.7        # 150 x 95 mm full width; single column 3.15 x 2.45 in
 figure.dpi          : 110
 figure.constrained_layout.use : True
 savefig.dpi         : 300
 savefig.format      : pdf
 savefig.bbox        : tight
 savefig.pad_inches  : 0.02
-pdf.fonttype        : 42          # embed TrueType -> text stays editable/searchable
+pdf.fonttype        : 42
 svg.fonttype        : none
 
-# --- typography: serif text + STIX maths (shipped with matplotlib) ---------------
+# --- typography ---
 font.family         : serif
-font.serif          : STIXGeneral, DejaVu Serif
+font.serif          : STIX Two Text, STIXGeneral, Times New Roman, DejaVu Serif
 mathtext.fontset    : stix
 font.size           : 9
 axes.titlesize      : 9
-axes.titleweight    : bold
-axes.titlelocation  : left
+axes.titleweight    : normal          # no bold titles: captions live in LaTeX
 axes.labelsize      : 9
 legend.fontsize     : 8
 xtick.labelsize     : 8
 ytick.labelsize     : 8
 
-# --- colour: validated categorical order (CVD-checked); never cycle past 4 -------
-# 1 blue, 2 orange, 3 aqua, 4 yellow. Slots 3-4 are < 3:1 vs white, so every
-# series also gets its own line style (set per plot) and a legend.
-axes.prop_cycle     : cycler('color', ['2a78d6', 'eb6834', '1baf7a', 'eda100'])
-text.color          : 1f1f1e
-axes.labelcolor     : 1f1f1e
-axes.edgecolor      : 6b6b66
-xtick.color         : 6b6b66
-ytick.color         : 6b6b66
+# --- colour: black first (reference / own result), then 4 dark CVD-checked hues ---
+# validated 2026-10-17 (validate_palette.js, light): 2a5caa, c4561b, 178a73, 8a4fa8 all PASS
+axes.prop_cycle     : cycler('color', ['000000', '2a5caa', 'c4561b', '178a73', '8a4fa8']) + cycler('linestyle', ['-', '--', '-.', ':', (0, (5, 1, 1, 1, 1, 1))])
+text.color          : 000000
+axes.labelcolor     : 000000
+axes.edgecolor      : 000000
+xtick.color         : 000000
+ytick.color         : 000000
 
-# --- axes: recessive frame and grid -------------------------------------------
-axes.spines.top     : False
-axes.spines.right   : False
+# --- axes: closed box, inward ticks on four sides, minor ticks, no grid ---
+axes.spines.top     : True
+axes.spines.right   : True
 axes.linewidth      : 0.6
-axes.grid           : True
-axes.grid.which     : major
-grid.color          : d9d9d4
-grid.linewidth      : 0.5
-grid.linestyle      : -
+axes.grid           : False
 axes.axisbelow      : True
 axes.formatter.use_mathtext : True
 axes.formatter.limits : -3, 4
-xtick.direction     : out
-ytick.direction     : out
-xtick.major.size    : 3
-ytick.major.size    : 3
+xtick.direction     : in
+ytick.direction     : in
+xtick.top           : True
+ytick.right         : True
+xtick.major.size    : 3.5
+ytick.major.size    : 3.5
 xtick.major.width   : 0.6
 ytick.major.width   : 0.6
-xtick.minor.visible : False
-ytick.minor.visible : False
+xtick.minor.visible : True
+ytick.minor.visible : True
+xtick.minor.size    : 2
+ytick.minor.size    : 2
+xtick.minor.width   : 0.5
+ytick.minor.width   : 0.5
 
-# --- marks -----------------------------------------------------------------
-lines.linewidth     : 1.4
+# --- marks ---
+lines.linewidth     : 1.0
+lines.color         : 000000          # lines without a colour, and contours drawn with colors=rcParams["lines.color"]
 lines.markersize    : 4
+lines.markeredgewidth : 0.7
 lines.solid_capstyle: round
 errorbar.capsize    : 2
+contour.linewidth   : 0.6
+contour.negative_linestyle : dashed
+image.cmap          : cividis
 
-# --- legend ------------------------------------------------------------------
+# --- legend: frameless, prefer direct labels ---
 legend.frameon      : False
-legend.handlelength : 2.4
+legend.handlelength : 2.0
 legend.borderaxespad: 0.3

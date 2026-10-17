@@ -12,6 +12,10 @@ import importlib.util
 import pathlib
 import sys
 
+import matplotlib
+
+matplotlib.use("Agg")       # tests write files only; set before anything imports pyplot
+
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
