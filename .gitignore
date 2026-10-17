@@ -16,5 +16,7 @@ dist/
 # Generated output of a study or validation case: results/ next to it (D-0020).
 studies/**/results/
 validation/**/results/
+# Study figures written next to the study type (load_distribution), also generated (R-147).
+studies/**/plots/
 # Old location, still used by examples/.
 /artifacts/
