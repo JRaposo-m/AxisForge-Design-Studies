@@ -130,7 +130,7 @@ for name in ("C40", "H501"):
     t = np.union1d(np.linspace(0.0, named["E"], N_DENSE), list(named.values()))   # sorted, one-sided times kept
     points = FAMILY.path_points(p, DRIVER)
     # mathtext without spaces: the wrapped note line never breaks inside "F_bn = 6371 N"
-    note = rf"{name}, {STAGE}, $n_1={n1:.0f}\,\mathrm{{rpm}}$, $F_{{bn}}={F_bn_N:.0f}\,\mathrm{{N}}$, {DRIVER} drives"
+    note = rf"{name}, {STAGE}, $n_1={n1:.0f}\,\mathrm{{rpm}}$, $F_{{bn}}={F_bn_N:.0f}\,\mathrm{{N}}$, gear {DRIVER[-1]} drives"
     helical = p.gear1.betab != 0.0
     if helical:                                   # B and D bound no single-contact zone (GL-25)
         points = {k: points[k] for k in "ACE"}

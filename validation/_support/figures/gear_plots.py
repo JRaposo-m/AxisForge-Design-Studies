@@ -287,11 +287,11 @@ def line_of_action(T1C_mm: float, T1T2_mm: float, rb1_mm: float, rb2_mm: float, 
                                               (-half_arrow, 0.0, half_arrow)))
     arrow = (C + side * 0.06 * span * n - half_arrow * e, C + side * 0.06 * span * n + half_arrow * e)
 
-    def place(ax, text, p, directions, d, segments, points):
-        """Write ``text`` at distance d from p, in the candidate direction with the most clearance."""
-        u = max(directions, key=lambda v: clearance(p + d * v, segments, points))
-        ax.text(*(p + d * u), text, ha="center", va="center")
-        return p + d * u
+    def best(p, directions, d, segments, points, labels=()):
+        """Position at distance d from p, in the candidate direction with the most clearance; another label
+        counts as a disc of radius d (its text), so that two names never share a gap between two points."""
+        return max((p + d * v for v in directions),
+                   key=lambda q: min([clearance(q, segments, points), *(np.linalg.norm(q - b) - d for b in labels)]))
 
     compass = [np.array([np.cos(a), np.sin(a)]) for a in np.linspace(0.0, 2.0 * np.pi, 8, endpoint=False)]
     fig, axes = plt.subplots(1, 2)
@@ -320,20 +320,27 @@ def line_of_action(T1C_mm: float, T1T2_mm: float, rb1_mm: float, rb2_mm: float, 
             d = 0.07 * span                                  # label distance in (b)
         for name, xy in (("T1", T1), ("T2", T2)):
             ax.plot(*xy, linestyle="none", marker="+", color=ink)
-            place(ax, name, xy, compass, d, [line, (O1, O2)], [T1, T2])
+            ax.text(*best(xy, compass, d, [line, (O1, O2)], [T1, T2]), name, ha="center", va="center")
         ax.set_aspect("equal", adjustable="box")             # both square: same size, tags at one height
         ax.set_xlabel(r"$x$ (mm)")
         ax.set_ylabel(r"$y$ (mm)")
         _tag(ax, f"({'ab'[k]})")
     # (b) only: the named points (computed positions, filled markers), their names, the g_y arrow
-    taken = list(at.values())
-    for name in sorted(s, key=s.get):
+    # names off the line: across it, or across and along it (where a circle crowds the straight position);
+    # placed along the path, then once more knowing every other name (a later name may crowd an earlier one)
+    off = [n, -n, *(v / np.linalg.norm(v) for v in (n + e, n - e, -n + e, -n - e))]
+    order = sorted(s, key=s.get)
+    label_at = {}
+    for _ in range(2):
+        for name in order:
+            label_at[name] = best(at[name], off, d, [line, arrow], list(at.values()),
+                                  [q for other, q in label_at.items() if other != name])
+    for name in order:
         axes[1].plot(*at[name], linestyle="none", marker="o", color=ink)
-        # off the line: across it, or across and along it (where a circle crowds the straight position)
-        off = [n, -n, *(v / np.linalg.norm(v) for v in (n + e, n - e, -n + e, -n - e))]
-        taken.append(place(axes[1], name, at[name], off, d, [line, arrow], taken))
+        axes[1].text(*label_at[name], name, ha="center", va="center")
     axes[1].annotate("", xy=arrow[1], xytext=arrow[0], arrowprops=dict(arrowstyle="->", color=ink))
-    place(axes[1], r"$g_y$", arrow[1], compass, 0.05 * span, [line, arrow], taken)
+    axes[1].text(*best(arrow[1], compass, 0.05 * span, [line, arrow], list(at.values()), list(label_at.values())),
+                 r"$g_y$", ha="center", va="center")
     kind = (r"internal pair ($T_1T_2$ < 0): ring centre O2 on the side of O1" if internal
             else r"external pair ($T_1T_2$ > 0)")
     meaning = {"A": "A: start of meshing", "B": "B, D: limits of single tooth contact", "C": "C: pitch point",
@@ -405,6 +412,7 @@ def load_stages(published: dict, computed: dict, *, quantity: str, unit: str) ->
         ax.plot([x[k] for k in computed], list(computed.values()), linestyle="none", marker="o", label="computed")
     if published:                                            # open circle around the computed marker, same x
         ax.plot([x[k] for k in published], list(published.values()), linestyle="none", marker="o", mfc="none",
+                color=plt.rcParams["lines.color"],
                 markersize=2.0 * plt.rcParams["lines.markersize"], label="published")
     ax.set_ylim(bottom=0.0)
     ax.set_ylabel(f"{quantity} ({unit})")

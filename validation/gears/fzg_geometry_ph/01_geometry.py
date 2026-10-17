@@ -121,7 +121,7 @@ write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
 half = 1.05 * max(0.5 * (p.al + p.gear1.da / 2 + p.gear2.da / 2) for p in (C40, H501))
 y_mid = 0.5 * max(p.al + p.gear2.da / 2 - p.gear1.da / 2 for p in (C40, H501))
 for pair in (C40, H501):
-    points, note = FAMILY.path_points(pair, DRIVER), f"{pair.label}, {DRIVER} drives"
+    points, note = FAMILY.path_points(pair, DRIVER), f"{pair.label}, gear {DRIVER[-1]} drives"
     if pair.gear1.betab != 0.0:                   # helical: B and D bound no single-contact zone (GL-25)
         points = {k: points[k] for k in "ACE"}
         note = "B, D not shown (helical, GL-25); " + note
