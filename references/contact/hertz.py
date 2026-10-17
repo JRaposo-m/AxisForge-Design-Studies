@@ -2,7 +2,13 @@
 
 It judges both AxisForge (``PointContactStiffness``, ISO/TS 16281) and SlipPY (``hertz_full``),
 so it shares no code with either: only NumPy and SciPy are imported, and the formulas are those of
-Johnson, Contact Mechanics (1985), ch. 4 (Hertz).
+Johnson, Contact Mechanics (1985), ch. 3-4 (Hertz).
+
+Symbols. The bridge names are used: ``s_x`` is the semi-axis along rolling (``x``), ``s_y`` across
+it (``y``), depth ``z`` into the body, and ``s_min = min(s_x, s_y)``. Johnson and Harris write ``a``
+for the major and ``b`` for the minor semi-axis; for a line contact and for a circle ``s_min`` is
+Johnson's ``a`` (semi-width, resp. radius), so ``z/s_min`` is his ``z/a``. On a ball-raceway contact
+``s_x`` is the minor semi-axis ``b``.
 """
 from __future__ import annotations
 
@@ -12,7 +18,7 @@ import numpy as np
 from scipy.optimize import brentq
 from scipy.special import ellipk, elliprd
 
-__all__ = ["hertz_point", "hertz_line"]
+__all__ = ["hertz_point", "hertz_line", "hertz_pressure", "hertz_line_stress", "hertz_point_axis_stress"]
 
 
 def hertz_point(r1, r2, E, nu, load) -> dict:
@@ -193,3 +199,155 @@ def hertz_line(r1, r2, E, nu, w) -> dict:
     s_x = math.sqrt(4.0 * w / (math.pi * k_x * e_star))             # Eq. (4.43), R = 1/k_x
     p0 = 2.0 * w / (math.pi * s_x)                                    # Eq. (4.45), w = (pi/2) s_x p0
     return {"s_x_m": s_x, "s_y_m": math.inf, "p0_Pa": p0}
+
+
+def hertz_pressure(judge: dict, x_m, y_m=0.0) -> np.ndarray:
+    """Hertz contact pressure at surface points, from a solved contact.
+
+    ``p = p0 sqrt(1 - (x/s_x)^2 - (y/s_y)^2)`` inside the contact, 0 outside: the ellipsoidal
+    pressure of a point contact (Johnson 1985, ch. 4); for a line contact (``s_y`` infinite) the
+    ``y`` term vanishes and ``p = p0 sqrt(1 - (x/s_x)^2)`` (Eq. (4.41)-(4.45)).
+
+    Parameters
+    ----------
+    judge : dict
+        Result of :func:`hertz_point` or :func:`hertz_line`: ``p0_Pa`` [Pa], ``s_x_m``, ``s_y_m`` [m].
+    x_m, y_m : array_like
+        Surface coordinates along rolling and across it, from the contact centre [m]; broadcast.
+
+    Returns
+    -------
+    ndarray
+        Pressure [Pa], the broadcast shape of ``x_m`` and ``y_m``.
+
+    Notes
+    -----
+    A separate function, not a ``pressure`` callable in the result dict: callers spread the dict
+    into CSV records (``validation/bearings/iso16281_ball_contact/01_contacts_vs_hertz.py``).
+
+    Examples
+    --------
+    >>> ref = hertz_point(6.35e-3, math.inf, 210e9, 0.3, 500.0)
+    >>> float(hertz_pressure(ref, 0.0)) == ref["p0_Pa"], float(hertz_pressure(ref, 2 * ref["s_x_m"]))
+    (True, 0.0)
+    """
+    p0, s_x, s_y = judge["p0_Pa"], judge["s_x_m"], judge["s_y_m"]
+    x, y = np.broadcast_arrays(np.asarray(x_m, dtype=float), np.asarray(y_m, dtype=float))
+    rho2 = (x / s_x) ** 2 + (0.0 if math.isinf(s_y) else (y / s_y) ** 2)   # 1/inf: line contact
+    return p0 * np.sqrt(np.clip(1.0 - rho2, 0.0, None))
+
+
+def hertz_line_stress(x_over_s_x, z_over_s_x) -> dict:
+    """Stresses in the body under a Hertz line contact (McEwen's closed form), over ``p0``.
+
+    The elliptical pressure ``p = p0 sqrt(1 - (x/a)^2)`` on an elastic half-space in plane strain,
+    frictionless. With ``m``, ``n`` defined by
+    ``m^2 = (sqrt((a^2 - x^2 + z^2)^2 + 4 x^2 z^2) + (a^2 - x^2 + z^2)) / 2`` and
+    ``n^2 = (sqrt(...) - (a^2 - x^2 + z^2)) / 2`` (signs of ``m`` and ``n`` those of ``z`` and ``x``)::
+
+        sigma_x = -(p0/a) [m (1 + (z^2 + n^2)/(m^2 + n^2)) - 2 z]
+        sigma_z = -(p0/a) m (1 - (z^2 + n^2)/(m^2 + n^2))
+        tau_xz  = -(p0/a) n (m^2 - z^2)/(m^2 + n^2)
+
+    Parameters
+    ----------
+    x_over_s_x : array_like
+        Position along rolling over the semi-width ``s_x`` (Johnson's ``a``) [-].
+    z_over_s_x : array_like
+        Depth into the body over ``s_x`` [-], ``>= 0``. Broadcast with ``x_over_s_x``.
+
+    Returns
+    -------
+    dict of ndarray
+        ``sigma_x_over_p0``, ``sigma_z_over_p0`` (compressive negative), ``tau_xz_over_p0``
+        (negative for ``x > 0``, sign opposite to ``x``, as Johnson's Appendix 4 table 3 ``-/+``
+        prints it; the field satisfies the equilibrium equations ``d sigma_x/dx + d tau_xz/dz = 0``,
+        ``d tau_xz/dx + d sigma_z/dz = 0`` with this sign) and ``tau1_over_p0`` = in-plane maximum shear
+        ``sqrt(((sigma_x - sigma_z)/2)^2 + tau_xz^2)``. The out-of-plane ``sigma_y = nu (sigma_x +
+        sigma_z)`` is not returned; near the surface (``z < ~0.4 a``) it can be a principal stress
+        that makes the 3-D maximum shear larger than ``tau1``.
+
+    Raises
+    ------
+    ValueError
+        If a depth is negative (the formula is for the body, ``z >= 0``).
+
+    Notes
+    -----
+    On the axis ``x = 0``: ``sigma_z = -p0 a (a^2 + z^2)^(-1/2)`` (Eq. (4.46b) as corrected by
+    Appendix 4; the print is dimensionally wrong) and ``tau1 = p0 (z/a - (z/a)^2 (1 + (z/a)^2)^(-1/2))``,
+    maximum 0.300 ``p0`` at ``z = 0.786 a``. At the surface edge ``x = +-a``, ``z = 0`` the formula
+    is 0/0; the limit, 0, is returned.
+
+    References
+    ----------
+    McEwen (1949), as given by Johnson, Contact Mechanics (1985), Sec. 4.2(c): axis stresses
+    Eqs (4.46)-(4.48a) (PDF 112), field Eqs (4.48b)-(4.49c) (PDF 113-114); Appendix 4 tables
+    1-3 (PDF 439-440) for printed values.
+    """
+    x, z = np.broadcast_arrays(np.asarray(x_over_s_x, dtype=float), np.asarray(z_over_s_x, dtype=float))
+    if np.any(z < 0.0):
+        raise ValueError("hertz_line_stress: depth z/s_x must be >= 0 (into the body)")
+    A = 1.0 - x**2 + z**2                                      # (a^2 - x^2 + z^2) / a^2
+    root = np.sqrt(A**2 + 4.0 * x**2 * z**2)
+    m = np.sqrt(0.5 * (root + A))                              # sign of z: z >= 0
+    n = np.sign(x) * np.sqrt(np.maximum(0.5 * (root - A), 0.0))   # sign of x; max(): round-off below 0
+    den = m**2 + n**2                                          # 0 only at the surface edge x = +-a, z = 0
+    safe = np.where(den > 0.0, den, 1.0)
+    q = np.where(den > 0.0, (z**2 + n**2) / safe, 0.0)
+    sigma_x = -(m * (1.0 + q) - 2.0 * z)
+    sigma_z = -m * (1.0 - q)
+    tau_xz = np.where(den > 0.0, -n * (m**2 - z**2) / safe, 0.0)   # sign opposite to x (equilibrium)
+    tau1 = np.sqrt((0.5 * (sigma_x - sigma_z)) ** 2 + tau_xz**2)
+    return {"sigma_x_over_p0": sigma_x, "sigma_z_over_p0": sigma_z, "tau_xz_over_p0": tau_xz,
+            "tau1_over_p0": tau1}
+
+
+def hertz_point_axis_stress(z_over_s, nu) -> dict:
+    """Stresses on the axis ``r = 0`` under a circular Hertz contact, over ``p0``.
+
+    The ellipsoidal pressure ``p = p0 sqrt(1 - (r/a)^2)`` on an elastic half-space (circular
+    contact of radius ``a``), frictionless. On the axis, with ``zeta = z/a``::
+
+        sigma_r = sigma_theta = p0 [-(1 + nu)(1 - zeta atan(1/zeta)) + 1/(2 (1 + zeta^2))]
+        sigma_z = -p0 / (1 + zeta^2)
+
+    These are principal stresses there, so ``tau1 = |sigma_z - sigma_r| / 2``.
+
+    Parameters
+    ----------
+    z_over_s : array_like
+        Depth into the body over the contact radius ``a`` (= ``s_x`` = ``s_y`` = ``s_min``) [-],
+        ``>= 0``.
+    nu : float
+        Poisson's ratio of the body [-].
+
+    Returns
+    -------
+    dict of ndarray
+        ``sigma_r_over_p0``, ``sigma_z_over_p0`` (compressive negative) and ``tau1_over_p0``.
+        At the surface ``sigma_z = -1`` and ``sigma_r = -(1 + 2 nu)/2``.
+
+    Raises
+    ------
+    ValueError
+        If a depth is negative.
+
+    Notes
+    -----
+    Circular contacts only: for an elliptical contact the axis stresses depend on the
+    eccentricity (Johnson Sec. 4.2(b)) and are not given here (OPEN FG-09). For ``nu = 0.3`` the
+    maximum of ``tau1`` is about 0.31 ``p0`` at ``z = 0.48 a``. ``zeta atan(1/zeta)`` is written
+    with ``arctan2(1, zeta)`` so that the surface value is finite (as in
+    ``validation/contact/hertz_point_grid_domain/02_subsurface.py``, ``tau1_johnson``).
+
+    References
+    ----------
+    Johnson, Contact Mechanics (1985), Eq. (3.45) (PDF 72).
+    """
+    zeta = np.asarray(z_over_s, dtype=float)
+    if np.any(zeta < 0.0):
+        raise ValueError("hertz_point_axis_stress: depth z/s must be >= 0 (into the body)")
+    sigma_r = -(1.0 + nu) * (1.0 - zeta * np.arctan2(1.0, zeta)) + 0.5 / (1.0 + zeta**2)
+    sigma_z = -1.0 / (1.0 + zeta**2)
+    return {"sigma_r_over_p0": sigma_r, "sigma_z_over_p0": sigma_z, "tau1_over_p0": 0.5 * np.abs(sigma_z - sigma_r)}
