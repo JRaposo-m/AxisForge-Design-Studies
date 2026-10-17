@@ -321,3 +321,95 @@ def test_note_never_breaks_inside_mathtext():
     text = r"a long note with $\tau_{1,\max} = 0.300\,p_0$ at $z = 0.785\,s_\mathrm{min}$ and more words to wrap"
     for line in _wrap(text, 20).split("\n"):
         assert line.count("$") % 2 == 0, line
+
+
+# =============================================================================
+# gear_plots
+# =============================================================================
+from validation._support.figures import gear_plots  # noqa: E402
+
+POINTS = {"A": -9.0, "B": -2.5, "C": 0.0, "D": 4.0, "E": 10.5}  # g_y [mm], spur-like, gear 1 driving
+
+
+def _path_record():
+    """A synthetic contact_inputs record: dense g_y plus the one-sided B-/B+, D-/D+ steps (1e-6 mm)."""
+    g = np.sort(np.concatenate([np.linspace(POINTS["A"], POINTS["E"], 101),
+                                [POINTS["B"] - 1e-6, POINTS["B"] + 1e-6, POINTS["D"] - 1e-6, POINTS["D"] + 1e-6]]))
+    rho1, rho2 = 14.0 + g, 21.0 - g                                        # [mm], C at g_y = 0
+    share = np.where((g > POINTS["B"]) & (g < POINTS["D"]), 1.0, 0.5)    # single contact between B and D
+    u1, u2 = 0.3 * rho1, 0.2 * rho2                                         # [m/s]
+    return {"g_y_mm": g, "rho1_n_mm": rho1, "rho2_n_mm": rho2, "rho_red_n_mm": rho1 * rho2 / (rho1 + rho2),
+            "u1_m_per_s": u1, "u2_m_per_s": u2, "ue_m_per_s": 0.5 * (u1 + u2), "vg_m_per_s": u1 - u2,
+            "share": share, "w_N_per_mm": 25.0 * share}
+
+
+@pytest.mark.parametrize("p0", [False, True])
+def test_path_of_contact_two_figures(p0):
+    rec = _path_record()
+    p0_Pa = 1e9 * np.sqrt(rec["share"]) if p0 else None                    # synthetic only (OPEN R-022)
+    kin, load = gear_plots.path_of_contact(rec, POINTS, p0_Pa=p0_Pa, note="synthetic", kinematics_note="mid-face",
+                                           load_note="whole line")
+    for fig in (kin, load):
+        assert_house_form(fig)
+        assert "synthetic" in fig.texts[-1].get_text()
+    assert "mid-face" in kin.texts[-1].get_text() and "mid-face" not in load.texts[-1].get_text()
+    assert "whole line" in load.texts[-1].get_text() and "whole line" not in kin.texts[-1].get_text()
+    assert len(kin.axes) == 3 and len(load.axes) == (3 if p0 else 2)
+
+    def near_B(line):
+        x = np.asarray(line.get_xdata())[line.get_markevery()]
+        return int(np.sum(np.abs(x - POINTS["B"]) < 0.05))           # within half a grid step of B
+
+    # load: both one-sided steps at B keep their marker, joined by a vertical connector; kinematics: B once
+    assert near_B(load.axes[0].lines[0]) == 2
+    assert any(np.ptp(ln.get_xdata()) < 1e-3 and np.ptp(ln.get_ydata()) == 0.5 for ln in load.axes[0].lines)
+    assert near_B(kin.axes[0].lines[0]) == 1
+
+
+def test_path_of_contact_names_the_missing_keys():
+    rec = _path_record()
+    del rec["vg_m_per_s"], rec["share"]
+    with pytest.raises(KeyError, match="vg_m_per_s.*share"):
+        gear_plots.path_of_contact(rec, POINTS)
+
+
+@pytest.mark.parametrize("T1T2_mm, kind", [(34.93, "external"), (-34.93, "internal")])
+def test_line_of_action_external_and_internal(T1T2_mm, kind):
+    """C40-like numbers (rb 33.83/50.74 mm, ra 40.5/58.0 mm, T1C 13.97 mm); the sign of T1T2 alone makes the
+    pair internal (ring: rb2 - rb1 = a_w cos(alpha_wt), tip circle 5 mm outside its base circle)."""
+    alpha = np.arctan(13.97 / 33.83)
+    rb2 = 50.74 if kind == "external" else 33.83 + 91.5 * np.cos(alpha)
+    ra2 = 58.0 if kind == "external" else rb2 + 5.0
+    fig = gear_plots.line_of_action(13.97, T1T2_mm, 33.83, rb2, 40.5, ra2, alpha, {**POINTS, "B-": -2.5, "B+": -2.5})
+    assert_house_form(fig)
+    assert kind in fig.texts[-1].get_text()
+    assert len(fig.axes[0].lines) >= 4                                 # two base and two tip circles
+    assert "$g_y$" in {t.get_text() for t in fig.axes[1].texts}        # direction of the path figures' abscissa
+    assert len(fig.axes) == 2                                          # (a) whole pair, (b) path zoomed
+    assert {t.get_text() for t in fig.axes[1].texts} >= {"A", "B", "C", "D", "E"}   # B-/B+ drawn as one B
+    assert {t.get_text() for t in fig.axes[0].texts} >= {"O1", "O2", "T1", "T2"}
+    assert not {"A", "C", "E"} & {t.get_text() for t in fig.axes[0].texts}   # (a): the pair only, points in (b)
+
+
+def test_line_of_action_takes_common_limits_and_defines_only_the_points_given():
+    alpha = np.arctan(13.97 / 33.83)
+    fig = gear_plots.line_of_action(13.97, 34.93, 33.83, 50.74, 40.5, 58.0, alpha,
+                                    {k: POINTS[k] for k in "ACE"}, limits_mm=(-100.0, 100.0, -50.0, 150.0))
+    assert fig.axes[0].get_xlim() == (-100.0, 100.0) and fig.axes[0].get_ylim() == (-50.0, 150.0)
+    assert "B, D" not in fig.texts[-1].get_text()
+
+
+def test_load_stages_union_of_keys():
+    published = {("K5", "C40"): 790.0, ("K9", "C40"): 2432.0, ("K1", "H501/951"): 37.0}
+    computed = {("K5", "C40"): 789.8, ("K7", "C40"): 1495.2}
+    fig = gear_plots.load_stages(published, computed, quantity=r"$F_r$", unit="N")
+    assert_house_form(fig)
+    assert len(fig.axes) == 2                                          # (a) values, (b) deviation in %
+    assert [t.get_text() for t in fig.axes[-1].get_xticklabels()] == ["K5", "K7", "K9", "K1"]
+    assert fig.axes[0].get_ylabel() == "$F_r$ (N)"
+    deviation, = [ln.get_ydata() for ln in fig.axes[1].lines if ln.get_marker() == "o"]   # only K5 C40 on both sides
+    assert len(deviation) == 1 and deviation[0] == pytest.approx(100.0 * (789.8 - 790.0) / 790.0)
+    single = gear_plots.load_stages(published, {("K7", "C40"): 1495.2}, quantity=r"$F_r$", unit="N")
+    assert len(single.axes) == 1                                       # nothing on both sides: no empty panel
+    with pytest.raises(ValueError):
+        gear_plots.load_stages({}, {}, quantity="$F_r$", unit="N")

@@ -28,19 +28,25 @@
 # P1, Jose's V-GEAR-04 criterion, is the load-ratio test p_H(K7)/p_H(K5), p_H(K9)/p_H(K5): it proves the stage
 # torques and p ~ sqrt(w) only, and is blind to the geometry, the point, E and the driver. p_H at A, B+ and C
 # is recorded only (P2): 498 MPa at A, half load, pinion driving is the R-117 hypothesis, not a criterion.
-# Spur only (R-027). `--smoke`: point A only.
+# Criteria P0-P2: spur C40 only (R-027); section 3 also draws H501 (figures, mid-face section). `--smoke`: point A
+# only.
 
 # %%
 import sys
 
+import matplotlib.pyplot as plt
+import numpy as np
 from axisforge.outputs._format import format_table, read_records_csv, write_records_csv
 from axisforge.solvers.machine_elements.gears.contact import contact_inputs       # c328999 only (GL-01)
 
 from slippy_bridge.contact import contacts, hertz
 from slippy_bridge.contact.outputs import rel_err
+from validation._support.figures.gear_plots import load_stages, path_of_contact
+from validation._support.style import use_style
 
 from construction import DRIVER, FAMILY, RESULTS, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair, path_times
 
+use_style()
 SMOKE = "--smoke" in sys.argv                     # smoke run; a notebook runs every point
 NAME = "02_ph"
 RESULTS.mkdir(exist_ok=True)                      # git-ignored (D-0020)
@@ -90,9 +96,55 @@ for stage, f in forces.items():
                      "expected": F_r_printed[stage], "err": rel_err(f.F_r_N, F_r_printed[stage]), "limit": "<= 0.5 N",
                      "result": "PASS" if abs(diff) <= 0.5 else "FAIL"})
 print(format_table(COLUMNS, criteria))
+# figure: C40 and H501; the printed helical column "Helical H501/951" is keyed "H501" to share a group with the
+# computed H501 (same F_r for both: one column in Martins2015 Table 4)
+H501 = build_pair("H501")
+F_r_H501_printed = {k: at(lf, "radial force", f"stage={k};gear=Helical H501/951")
+                    for k, lf in {"K5": 175, "K7": 185, "K9": 195}.items()}
+forces_H501 = {stage: FAMILY.mesh_forces(H501, T2_Nm * H501.gear1.z / H501.gear2.z, rot1=+1)   # wheel -> pinion (R-124)
+               for stage, T2_Nm in WHEEL_TORQUE_NM.items()}
+fig = load_stages({**{(stage, "C40"): F_r_printed[stage] for stage in forces},
+                   **{(stage, "H501"): v for stage, v in F_r_H501_printed.items()}},
+                  {**{(stage, "C40"): f.F_r_N for stage, f in forces.items()},
+                   **{(stage, "H501"): f.F_r_N for stage, f in forces_H501.items()}},
+                  quantity=r"$F_\mathrm{r}$", unit="N")
+fig.savefig(RESULTS / "02_load_stages_Fr.png")
+plt.close(fig)
 
 # %% [markdown]
-# ## 3. AxisForge -> bridge -> Hertz, per stage and point
+# ## 3. Along the path, stage K9: radii, speeds, load (figures, AxisForge only)
+#
+# One `contact_inputs` record per pair, at a dense grid of times plus the one-sided times of the named points
+# (`path_times`, GL-09, GL-24), so that the steps of the share and of w at B and D are drawn as steps. No
+# bridge here: p_H along the path is not drawn (OPEN R-022, R-118). H501 is drawn too (figures only): its B
+# and D bound no single-contact zone (GL-25), so only A, C, E are named, and its radii and speeds are those of
+# the mid-face section (R-027). Same speed and wheel torque conversion as section 2 (R-124).
+
+# %%
+STAGE = "K9"
+N_DENSE = 201                                     # steps from A to E: ~0.1 mm apart on a ~20 mm path
+for name in ("C40", "H501"):
+    p, F_bn_N = (pair, forces[STAGE].F_bn_N) if name == "C40" else (H501, forces_H501[STAGE].F_bn_N)
+    n1 = n2_rpm * p.gear2.z / p.gear1.z           # wheel speed -> pinion speed (R-124)
+    named = path_times(p, n1)
+    t = np.union1d(np.linspace(0.0, named["E"], N_DENSE), list(named.values()))   # sorted, one-sided times kept
+    points = FAMILY.path_points(p, DRIVER)
+    # mathtext without spaces: the wrapped note line never breaks inside "F_bn = 6371 N"
+    note = rf"{name}, {STAGE}, $n_1={n1:.0f}\,\mathrm{{rpm}}$, $F_{{bn}}={F_bn_N:.0f}\,\mathrm{{N}}$, {DRIVER} drives"
+    helical = p.gear1.betab != 0.0
+    if helical:                                   # B and D bound no single-contact zone (GL-25)
+        points = {k: points[k] for k in "ACE"}
+    kinematics, load = path_of_contact(
+        contact_inputs(p, DRIVER, n1, F_bn_N, t_s=t), points, note=note,
+        kinematics_note="helical: radii and speeds at mid face width (R-027)" if helical else None,
+        load_note="helical: share and w over the whole contact line (Q36)" if helical else None)
+    kinematics.savefig(RESULTS / f"02_path_kinematics_{name}.png")
+    load.savefig(RESULTS / f"02_path_load_{name}.png")
+    plt.close(kinematics)
+    plt.close(load)
+
+# %% [markdown]
+# ## 4. AxisForge -> bridge -> Hertz, per stage and point
 
 # %%
 times = path_times(pair, n1_rpm)
@@ -109,7 +161,7 @@ for stage, T2_Nm in WHEEL_TORQUE_NM.items():
                         "p_H_printed_MPa": p_H_printed[stage]})
 
 # %% [markdown]
-# ## 4. Criteria P1, P2
+# ## 5. Criteria P1, P2
 #
 # P1: at every point, p_H(K7)/p_H(K5) within 0.2 % of 685/498 = 1.3755 and p_H(K9)/p_H(K5) within 0.2 % of
 # 874/498 = 1.7550 **[proposed]**. Hertz: p_H grows as the square root of the load whatever E and the point,

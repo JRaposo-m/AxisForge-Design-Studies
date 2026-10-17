@@ -30,9 +30,15 @@
 # %%
 import sys
 
+import matplotlib.pyplot as plt
 from axisforge.outputs._format import format_table, read_records_csv, write_records_csv
 
-from construction import RESULTS, build_pair
+from validation._support.figures.gear_plots import line_of_action
+from validation._support.style import use_style
+
+from construction import DRIVER, FAMILY, RESULTS, build_pair
+
+use_style()
 
 SMOKE = "--smoke" in sys.argv                     # the geometry is cheap: the smoke run is the full run
 NAME = "01_geometry"
@@ -101,3 +107,25 @@ print(format_table((("id", "ID", "s"), ("quantity", "quantity", "s"), ("csv_line
                     ("value", "AxisForge", ".5g"), ("expected", "printed", ".5g"), ("diff", "diff", "+.4f"),
                     ("limit", "limit", "s"), ("result", "result", "s")), criteria))
 write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
+
+# %% [markdown]
+# ## 3. The line of action (review check)
+#
+# Base circles, T1-T2 and the points A..E for the driver of the case (`DRIVER`), in the transverse plane:
+# A must sit on the tip circle of the driven gear (dashed). H501: A, C, E only (GL-25). Both FZG pairs are
+# external; the internal sign
+# (T1T2 < 0) is exercised only by the synthetic test.
+
+# %%
+# one view for both pairs (drawing frame: O1 at the origin, O2 at (0, a_w) for an external pair), so that they compare
+half = 1.05 * max(0.5 * (p.al + p.gear1.da / 2 + p.gear2.da / 2) for p in (C40, H501))
+y_mid = 0.5 * max(p.al + p.gear2.da / 2 - p.gear1.da / 2 for p in (C40, H501))
+for pair in (C40, H501):
+    points, note = FAMILY.path_points(pair, DRIVER), f"{pair.label}, {DRIVER} drives"
+    if pair.gear1.betab != 0.0:                   # helical: B and D bound no single-contact zone (GL-25)
+        points = {k: points[k] for k in "ACE"}
+        note = "B, D not shown (helical, GL-25); " + note
+    fig = line_of_action(pair.T1C, pair.T1T2, pair.gear1.rb, pair.gear2.rb, pair.gear1.da / 2, pair.gear2.da / 2,
+                         pair.alphatw, points, limits_mm=(-half, half, y_mid - half, y_mid + half), note=note)
+    fig.savefig(RESULTS / f"01_line_of_action_{pair.label}.png")
+    plt.close(fig)
