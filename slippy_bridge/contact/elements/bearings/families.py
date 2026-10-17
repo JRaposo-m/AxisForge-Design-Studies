@@ -26,12 +26,9 @@ import math
 
 import numpy as np
 
-from ...base import Contact, ContactCase, ElementAdapter, register
+from ...base import _MM, _MPA, Contact, ContactCase, ElementAdapter, register
 
 __all__ = ["contact_case", "rolling_radius", "entrainment_speed", "BearingContacts"]
-
-_MM = 1e-3      # [m/mm]
-_MPA = 1e6      # [Pa/MPa]
 
 
 def rolling_radius(Dpw: float, D: float, alpha: float, race: str) -> float:

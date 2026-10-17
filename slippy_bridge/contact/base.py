@@ -22,6 +22,10 @@ from typing import Any, ClassVar
 
 __all__ = ["ContactCase", "Contact", "ElementAdapter", "register", "contacts", "registered"]
 
+# AxisForge -> SI factors, used only by the element adapters at the boundary (R-001)
+_MM = 1e-3      # [m/mm]
+_MPA = 1e6      # [Pa/MPa]
+
 
 def _pair(value, name: str) -> tuple[float, float]:
     """Return ``value`` as a 2-tuple of floats (a scalar is repeated), as ``hertz_full`` does."""
@@ -152,12 +156,15 @@ class Contact:
         ``element_j``, ``row``, ``phi_local_rad`` (and ``phi_global_rad`` from a multi-row result),
         ``alpha_rad``; for a roller lamina also ``lamina_k`` and ``x_k_mm``, the position of the
         lamina along the roller axis (AxisForge ``x_k`` [mm]; the roller axis is the bridge ``y``,
-        across rolling). Gears: the position along the line of action (to come).
+        across rolling). Gears: the point on the path of contact (``point``, ``s_mm``, ``g_y_mm``,
+        ``t_s``) and its load sharing (``share``, ``n_pairs``, ``l_sum_mm``); see
+        ``SpurHelicalContacts.contacts``.
     case : ContactCase
         The Hertz inputs.
     kinematics : dict, optional
-        ``u_e_m_per_s`` (entrainment speed) and ``slide_roll`` (sliding/entrainment ratio) when the
-        caller gave the speeds; empty otherwise. Needed by lubrication, not by the static step.
+        ``u_e_m_per_s``: MEAN entrainment speed (u1+u2)/2 [m/s], never the sum u1+u2 (R-075, R-028);
+        ``slide_roll`` (sliding/entrainment ratio) [-], when the caller gave the speeds; empty
+        otherwise. Needed by lubrication, not by the static step.
     """
 
     element: str
