@@ -20,6 +20,8 @@ CASE_DIRS = {
     "fem_uniform_radial_load": ROOT / "validation" / "shafts" / "fem_uniform_radial_load",
     "fem_stepped_distributed_gear": ROOT / "validation" / "shafts" / "fem_stepped_distributed_gear",
     "iso16281_ball_contact": ROOT / "validation" / "bearings" / "iso16281_ball_contact",
+    "fzg_geometry_ph": ROOT / "validation" / "gears" / "fzg_geometry_ph",
+    "line_contact": ROOT / "validation" / "ehl" / "line_contact",
 }
 
 

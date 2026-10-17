@@ -13,10 +13,12 @@ from axisforge.results import BallLoadDistributionResult, RollerLoadDistribution
 from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.contact_solver import (  # noqa: E402
     ISO16281BallSolver)
 
+from references.contact.ehl import e_prime, film_scalings, groups, moes_inverse  # noqa: E402
 from references.contact.hertz import hertz_point  # noqa: E402
 from slippy_bridge.contact import (BearingContacts, Contact, ContactCase, Grid, contact_case,  # noqa: E402
                                    contacts, entrainment_speed, hertz, measure, pair, register,
                                    registered, rough, semi_axes, static_step)
+from slippy_bridge.lubrication import ehl  # noqa: E402
 
 CONTACT = dict(e1=210000.0, e2=210000.0, nu1=0.3, nu2=0.3)
 
@@ -75,13 +77,48 @@ def test_every_axisforge_bearing_family_is_registered():
     assert "CylindricalFamily" in reg["gear"]
 
 
-def test_gear_adapter_not_written_yet_raises():
+def _gear_pair(material_id="steel"):
+    """A 20/40 spur pair, module 2 mm, face width 20 mm, as the old stub test built it."""
     from axisforge.core.machine_elements.gears import CylindricalFamily, CylindricalGearData, Gear, GearPair
     family = CylindricalFamily()
-    pair = GearPair.assemble(family, gear1=Gear.assemble(family, CylindricalGearData(2.0, 20)),
-                             gear2=Gear.assemble(family, CylindricalGearData(2.0, 40)))
-    with pytest.raises(NotImplementedError, match="adapter not written yet"):
-        contacts(pair)
+    return GearPair.assemble(
+        family, gear1=Gear.assemble(family, CylindricalGearData(2.0, 20, b=20.0, material_id=material_id)),
+        gear2=Gear.assemble(family, CylindricalGearData(2.0, 40, b=20.0, material_id=material_id)))
+
+
+def _gear_inputs(pair):
+    """AxisForge contact_inputs at A, C and E (gear 1 driving, 1000 rpm, 1 kN normal force).
+
+    The module exists only on AxisForge refactor/gears-mechanical-system (GL-01): skip elsewhere."""
+    contact = pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")
+    return contact.contact_inputs(pair, "gear1", 1000.0, 1000.0, n_points=3)
+
+
+def test_gear_adapter_scaffold_raises():
+    pair = _gear_pair()
+    with pytest.raises(NotImplementedError, match="OPEN R-023"):
+        contacts(pair, _gear_inputs(pair), points=["A", "C", "E"])
+
+
+@pytest.mark.parametrize("change, match", [
+    ("points_length", "labels for 3 steps"),
+    ("points_repeated", "not unique"),
+    ("points_unknown", "not in"),
+    ("rho1_not_positive", "rho1_n_mm must be > 0"),
+    ("rho2_wrong_sign", "has not the sign of gear2.z"),
+    ("material_empty", "material_id is empty"),
+])
+def test_gear_adapter_guards(change, match):
+    pair = _gear_pair("" if change == "material_empty" else "steel")
+    inputs = dict(_gear_inputs(pair))
+    points = {"points_length": ["A", "E"], "points_repeated": ["A", "A", "E"],
+              "points_unknown": ["A", "X", "E"]}.get(change, ["A", "C", "E"])
+    if change == "rho1_not_positive":
+        inputs["rho1_n_mm"] = np.array([0.0, 10.0, 20.0])   # what a check=False pair can give at A (R-030)
+    if change == "rho2_wrong_sign":
+        inputs["rho2_n_mm"] = np.array([30.0, 20.0, -1.0])  # concave gear 2 on an external pair (z2 > 0)
+    with pytest.raises(ValueError, match=match):
+        contacts(pair, inputs, points=points)
 
 
 def test_unregistered_subtype_raises():
@@ -345,6 +382,19 @@ def test_measure_finds_hertz_semi_axes_below_one_node(ball):
     assert m["apex_offset_nodes"] == 0.0
 
 
+def test_measure_gap_scaffold_raises(ball):
+    case = contact_case(ball, "inner", 300.0)
+    g = Grid.around(case)
+    p = hertz(case)["pressure"](g.X, g.Y)
+    with pytest.raises(NotImplementedError, match="OPEN R-033"):
+        measure(p, g.h, gap=np.zeros_like(p), X=g.X, Y=g.Y)
+
+
+def test_around_span_tuple_scaffold_raises(ball):
+    with pytest.raises(NotImplementedError, match="OPEN R-048"):
+        Grid.around(contact_case(ball, "inner", 300.0), span_x=(6.0, 2.0))
+
+
 def test_grid_beyond_the_body_raises():
     case = ContactCase("tiny", r1=1e-4, r2=math.inf, E=2.1e11, nu=0.3, load=1e-3)
     g = Grid.around(case, span_x=200.0, span_y=200.0)
@@ -439,3 +489,150 @@ def test_contact_case_keeps_slippy_keys_and_the_saved_hash():
     case = ContactCase("ball_flat", r1=6.35e-3, r2=math.inf, E=210e9, nu=0.3, load=500.0)
     assert {"moduli", "v"} <= set(case.to_dict()) and {"moduli", "v"} <= set(case.hertz_args())
     assert case.case_hash() == "9ccc2ddabd085997"
+
+# ---- lubrication: ehl.run guards (the solve itself is a scaffold) --------------------------
+
+# 12.7 mm steel ball on a steel flat, 500 N; an oil of 0.1 Pa s with the Roelands constants of
+# SlipPY's own EHL test (z 0.68, p0 = 1/5.1e-9 Pa), rolling at a mean 2 m/s
+_EHL_CASE = ContactCase("ehl_ball_flat", r1=6.35e-3, r2=math.inf, E=210e9, nu=0.3, load=500.0)
+_EHL_OK = dict(eta0_Pa_s=0.1, rho0_kg_per_m3=870.0, viscosity=("roelands", 0.68, 1.0 / 5.1e-9),
+               u_mean_m_per_s=2.0)
+
+
+@pytest.mark.parametrize("change, exc, match", [
+    ({}, NotImplementedError, "OPEN R-076"),                                  # valid inputs reach the scaffold
+    ({"output_dir": None}, ValueError, "output_dir"),
+    ({"viscosity": ("roelands", 0.68)}, ValueError, "viscosity must be"),
+    ({"viscosity": ("roelands", 0.68, 196.0)}, ValueError, "in MPa"),        # p0 given in MPa
+    ({"u_mean_m_per_s": 0.0}, ValueError, "> 0"),
+    ({"interference": 1e-6}, ValueError, "load-controlled"),
+    ({"number_of_steps": 2}, ValueError, "steady"),
+    ({"surfaces": "other_h"}, ValueError, "grid_spacing"),
+])
+def test_ehl_run_guards(change, exc, match, tmp_path):
+    g = Grid.around(_EHL_CASE)
+    kwargs = {**_EHL_OK, **change}
+    output_dir = kwargs.pop("output_dir", tmp_path)
+    if kwargs.get("surfaces") == "other_h":
+        # surfaces sampled at half the solve spacing (R-085)
+        kwargs["surfaces"] = pair(_EHL_CASE, Grid.around(_EHL_CASE, h=g.h / 2))
+    with pytest.raises(exc, match=match):
+        ehl.run(_EHL_CASE, g, output_dir, **kwargs)
+
+
+@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="scaffold OPEN GL-28 GL-16 GL-34 R-091")
+def test_ehl_run_line_smoke(load_case, tmp_path):
+    """Smoke of a line EHL solve: Venner & Bos M = 20, L = 10, incompressible, H_c = 9.923e-2 +-10 %.
+
+    The reference is the finest-level central film of VennerBos1994 Table 1 (``line_contact`` CSV L45), in
+    Venner's scaling H = h R / b^2. The tolerance is a smoke band, not the case criterion N1 (2 %): SlipPY's
+    line contact is a finite periodic strip (GL-16). The solver settings are pinned to keep the run short
+    (GL-28), and the record must say on what grid it ran (n_x, n_y, h) and how long it took.
+    """
+    cc = load_case("line_contact")
+    E = e_prime(cc.E_PA, cc.NU, cc.E_PA, cc.NU)
+    point = moes_inverse(M=cc.M_LOW, L=cc.L_MOES, line=True, E_prime_Pa=E["E_prime_Pa"], R_x_m=cc.R_X_M,
+                         u_mean_m_per_s=cc.U_MEAN_M_PER_S, roelands_z=cc.ROELANDS_Z, roelands_p0_Pa=cc.ROELANDS_P0_PA)
+    case = ContactCase("vb_line_M20_smoke", r1=(cc.R_X_M, math.inf), r2=math.inf, E=cc.E_PA, nu=cc.NU,
+                       load=point["w_N_per_m"], line=True)
+    grid = Grid.around(case, span_x=cc.SPAN_X_LOW)                   # (inlet, outlet) 4 b and 1.5 b (CSV L56)
+    rec, p, gap = ehl.run(case, grid, tmp_path, eta0_Pa_s=point["eta0_Pa_s"], rho0_kg_per_m3=cc.RHO0_KG_PER_M3,
+                          viscosity=("roelands", cc.ROELANDS_Z, cc.ROELANDS_P0_PA), density="incompressible",
+                          u_mean_m_per_s=cc.U_MEAN_M_PER_S, rtol_pressure=1e-4, relaxation_factor=0.05)
+    assert {"n_x", "n_y", "h_m", "solve_time_s"} <= rec.keys()      # grid, domain (n h) and run time recorded
+    U_mean = groups(u_mean_m_per_s=cc.U_MEAN_M_PER_S, eta0_Pa_s=point["eta0_Pa_s"], E_prime_Pa=E["E_prime_Pa"],
+                    R_x_m=cc.R_X_M, alpha_per_Pa=point["alpha_initial_per_Pa"], w_N_per_m=point["w_N_per_m"])["U_mean"]
+    H_c = film_scalings(h_m=rec["h_c_m"], R_x_m=rec["R_x_m"], s_x_ref_m=rec["s_x_ref_m"], U_mean=U_mean)["H_venner"]
+    assert H_c == pytest.approx(9.923e-2, rel=0.10)                 # line_contact CSV L45
+
+
+# ---- FZG C40: AxisForge -> gear adapter -> Hertz (validation/gears/fzg_geometry_ph) -------------
+
+@pytest.fixture
+def fzg_c40(load_case, monkeypatch):
+    """The FZG C40 pair of the case, with a steel registered for this test only.
+
+    E 206 GPa and nu 0.3 are the values of the R-117 hypothesis (no held source, R-118); the density is not
+    read by AxisForge. monkeypatch removes the registry entry after the test, so no other test sees it.
+    """
+    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")   # c328999 only (GL-01)
+    from axisforge.core.materials import IsotropicElastic, Material
+    from axisforge.core.materials import base as materials_base
+    cc = load_case("fzg_geometry_ph")
+    steel = Material(material_id=cc.STEEL_ID, density=7.85e3, elastic=IsotropicElastic(E=206000.0, poisson_ratio=0.3))
+    # AxisForge has no public unregister (materials/base.py:298-320); private _REGISTRY patched, restored by monkeypatch
+    monkeypatch.setitem(materials_base._REGISTRY, cc.STEEL_ID, steel)
+    return cc, cc.build_pair("C40")
+
+
+def _fzg_p_H_MPa(cc, pair, stage, points):
+    """Hertz p_H [MPa] of C40 at ``points`` for FZG ``stage``: wheel torque, speed to gear 1 (R-124); gear 1 drives."""
+    from axisforge.solvers.machine_elements.gears.contact import contact_inputs
+    z1, z2 = pair.gear1.z, pair.gear2.z
+    n1_rpm = cc.WHEEL_SPEED_RPM[0] * z2 / z1                         # 200 rpm on the wheel (CSV L198)
+    F_bn_N = cc.FAMILY.mesh_forces(pair, cc.WHEEL_TORQUE_NM[stage] * z1 / z2, rot1=+1).F_bn_N
+    times = cc.path_times(pair, n1_rpm)
+    inputs = contact_inputs(pair, cc.DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in points])
+    return [hertz(c.case)["p0_Pa"] / 1e6 for c in contacts(pair, inputs, points=points)]   # Pa -> MPa
+
+
+@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="scaffold OPEN R-023 R-031 (gear adapter)")
+def test_fzg_ph_load_ratios(fzg_c40):
+    """V-GEAR-04 criterion P1: p_H(K7)/p_H(K5) = 685/498 = 1.3755, p_H(K9)/p_H(K5) = 874/498 = 1.7550, +-0.2 %.
+
+    Martins2015 Table 4 (``fzg_geometry_ph`` CSV L174, L184, L194). Hertz p_H grows as the square root of the
+    load whatever E and the point, so the ratio checks the stage torques and p ~ sqrt(w) only; 0.2 % is the
+    rounding of the printed integers (0.5/498 + 0.5/685 = 0.17 %).
+    """
+    cc, pair = fzg_c40
+    points = ["A", "B+", "C"]
+    p5, p7, p9 = (_fzg_p_H_MPa(cc, pair, stage, points) for stage in ("K5", "K7", "K9"))
+    for a, b, c in zip(p5, p7, p9):
+        assert b / a == pytest.approx(685.0 / 498.0, rel=2e-3)
+        assert c / a == pytest.approx(874.0 / 498.0, rel=2e-3)
+
+
+@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="scaffold OPEN R-023 R-031 (gear adapter)")
+def test_hypothesis_R117_ph_at_A_half_load(fzg_c40):
+    """Hypothesis R-117, not a pass criterion; the tolerance depends on E (R-118).
+
+    FEUP's p_H 498 MPa at K5 (Martins2015 Table 4, ``fzg_geometry_ph`` CSV L174) does not state its point. The
+    hypothesis: it is the Hertz pressure at A, where two tooth pairs share the load (share 0.5), with the
+    pinion driving (GL-30). E 206 GPa, nu 0.3 and the wheel d_a 118.54 (CSV L110, AxisForge from x) are
+    assumed; 210 GPa would give about +0.8 %.
+    """
+    cc, pair = fzg_c40
+    (p_A,) = _fzg_p_H_MPa(cc, pair, "K5", ["A"])
+    assert p_A == pytest.approx(498.0, rel=0.01)
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="known gap GL-10: AxisForge 1.4624 vs printed 1.44")
+def test_fzg_c40_eps_alpha_known_gap(load_case):
+    """C40 transverse contact ratio: printed 1.44 (Fernandes2015b CSV L13 = Martins2015 L111), AxisForge 1.4624.
+
+    A known gap (GL-10) kept visible: it fails today with AssertionError; an XPASS would mean it closed.
+    """
+    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")   # the case needs c328999 (GL-01)
+    pair = load_case("fzg_geometry_ph").build_pair("C40")
+    assert pair.epslon_alpha == pytest.approx(1.44, abs=0.01)
+
+
+@pytest.mark.parametrize("stage, F_r_printed_N", [
+    ("K5", 790.0),                  # fzg_geometry_ph CSV L172
+    pytest.param("K7", 1495.0,      # CSV L182
+                 marks=pytest.mark.xfail(strict=True, raises=AssertionError,
+                                         reason="GL-41: 1494.50 vs 1495, 0.004 N over the print rounding")),
+    ("K9", 2432.0),                 # CSV L192
+])
+def test_fzg_c40_radial_force(load_case, stage, F_r_printed_N):
+    """P0 (GL-41, GL-45): C40 radial force F_r = F_tw tan(alpha_wt) against Martins2015 Table 4, within 0.5 N.
+
+    0.5 N is the rounding of the printed integer. The check covers the wheel -> pinion torque (T1 = T2 z1/z2,
+    R-124), the working pitch diameter and the working pressure angle; it needs no gear adapter.
+    """
+    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")   # the case needs c328999 (GL-01)
+    cc = load_case("fzg_geometry_ph")
+    pair = cc.build_pair("C40")
+    T1_Nm = cc.WHEEL_TORQUE_NM[stage] * pair.gear1.z / pair.gear2.z            # CSV L168/178/188, on the wheel
+    F_r_N = cc.FAMILY.mesh_forces(pair, T1_Nm, rot1=+1).F_r_N
+    assert F_r_N == pytest.approx(F_r_printed_N, abs=0.5)
