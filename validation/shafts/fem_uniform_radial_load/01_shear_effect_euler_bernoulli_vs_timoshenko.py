@@ -245,7 +245,7 @@ def shear_figure(shaft: str):
         series, deltas,
         note=f"{shaft}: resultant deflection, minimal mesh ({len(results['euler_bernoulli'][shaft].x_nodes)} nodes)" + overlap_note(series),
         ylabel=r"$v$ (mm)",
-        delta_label=r"$(v - v_\mathrm{EB})/\max|v_\mathrm{EB}|$ (%)",
+        delta_label=r"$(v - v_\mathrm{EB})/\max\vert v_\mathrm{EB}\vert$ (%)",
         supports=(cd.BALL_POSITION_MM, cd.ROLLER_POSITION_MM), support_names=("A", "B"),
     )
 

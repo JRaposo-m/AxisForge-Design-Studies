@@ -8,6 +8,7 @@ points), ``_stacked`` panels stacked on a shared abscissa.
 """
 from __future__ import annotations
 
+import re
 from typing import Sequence
 
 import matplotlib.pyplot as plt
@@ -25,14 +26,48 @@ def _words(text: str) -> str:
     return "$".join(part.replace("_", " ") if k % 2 == 0 else part for k, part in enumerate(parts))
 
 
+def _wrap(text: str, width: int) -> str:
+    """Break ``text`` into lines of about ``width`` visible characters, at spaces outside ``$...$``.
+
+    Matplotlib's own ``wrap=True`` breaks inside mathtext too, and a broken ``$...$`` group prints
+    as raw LaTeX; here a math group is never split. Its visible length is estimated without the
+    ``$``, backslash commands, braces and sub/superscript marks.
+    """
+    lines = []
+    for paragraph in text.split("\n"):
+        words, in_math, current = [], False, ""
+        for ch in paragraph:                               # split at spaces outside math only
+            if ch == "$":
+                in_math = not in_math
+            if ch == " " and not in_math:
+                words.append(current)
+                current = ""
+            else:
+                current += ch
+        words.append(current)
+        line, size = [], 0
+        for word in words:
+            visible = len(re.sub(r"\\[a-zA-Z]+|[${}^_]", "", word))
+            if line and size + 1 + visible > width:
+                lines.append(" ".join(line))
+                line, size = [], 0
+            line.append(word)
+            size += visible + (1 if size else 0)
+        lines.append(" ".join(line))
+    return "\n".join(lines)
+
+
 def _note(fig, text: str | None) -> None:
     """The figure's information line (what a title used to carry), centred under the axes.
 
     Placed below the figure (``y = 0``, top-aligned); the sheet saves with ``bbox_inches="tight"``,
-    which takes it in. Code identifiers in it are written as words (``_words``).
+    which takes it in. Code identifiers in it are written as words (``_words``); long notes are
+    broken at spaces outside mathtext, to the figure width (``_wrap``).
     """
     if text:
-        fig.text(0.5, 0.0, _words(text), ha="center", va="top", wrap=True)
+        # about one character per half font size: the visible width of a serif text line
+        width = int(fig.get_figwidth() * 72.0 / (0.5 * plt.rcParams["font.size"]))
+        fig.text(0.5, 0.0, _wrap(_words(text), width), ha="center", va="top")
 
 
 def _tag(ax, tag: str) -> None:

@@ -215,10 +215,10 @@ def test_hertz_pressure_peak_and_edge(judge):
 
 
 def test_line_stress_maximum_shear_on_the_axis():
-    """Johnson (1985) Sec. 4.2(c), Fig. 4.5: tau1 max = 0.30 p0 at z = 0.78 a (printed to 2-3 digits)."""
+    """Johnson (1985) Table 4.1: tau1 max = 0.300 p0 at z = 0.785 a (printed to 3 digits)."""
     tau1 = hertz_line_stress(0.0 * DEPTH, DEPTH)["tau1_over_p0"]
     assert tau1.max() == pytest.approx(0.300, abs=1e-3)
-    assert DEPTH[tau1.argmax()] == pytest.approx(0.786, abs=5e-3)
+    assert DEPTH[tau1.argmax()] == pytest.approx(0.785, abs=5e-3)
 
 
 def test_line_stress_on_the_axis_matches_the_axis_formulas():

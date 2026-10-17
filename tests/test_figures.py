@@ -43,6 +43,11 @@ from validation._support.figures import shaft_studies as fg  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def note_text(fig):
+    """The note line under the figure, with the wrapping line breaks read as spaces."""
+    return fig.texts[-1].get_text().replace("\n", " ")
+
+
 def assert_house_form(fig):
     """A Figure with no axes title and no grid lines."""
     assert isinstance(fig, Figure)
@@ -81,7 +86,7 @@ def test_contact_convergence_draws_mesh_and_domain_panels(tmp_path):
 
 def test_contact_convergence_draws_identical_builds_once():
     fig = contact_plots.convergence(_records(3, 3, scale_second=1.0))
-    assert len(fig.axes) == 2 and "drawn once" in fig.texts[-1].get_text()
+    assert len(fig.axes) == 2 and "drawn once" in note_text(fig)
 
 
 def test_contact_convergence_never_draws_an_empty_axes():
@@ -192,7 +197,7 @@ def test_ld_plot_polar_distributions(ld_plots, saved, tmp_path):
     assert len(saved) == 3 + 1                                # one per point + the overview
     for fig in saved.values():
         assert_house_form(fig)
-        assert ld_plots.A2_NOTE in fig.texts[-1].get_text()     # the azimuth stamp (R-003)
+        assert ld_plots.A2_NOTE in note_text(fig)     # the azimuth stamp (R-003)
 
 
 def test_ld_plot_lamina_profile(ld_plots, saved, tmp_path):
@@ -225,7 +230,7 @@ def test_sign_check_one_panel_per_load_direction():
     fig = bearing_plots.sign_check([[phi_g, phi_g]] * 2, [[Q, Q]] * 2, phi_Fr_rad=[0.0, 0.0],
                                    phi_expected_rad=[math.pi, math.pi], series=["A", "B"], labels=["case 1", "case 2"])
     assert_house_form(fig)
-    assert len(fig.axes) == 2 and bearing_plots.SIGN_CHECK_NOTE in fig.texts[-1].get_text()
+    assert len(fig.axes) == 2 and bearing_plots.SIGN_CHECK_NOTE in note_text(fig)
 
 
 @pytest.mark.parametrize("kind, n_axes, text", [("ball, alpha drifts", 3, "floored at 0"),
@@ -240,7 +245,7 @@ def test_element_loads_alpha_panel(kind, n_axes, text):
     fig = bearing_plots.element_loads(PHI, Q, delta_mm=delta, alpha_rad=alpha)
     assert_house_form(fig)
     assert len(fig.axes) == n_axes
-    note = fig.texts[-1].get_text()
+    note = note_text(fig)
     assert f"loaded {int((Q > 0).sum())} of 9" in note and bearing_plots.A2_NOTE in note and text in note
 
 
@@ -260,10 +265,59 @@ def test_shaft_fields():
                           1e5 * np.sin(np.pi * x / 200), 50 * np.sin(np.pi * x / 200),
                           bearings_mm={"A": 10.0, "B": 190.0}, gears_mm={"gear": 100.0}, R_N=[1000.0, 900.0])
     assert_house_form(fig)
-    assert len(fig.axes) == 4 and "R_" in fig.texts[-1].get_text()
+    assert len(fig.axes) == 4 and "R_" in note_text(fig)
 
 
 def test_words_keeps_mathtext_subscripts():
     """Code identifiers become words; underscores inside $...$ stay subscripts."""
     from validation._support.figures import _words
     assert _words(r"radial_heavy; $Q_\mathrm{max}$ = 1 N, 6210_A") == r"radial heavy; $Q_\mathrm{max}$ = 1 N, 6210 A"
+
+
+# =============================================================================
+# contact_plots: subsurface and EHL (EHL scaffolds: synthetic data only, OPEN R-074)
+# =============================================================================
+
+
+def test_subsurface_depth_line_and_point():
+    from references.contact.hertz import hertz_line_stress, hertz_point_axis_stress
+    z = np.linspace(0.0, 2.0, 201)
+    for theory, published in ((hertz_line_stress(0.0 * z, z), [(0.300, 0.785, "Johnson")]),
+                              (hertz_point_axis_stress(z, 0.3), [(0.31, 0.48, "Johnson")])):
+        fig = contact_plots.subsurface_depth(z, theory, published=published,
+                                             numerical={"tau1_over_p0": (z[::20], theory["tau1_over_p0"][::20])})
+        assert_house_form(fig)
+        ax = fig.axes[0]
+        assert ax.get_ylim()[0] > ax.get_ylim()[1]                      # depth downward
+        assert "max" in note_text(fig)
+
+
+def test_subsurface_contours_line():
+    from references.contact.hertz import hertz_line_stress
+    x, z = np.linspace(-2.0, 2.0, 81), np.linspace(0.0, 2.0, 41)
+    fig = contact_plots.subsurface_contours(x, z, hertz_line_stress(*np.meshgrid(x, z))["tau1_over_p0"])
+    assert_house_form(fig)
+    assert fig.axes[0].get_ylim()[0] > fig.axes[0].get_ylim()[1]
+
+
+def test_ehl_centreline_scaffold():
+    x = np.linspace(-3.0, 1.5, 200)
+    p = np.sqrt(np.clip(1.0 - x**2, 0.0, None))
+    fig = contact_plots.ehl_centreline(x, p, 2e-7 + 1e-7 * x**2, h_c_formula_m=2.1e-7)
+    assert_house_form(fig)
+    assert len(fig.axes) == 2
+
+
+def test_film_survey_scaffold():
+    M = np.array([10.0, 30.0, 100.0, 300.0])
+    fig = contact_plots.film_survey(M, 5.0 * M**-0.2, formulas={"own": (M, 5.1 * M**-0.2), "other": (M, 4.8 * M**-0.2)},
+                                    L=10.0)
+    assert_house_form(fig)
+    assert "L" in note_text(fig)
+
+
+def test_note_never_breaks_inside_mathtext():
+    from validation._support.figures import _wrap
+    text = r"a long note with $\tau_{1,\max} = 0.300\,p_0$ at $z = 0.785\,s_\mathrm{min}$ and more words to wrap"
+    for line in _wrap(text, 20).split("\n"):
+        assert line.count("$") % 2 == 0, line

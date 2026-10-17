@@ -132,7 +132,7 @@ write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
 
 # %%
 fig = contact_plots.convergence(records, RESULTS / f"{NAME}_convergence.png",
-                                criterion=("E3 (p0, s_x, s_y)", 1.0),   # section 2; E4 (delta, 2 %) not drawn
+                                criterion=("E3", 1.0),   # p0, s_x, s_y (section 2), in the note only
                                 default_span=SPAN_X_0)
 plt.close(fig)                                    # shown once, by the line below
 fig

@@ -114,7 +114,11 @@ def layout_figure(shaft: str):
     ss = next(s for s in system.shafts if s.name == shaft)
     x = np.linspace(0.0, cd.SHAFT_LENGTH_MM, 4001)
     series = []
-    for ld in ss.distributed_radial_loads:
+    # legend in the order of LOAD_STYLE on both shafts, whatever the order of the shaft's loads
+    order = {kind: i for i, kind in enumerate(LOAD_STYLE)}
+    for ld in sorted(ss.distributed_radial_loads,
+                     key=lambda ld: order["Ft" if ld.label.endswith(":Ft") else "Fr" if ld.label.endswith(":Fr")
+                                         else "parabolic"]):
         q = np.array([abs(ld.q(xi)) if ld.x_lo <= xi <= ld.x_hi else 0.0 for xi in x])
         kind = "Ft" if ld.label.endswith(":Ft") else "Fr" if ld.label.endswith(":Fr") else "parabolic"
         # bending plane(s) of the load, from its resultant components
@@ -124,7 +128,7 @@ def layout_figure(shaft: str):
                                 x=x, y=q, kind="theory", **LOAD_STYLE[kind]))
     edges = [segs[0].x_lo] + [s.x_hi for s in segs]
     return fg.shaft_layout(edges, [s.d for s in segs], series,
-                           note=rf"{shaft.replace('shaft', 'shaft ')}: geometry and distributed load intensities $|q(x)|$",
+                           note=rf"{shaft.replace('shaft', 'shaft ')}: geometry and distributed load intensities $\vert q(x)\vert$",
                            supports=SUPPORTS, support_names=("A", "B"))
 
 fig_layout_1 = layout_figure("shaft1")
@@ -264,7 +268,7 @@ def shear_figure(shaft: str):
         series, deltas,
         note=f"{shaft}: resultant deflection, minimal mesh ({len(ref.x_nodes)} nodes)" + overlap_note(series),
         ylabel=r"$v$ (mm)",
-        delta_label=r"$(v - v_\mathrm{EB})/\max|v_\mathrm{EB}|$ (%)",
+        delta_label=r"$(v - v_\mathrm{EB})/\max\vert v_\mathrm{EB}\vert$ (%)",
         supports=SUPPORTS, support_names=("A", "B"),
     )
 
@@ -312,7 +316,7 @@ RESULTS.mkdir(exist_ok=True)
 NAMES = {cd.BALL_POSITION_MM: "A", cd.ROLLER_POSITION_MM: "B"}
 shafts = {shaft: results["timoshenko/cowper"][shaft] for shaft in ("shaft1", "shaft2")}
 # same y limits per panel on both shafts, from the values of both (plot units of shaft_fields)
-fields = [lambda r: 1e3 * r.v, lambda r: 1e3 * np.r_[r.theta_xz, r.theta_xy], lambda r: 1e-3 * r.M, lambda r: r.sigma_b]
+fields = [lambda r: r.v, lambda r: 1e3 * np.r_[r.theta_xz, r.theta_xy], lambda r: 1e-3 * r.M, lambda r: r.sigma_b]
 pad = 0.05                                        # 5 % of the range above and below the extreme values
 limits = []
 for f in fields:

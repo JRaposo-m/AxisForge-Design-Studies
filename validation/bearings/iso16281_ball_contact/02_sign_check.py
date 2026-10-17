@@ -144,7 +144,7 @@ print(format_table([("theta_deg", "theta [deg]", ".0f"), ("label", "bearing", ""
 # %% [markdown]
 # The same ball loads as a figure, one panel per load direction with both bearings: the load
 # direction used by the solver $\varphi_{F_r}$ (dashed) against the expected $\varphi_\mathrm{exp}$
-# (dotted), and the residual $|r|/|F_r|$ of each bearing in the panel label.
+# (dotted), and the residual $\vert r\vert/\vert F_r\vert$ of each bearing in the panel label.
 
 # %%
 thetas = list(dict.fromkeys(r["theta_deg"] for r in records))
@@ -160,7 +160,7 @@ fig = bearing_plots.sign_check(
     phi_Fr_rad=[recs[0]["phi_Fr_rad"] for recs in by_theta.values()],
     phi_expected_rad=[recs[0]["phi_expected_rad"] for recs in by_theta.values()],
     series=[r["label"] for r in by_theta[thetas[0]]],
-    labels=[rf"$\theta$ = {t:.0f} deg; $|r|/|F_r|$ = " + ", ".join(f"{r['residual_ratio']:.3f}" for r in recs)
+    labels=[rf"$\theta$ = {t:.0f} deg; $\vert r\vert/\vert F_r\vert$ = " + ", ".join(f"{r['residual_ratio']:.3f}" for r in recs)
             + " (" + ", ".join(r["label"] for r in recs) + ")" for t, recs in by_theta.items()])
 fig.savefig(RESULTS / "02_sign_check.png")
 plt.close(fig)                                    # shown once, by the line below

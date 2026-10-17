@@ -44,16 +44,21 @@ import shutil
 import time
 import traceback
 
+import matplotlib.pyplot as plt
 import numpy as np
 import slippy
 import slippy.contact as c
 from axisforge.outputs._format import format_table, write_records_csv
 from slippy.contact.sub_models import SubsurfaceStress
 
-from references.contact.hertz import hertz_point
+from references.contact.hertz import hertz_point, hertz_point_axis_stress
 from slippy_bridge.contact import Grid, pair
+from validation._support.figures import contact_plots
+from validation._support.style import use_style
 
 from construction import CASE, RESULTS, Z_OVER_A
+
+use_style()                                       # house paper style (style/README.md)
 
 NAME = "02_subsurface"
 SLIPPY_OUT = RESULTS / "slippy_subsurface"
@@ -124,20 +129,12 @@ print(format_table((("attempt", "attempt", ".0f"), ("call", "call", "s"), ("outc
 # With $\zeta = z/a$:
 # $\sigma_r/p_0 = \sigma_\theta/p_0 = -(1+\nu)\{1 - \zeta\tan^{-1}(1/\zeta)\} + \tfrac12(1+\zeta^2)^{-1}$,
 # $\sigma_z/p_0 = -(1+\zeta^2)^{-1}$, $\tau_1 = \tfrac12|\sigma_z - \sigma_r|$ (Johnson 1985, Eq. (3.45),
-# PDF 72). Evaluated on a fine depth grid for its maximum, and on `Z_OVER_A` for the comparison.
+# PDF 72), by `references.contact.hertz.hertz_point_axis_stress`. Evaluated on a fine depth grid
+# for its maximum, and on `Z_OVER_A` for the comparison.
 
 # %%
-def tau1_johnson(zeta):
-    """tau1/p0 on the axis of a Hertz sphere at depths zeta = z/a [-] (Eq. (3.45))."""
-    zeta = np.asarray(zeta, dtype=float)
-    # zeta*atan(1/zeta) -> 0 at the surface; written with arctan2 so zeta = 0 is finite
-    s_r = -(1.0 + NU) * (1.0 - zeta * np.arctan2(1.0, zeta)) + 0.5 / (1.0 + zeta**2)
-    s_z = -1.0 / (1.0 + zeta**2)
-    return 0.5 * np.abs(s_z - s_r)
-
-
 zeta_fine = np.linspace(0.0, 2.0, 200001)                           # step 1e-5 a: the depth to 5 digits
-tau_fine = tau1_johnson(zeta_fine)
+tau_fine = hertz_point_axis_stress(zeta_fine, NU)["tau1_over_p0"]
 TAU_EQ, Z_EQ = float(tau_fine.max()), float(zeta_fine[tau_fine.argmax()])
 print(f"Eq. (3.45), nu = {NU}: tau1 max {TAU_EQ:.5f} p0 at z = {Z_EQ:.5f} a")
 
@@ -176,7 +173,7 @@ else:
     s1, s3 = np.asarray(state["surface_1_1"]), np.asarray(state["surface_1_3"])   # (z, x, y) [Pa]
     tau_axis = 0.5 * (s1[:, i0, j0] - s3[:, i0, j0]) / P0
     k = int(np.nanargmax(tau_axis))
-    tau_eq = tau1_johnson(Z_OVER_A)
+    tau_eq = hertz_point_axis_stress(Z_OVER_A, NU)["tau1_over_p0"]
     profile = [{"z_over_a": z, "tau1_over_p0": t, "tau1_eq_over_p0": te, "ratio": t / te if te else math.nan}
                for z, t, te in zip(Z_OVER_A, tau_axis, tau_eq)]
     k_eq = int(np.argmin(abs(Z_OVER_A - Z_EQ)))                     # node nearest Johnson's depth
@@ -208,3 +205,20 @@ print(format_table((("id", "ID", "s"), ("quantity", "quantity", "s"), ("value", 
                     ("limit", "limit", "s"), ("result", "result", "s")), criteria))
 write_records_csv(RESULTS / f"{NAME}.csv", outcomes + profile)
 write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
+
+# %% [markdown]
+# ## 4. Figure: the closed-form stresses on the axis
+#
+# Johnson's Eq. (3.45) against depth, with the printed maximum (0.31 $p_0$ at 0.48 $a$) as an open
+# marker. The SlipPY subsurface field is not drawn (OPEN R-268, R-269). Written to
+# `results/02_subsurface_depth.png`.
+
+# %%
+z_plot = np.linspace(0.0, 3.0, 601)                                 # depth / a [-]
+fig = contact_plots.subsurface_depth(z_plot, hertz_point_axis_stress(z_plot, NU),
+                                     published=[(0.31, 0.48, "Johnson 1985 (printed)")],
+                                     note=rf"circular contact, axis $r = 0$, $\nu$ = {NU:g}; "
+                                          r"$\sigma_\theta = \sigma_r$ on the axis")
+fig.savefig(RESULTS / f"{NAME}_depth.png")
+plt.close(fig)                                    # shown once, by the line below
+fig

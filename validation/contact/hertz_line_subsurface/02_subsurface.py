@@ -52,16 +52,21 @@ import shutil
 import time
 import traceback
 
+import matplotlib.pyplot as plt
 import numpy as np
 import slippy
 import slippy.contact as c
 from axisforge.outputs._format import format_table, read_records_csv, write_records_csv
 from slippy.contact.sub_models import SubsurfaceStress
 
-from references.contact.hertz import hertz_line
+from references.contact.hertz import hertz_line, hertz_line_stress
 from slippy_bridge.contact import Grid, pair
+from validation._support.figures import contact_plots
+from validation._support.style import use_style
 
 from construction import CASE, RESULTS, Z_OVER_A
+
+use_style()                                       # house paper style (style/README.md)
 
 NAME = "02_subsurface"
 SLIPPY_OUT = RESULTS / "slippy_subsurface"
@@ -140,10 +145,13 @@ print(format_table((("model", "model", "s"), ("attempt", "attempt", ".0f"), ("ca
 
 # %% [markdown]
 # ## 2. Johnson's axis formula and the Appendix 4 rows
+#
+# The axis formula is evaluated by `references.contact.hertz.hertz_line_stress` (McEwen's field at
+# $x = 0$, equal to the formula to round-off; tested in `tests/test_contact_reference.py`).
 
 # %%
 zeta_fine = np.linspace(0.0, 2.0, 200001)                           # step 1e-5 a
-tau_fine = zeta_fine - zeta_fine**2 / np.sqrt(1.0 + zeta_fine**2)    # tau1/p0 on the axis (magnitude)
+tau_fine = hertz_line_stress(0.0 * zeta_fine, zeta_fine)["tau1_over_p0"]   # tau1/p0 on the axis
 TAU_EQ, Z_EQ = float(tau_fine.max()), float(zeta_fine[tau_fine.argmax()])
 print(f"axis formula: tau1 max {TAU_EQ:.5f} p0 at z = {Z_EQ:.5f} a")
 
@@ -195,7 +203,7 @@ else:
     s1, s3 = np.asarray(principal["surface_1_1"]), np.asarray(principal["surface_1_3"])   # (z, x, y) [Pa]
     tau_axis = 0.5 * (s1[:, i0, j0] - s3[:, i0, j0]) / P0
     k = int(np.nanargmax(tau_axis))
-    tau_eq = Z_OVER_A - Z_OVER_A**2 / np.sqrt(1.0 + Z_OVER_A**2)
+    tau_eq = hertz_line_stress(0.0 * Z_OVER_A, Z_OVER_A)["tau1_over_p0"]
     profile = [{"z_over_a": z, "tau1_over_p0": t, "tau1_eq_over_p0": te, "ratio": t / te if te else math.nan}
                for z, t, te in zip(Z_OVER_A, tau_axis, tau_eq)]
     k_eq = int(np.argmin(abs(Z_OVER_A - Z_EQ)))
@@ -249,3 +257,30 @@ print(format_table((("id", "ID", "s"), ("quantity", "quantity", "s"), ("value", 
                     ("limit", "limit", "s"), ("result", "result", "s")), criteria))
 write_records_csv(RESULTS / f"{NAME}.csv", outcomes + profile + (points if tensor is not None else []))
 write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
+
+# %% [markdown]
+# ## 4. Figures: the closed-form field
+#
+# Johnson's line-contact stresses (McEwen) on the axis against depth, with the Table 4.1 value as
+# an open marker, and the contours of $\tau_1/p_0$ in the $x$-$z$ plane. The SlipPY subsurface field
+# is not drawn (OPEN R-268, R-269). Written to `results/02_subsurface_depth.png` and
+# `results/02_subsurface_contours.png`.
+
+# %%
+z_plot = np.linspace(0.0, 2.0, 401)                                 # depth / a [-]
+fig = contact_plots.subsurface_depth(z_plot, hertz_line_stress(0.0 * z_plot, z_plot),
+                                     published=[(0.300, 0.785, "Johnson 1985, Table 4.1")],
+                                     note=r"line contact, axis $x = 0$; in-plane $\tau_1$ "
+                                          r"($\sigma_y = \nu(\sigma_x + \sigma_z)$ not drawn)")
+fig.savefig(RESULTS / f"{NAME}_depth.png")
+plt.close(fig)                                    # shown once, by the line below
+fig
+
+# %%
+x_grid, z_grid = np.linspace(-2.0, 2.0, 401), np.linspace(0.0, 2.0, 301)   # x / a, z / a [-]
+tau1_xz = hertz_line_stress(*np.meshgrid(x_grid, z_grid))["tau1_over_p0"]  # rows = depth
+fig = contact_plots.subsurface_contours(x_grid, z_grid, tau1_xz,
+                                        note="line contact (plane strain), McEwen's closed form")
+fig.savefig(RESULTS / f"{NAME}_contours.png")
+plt.close(fig)                                    # shown once, by the line below
+fig

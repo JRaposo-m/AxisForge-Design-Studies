@@ -127,7 +127,7 @@ fig_base = fg.field_comparison(
     [fg.Series(label=FEM_BASE, x=x, y=100 * (np.asarray(base.v) - exact.v(x)) / scale, kind="numerical")],
     note=rf"{SHAFT}: Timoshenko (Cowper $\kappa$) resultant deflection, minimal mesh",
     ylabel=r"$v$ (mm)",
-    delta_label=r"$(v - v_\mathrm{ref})/\max|v_\mathrm{ref}|$ (%)",
+    delta_label=r"$(v - v_\mathrm{ref})/\max\vert v_\mathrm{ref}\vert$ (%)",
     supports=(cd.BALL_POSITION_MM, cd.ROLLER_POSITION_MM), support_names=("A", "B"),
 )
 
@@ -264,27 +264,33 @@ gci_check = pd.DataFrame(rows)
 gci_check
 
 # %%
-def true_error_series(rec, name, label, marker):
+# one colour (a fixed index of the sheet's cycle) and one marker per quantity: true error filled,
+# GCI estimate open, so each pair reads as one quantity
+def true_error_series(rec, name, label, marker, colour):
     n_el = [len(grades[g].x_nodes) - 1 for g in rec.levels]
     err = [abs(h[name] - exact_values[name]) / exact_values[name] for h in rec.point_metrics_history]
-    return fg.Series(label=label, x=n_el, y=err, kind="numerical", marker=marker)
+    return fg.Series(label=label, x=n_el, y=err, kind="numerical", marker=marker, kwargs=dict(color=colour))
 
-def gci_series(rec, name, label, marker):
-    # GCI is an estimate (Roache), not a measured error: open markers of the same shape as the true
-    # error of the same quantity, joined by a thin dotted line
+def gci_series(rec, name, label, marker, colour):
+    # GCI is an estimate (Roache), not a measured error: open markers joined by a thin dotted line
     n_el = [len(grades[g].x_nodes) - 1 for g in rec.levels[2:]]
     gci = [g[name].GCI_f_m for g in rec.gci_history]
     return fg.Series(label=label, x=n_el, y=gci, kind="other", linestyle=":", marker=marker,
-                     kwargs=dict(markerfacecolor="none"))
+                     kwargs=dict(markerfacecolor="none", color=colour))
 
+# the v study stops refining once its GCI meets its threshold, so its series ends before M's
+v_last = len(grades[v_rec.levels[-1]].x_nodes) - 1
 fig_gci = fg.convergence(
     [len(grades[g].x_nodes) - 1 for g in m_rec.levels],
-    [true_error_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: true error", "o"),
-     gci_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: GCI$_{fm}$", "o"),
-     true_error_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: true error", "s"),
-     gci_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: GCI$_{fm}$", "s")],
-    note=f"{SHAFT}: true relative error vs. GCI estimate (span {x_lo:.0f}-{x_hi:.0f} mm)",
-    ylabel=r"$|\varepsilon|$",
+    [true_error_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: true error", "o", "C0"),
+     gci_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: GCI$_{fm}$", "o", "C0"),
+     true_error_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: true error", "s", "C1"),
+     gci_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: GCI$_{fm}$", "s", "C1")],
+    note=(f"{SHAFT}: true relative error vs. GCI estimate (span {x_lo:.0f}-{x_hi:.0f} mm)"
+          + (f"; $v$ series ends at $N_\\mathrm{{e}}$ = {v_last}: its GCI met the "
+             f"{100 * V_GCI_THRESHOLD:g} % threshold there and it was not refined further"
+             if v_rec.converged and len(v_rec.levels) < len(m_rec.levels) else "")),
+    ylabel=r"$\vert\varepsilon\vert$",
     xlabel=r"$N_\mathrm{e}$ (elements in the span)",
     reference_orders={},
 )
@@ -321,7 +327,7 @@ fig_conv = fg.field_comparison(
                kind="numerical")],
     note=rf"{SHAFT}: Timoshenko (Cowper $\kappa$) resultant deflection, GCI-converged mesh",
     ylabel=r"$v$ (mm)",
-    delta_label=r"$(v - v_\mathrm{ref})/\max|v_\mathrm{ref}|$ (%)",
+    delta_label=r"$(v - v_\mathrm{ref})/\max\vert v_\mathrm{ref}\vert$ (%)",
     supports=(cd.BALL_POSITION_MM, cd.ROLLER_POSITION_MM), support_names=("A", "B"),
 )
 

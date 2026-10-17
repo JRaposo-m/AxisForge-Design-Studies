@@ -88,9 +88,18 @@ def _draw(ax, s: Series, **extra):
         style["linestyle"] = s.linestyle
     if s.marker is not None:
         style["marker"] = s.marker
-    n = len(s.x)
-    if style["marker"] not in (None, "none") and n > _MAX_MARKERS:
-        style["markevery"] = n // _MAX_MARKERS
+    x = np.asarray(s.x, dtype=float)
+    if style["marker"] not in (None, "none") and len(x) > _MAX_MARKERS:
+        # thin by distance, not by index: a node is kept when it lies at least 1/_MAX_MARKERS of
+        # the range beyond the last kept one, and the last node always. Sparse regions (overhangs
+        # outside a refined span) keep all their nodes; a dense span shows about _MAX_MARKERS.
+        step = (x.max() - x.min()) / _MAX_MARKERS
+        keep, last = [0], x[0]
+        for i in range(1, len(x) - 1):
+            if abs(x[i] - last) >= step:
+                keep.append(i)
+                last = x[i]
+        style["markevery"] = keep + [len(x) - 1]
     return ax.plot(s.x, s.y, label=s.label, **{**style, **s.kwargs}, **extra)[0]
 
 
@@ -134,6 +143,7 @@ def field_comparison(series: Sequence[Series], deltas: Sequence[Series], *,
     for a in (ax, axd):
         _supports(a, supports, support_names if a is ax else [""] * len(supports))
     axd.axhline(0.0, linewidth=plt.rcParams["axes.linewidth"])
+    axd.margins(y=0.12)                                   # the extreme markers clear of the frame
     ax.set_ylabel(ylabel)
     axd.set_ylabel(delta_label)
     axd.set_xlabel(xlabel)
@@ -202,7 +212,7 @@ def convergence(h: Sequence[float], errors: Sequence[Series], *,
 def shaft_layout(edges: Sequence[float], diameters: Sequence[float],
                  loads: Sequence[Series], *,
                  supports: Sequence[float] = (), support_names: Sequence[str] = (),
-                 load_label: str = r"$q$ (N/mm)",
+                 load_label: str = r"$\vert q\vert$ (N/mm)",
                  xlabel: str = r"$x$ (mm)", note: str | None = None) -> Figure:
     """Shaft geometry (a) and applied distributed load intensities (b).
 
@@ -264,7 +274,7 @@ def shaft_fields(x_mm, v_mm, theta_xz_rad, theta_xy_rad, M_Nmm, sigma_b_MPa, *,
     x_mm : array_like
         Node positions along the shaft [mm] (``ShaftResults.x``).
     v_mm : array_like
-        Resultant transverse deflection ``hypot(v_xz, v_xy)`` per node [mm]; drawn in um.
+        Resultant transverse deflection ``hypot(v_xz, v_xy)`` per node [mm]; drawn in mm.
     theta_xz_rad, theta_xy_rad : array_like
         Nodal rotation in the XZ and the XY plane [rad]; drawn in mrad, one line style per plane.
         No resultant slope is drawn: the two plane rotations do not combine into one physical
@@ -296,7 +306,7 @@ def shaft_fields(x_mm, v_mm, theta_xz_rad, theta_xy_rad, M_Nmm, sigma_b_MPa, *,
     """
     x = np.asarray(x_mm, dtype=float)
     panels = [  # (values in plot units, label, [(marker, direct label)])
-        ([np.asarray(v_mm, dtype=float) * 1e3], r"$|v|$ ($\mu$m)", [("o", None)]),                     # [mm] -> [um]
+        ([np.asarray(v_mm, dtype=float)], r"$\vert v\vert$ (mm)", [("o", None)]),       # mm, as the other shaft figures
         ([np.asarray(theta_xz_rad, dtype=float) * 1e3, np.asarray(theta_xy_rad, dtype=float) * 1e3],   # [rad] -> [mrad]
          r"$\theta$ (mrad)", [("o", r"$\theta_{xz}$"), ("s", r"$\theta_{xy}$")]),
         ([np.asarray(M_Nmm, dtype=float) * 1e-3], r"$M$ (N m)", [("o", None)]),                         # [N mm] -> [N m]

@@ -41,11 +41,11 @@ A2_NOTE = r"A2: global direction of $\varphi_j = 0$ under review (R-003); $\varp
 """Stamp of every figure with an azimuth axis, until José rules on A2 (one place to change; the
 load distribution study plots carry a copy, ``studies/bearings/load_distribution/_common/plots.py``)."""
 
-SIGN_CHECK_NOTE = (r"$\theta$: direction of the radial load on the shaft (AxisForge RadialLoad, from +Y toward +Z); "
+SIGN_CHECK_NOTE = (r"$\theta$: direction of the radial load on the shaft (from +Y toward +Z); "
                    r"$\varphi_{F_r}$: load direction used by the solver; $\varphi_\mathrm{exp}$: direction of the "
                    r"shaft load on the inner ring; azimuth from +Z toward +Y (D-0010). One ball always sits on "
                    r"$\varphi_{F_r}$ by construction: the evidence (R-003) is the offset between the two directions "
-                   r"and the residual $|r|/|F_r|$ of the inner-ring equilibrium.")
+                   r"and the residual $\vert r\vert/\vert F_r\vert$ of the inner-ring equilibrium.")
 """Stamp of the sign check figure: it is the evidence, not a figure under the A2 caveat."""
 
 _ALPHA_CONSTANT_DEG = 0.01   # alpha_j spread below which it is reported as one value: the solver's

@@ -276,7 +276,7 @@ def hertz_line_stress(x_over_s_x, z_over_s_x) -> dict:
     -----
     On the axis ``x = 0``: ``sigma_z = -p0 a (a^2 + z^2)^(-1/2)`` (Eq. (4.46b) as corrected by
     Appendix 4; the print is dimensionally wrong) and ``tau1 = p0 (z/a - (z/a)^2 (1 + (z/a)^2)^(-1/2))``,
-    maximum 0.300 ``p0`` at ``z = 0.786 a``. At the surface edge ``x = +-a``, ``z = 0`` the formula
+    maximum 0.300 ``p0`` at ``z = 0.786 a`` (Johnson Table 4.1 prints 0.785 ``a``). At the surface edge ``x = +-a``, ``z = 0`` the formula
     is 0/0; the limit, 0, is returned.
 
     References
@@ -338,8 +338,7 @@ def hertz_point_axis_stress(z_over_s, nu) -> dict:
     Circular contacts only: for an elliptical contact the axis stresses depend on the
     eccentricity (Johnson Sec. 4.2(b)) and are not given here (OPEN FG-09). For ``nu = 0.3`` the
     maximum of ``tau1`` is about 0.31 ``p0`` at ``z = 0.48 a``. ``zeta atan(1/zeta)`` is written
-    with ``arctan2(1, zeta)`` so that the surface value is finite (as in
-    ``validation/contact/hertz_point_grid_domain/02_subsurface.py``, ``tau1_johnson``).
+    with ``arctan2(1, zeta)`` so that the surface value is finite.
 
     References
     ----------
