@@ -5,6 +5,8 @@
 #     text_representation:
 #       extension: .py
 #       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.6
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -41,10 +43,11 @@ import pandas as pd
 from IPython.display import Markdown, display
 
 from validation._support.figures import shaft_studies as fg
+from validation._support.style import use_style
 from references.beams import uniform_beam as an
 import construction as cd
 
-fg.use_style()
+use_style()                                       # house paper style (style/README.md)
 pd.set_option("display.float_format", lambda v: f"{v:.4g}")
 
 # %% [markdown]
@@ -213,10 +216,12 @@ summary
 # the supports, where $v = 0$).
 
 # %%
-STYLE = {
-    "euler_bernoulli": dict(label="Euler–Bernoulli", color="#2a78d6", linestyle="-"),
-    "timoshenko/cowper": dict(label=r"Timoshenko, $\kappa$ Cowper", color="#eb6834", linestyle="--"),
-    "timoshenko/hutchinson": dict(label=r"Timoshenko, $\kappa$ Hutchinson", color="#1baf7a", linestyle="-."),
+STYLE = {   # FEM nodal fields, dense: drawn as lines (no markers), one line style per model
+    "euler_bernoulli": dict(label="Euler–Bernoulli", kind="numerical", linestyle="-", marker="none"),
+    "timoshenko/cowper": dict(label=r"Timoshenko, $\kappa$ Cowper", kind="numerical", linestyle="--",
+                              marker="none"),
+    "timoshenko/hutchinson": dict(label=r"Timoshenko, $\kappa$ Hutchinson", kind="numerical", linestyle="-.",
+                                  marker="none"),
 }
 
 def shear_figure(shaft: str):
@@ -231,9 +236,9 @@ def shear_figure(shaft: str):
                                     **STYLE[name]))
     return fg.field_comparison(
         series, deltas,
-        title=f"{shaft}: resultant deflection, minimal mesh ({len(results['euler_bernoulli'][shaft].x_nodes)} nodes)",
-        ylabel=r"$v$ / mm",
-        delta_label=r"$(v - v_\mathrm{EB})\,/\,\max|v_\mathrm{EB}|$ / %",
+        note=f"{shaft}: resultant deflection, minimal mesh ({len(results['euler_bernoulli'][shaft].x_nodes)} nodes)",
+        ylabel=r"$v$ (mm)",
+        delta_label=r"$(v - v_\mathrm{EB})/\max|v_\mathrm{EB}|$ (%)",
         supports=(cd.BALL_POSITION_MM, cd.ROLLER_POSITION_MM), support_names=("A", "B"),
     )
 

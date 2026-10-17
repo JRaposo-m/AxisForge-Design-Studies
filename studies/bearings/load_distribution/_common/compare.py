@@ -10,6 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
+import matplotlib.pyplot as plt
+
 from . import plots
 from .store import StudyData, check_compatible, read_results
 
@@ -70,6 +72,7 @@ def compare_types(question_dir: Path, type_names: Sequence[str], *,
         The data that were compared.
     """
     same_axes = x_columns is None
+    plt.style.use(plots.STYLE_PATH)                   # the house sheet: the only source of the look
     datasets = load_types(question_dir, type_names, same_axes=same_axes)
     question = next(iter(datasets.values())).meta["question"]
     out_dir = question_dir / "compare" / "plots"
@@ -77,21 +80,21 @@ def compare_types(question_dir: Path, type_names: Sequence[str], *,
         axis_order = next(iter(datasets.values())).meta["axis_order"]
         x_axis = axis_order[0]
         rows = {name: d.rows for name, d in datasets.items()}
-        title = f"{question}: " + " vs ".join(type_names)
+        note = f"{question}: " + " vs ".join(type_names)
         if len(axis_order) == 1:
-            plots.plot_compare(rows, out_dir / x_axis, x_axis=x_axis, title=title)
+            plots.plot_compare(rows, out_dir / x_axis, x_axis=x_axis, note=note)
             return datasets
         group_axis = axis_order[1]          # one folder per value of the second axis
         for value in next(iter(datasets.values())).meta["axes"][group_axis]:
             point = {group_axis: value}
             plots.plot_compare(rows, out_dir / x_axis / plots.point_name(point, [group_axis]),
                                x_axis=x_axis, group_axis=group_axis, group_value=value,
-                               title=f"{title}, {plots.point_title(point, [group_axis])}")
+                               note=f"{note}, {plots.point_title(point, [group_axis])}")
         return datasets
     figure_types = figure_types or {}
     for column in x_columns:
         names = list(figure_types.get(column, type_names))
         plots.plot_compare({name: datasets[name].rows for name in names},
                            out_dir / f"vs_{column}", x_axis=column,
-                           title=f"{question}: " + " vs ".join(names))
+                           note=f"{question}: " + " vs ".join(names))
     return datasets

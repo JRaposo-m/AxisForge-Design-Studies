@@ -40,15 +40,18 @@ import math
 import sys
 
 import numpy as np
+import matplotlib.pyplot as plt
 from axisforge.outputs._format import format_table, write_records_csv
 
 from references.contact.hertz import hertz_point
 from slippy_bridge.contact import Grid, pair, static_step
 from validation._support.convergence import RECORD_COLUMNS, sweep
 from validation._support.figures import contact_plots
+from validation._support.style import use_style
 
 from construction import CASE, H_LEVELS, MUSER_H_OVER_A, MUSER_SPAN, RESULTS, SPAN_X_0
 
+use_style()                                       # house paper style (style/README.md)
 SMOKE = "--smoke" in sys.argv                     # step-7 smoke run; a notebook runs the full grids
 NAME = "01_ball_flat"
 RESULTS.mkdir(exist_ok=True)                      # git-ignored (D-0020)
@@ -197,5 +200,11 @@ write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
 # pressure through the centre on the default grid against the Hertz pressure.
 
 # %%
-contact_plots.convergence(records, RESULTS / f"{NAME}_convergence.png")
-contact_plots.pressure_cuts(p_default, grid_default, CASE, RESULTS / f"{NAME}_pressure_cuts.png")
+fig = contact_plots.convergence(records, RESULTS / f"{NAME}_convergence.png")
+plt.close(fig)                                    # shown once, by the line below
+fig
+
+# %%
+fig = contact_plots.pressure_cuts(p_default, grid_default, JUDGE, RESULTS / f"{NAME}_pressure_cuts.png")
+plt.close(fig)                                    # shown once, by the line below
+fig

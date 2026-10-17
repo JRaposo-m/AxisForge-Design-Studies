@@ -35,14 +35,18 @@
 import math
 import sys
 
+import matplotlib.pyplot as plt
+from IPython.display import display
 from axisforge.outputs._format import format_table, write_records_csv
 
 from references.contact.hertz import hertz_point
 from validation._support.convergence import RECORD_COLUMNS, sweep
 from validation._support.figures import contact_plots
+from validation._support.style import use_style
 
 from construction import CASE, RESULTS, SPAN_X_LEVELS
 
+use_style()                                       # house paper style (style/README.md)
 SMOKE = "--smoke" in sys.argv                     # step-7 smoke run; a notebook runs every half-length
 NAME = "03_kernel"
 RESULTS.mkdir(exist_ok=True)                      # git-ignored (D-0020)
@@ -126,4 +130,6 @@ write_records_csv(RESULTS / f"{NAME}_criteria.csv", criteria)
 
 # %%
 for label in KERNELS:
-    contact_plots.convergence([r for r in records if r["kernel"] == label], RESULTS / f"{NAME}_{label}.png")
+    fig = contact_plots.convergence([r for r in records if r["kernel"] == label], RESULTS / f"{NAME}_{label}.png")
+    display(fig)                                  # notebook: shown inline; shell: its repr
+    plt.close(fig)

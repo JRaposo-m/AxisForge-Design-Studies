@@ -26,6 +26,7 @@ from abc import ABC
 from pathlib import Path
 from typing import ClassVar, Sequence
 
+import matplotlib.pyplot as plt
 from axisforge.outputs.solvers.bearings import bearing_analysis_result as af_analysis
 
 from . import plots, reports
@@ -273,14 +274,15 @@ class LoadDistributionStudy(ABC):
         names = self.axis_names
         x_axis = names[0]
         group_axis = names[1] if len(names) > 1 else None
-        title = f"{self.question}: {plots.KIND_NAME.get(self.spec.kind, self.spec.kind)}"
+        note = f"{self.question}: {plots.KIND_NAME.get(self.spec.kind, self.spec.kind)}"
+        plt.style.use(plots.STYLE_PATH)               # the house sheet: the only source of the look
         plots.plot_summary(data.rows, plots_dir / "summary", x_axis=x_axis,
-                           group_axis=group_axis, title=title)
+                           group_axis=group_axis, note=note)
         plots.plot_polar_distributions(data.rows, data.q_rows, plots_dir, axis_names=names,
-                                       title=title)
+                                       note=note)
         if data.lam_rows:
             plots.plot_lamina_profile(data.lam_rows, plots_dir,
-                                      x_axis=x_axis, group_axis=group_axis, title=title)
+                                      x_axis=x_axis, group_axis=group_axis, note=note)
 
     def run_and_save(self, type_dir: Path) -> StudyData:
         """Run, check, write ``results/`` and draw ``plots/`` of one bearing type.

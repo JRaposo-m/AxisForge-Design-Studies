@@ -5,6 +5,8 @@
 #     text_representation:
 #       extension: .py
 #       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.6
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -40,11 +42,12 @@ import pandas as pd
 from IPython.display import Markdown, display
 
 from validation._support.figures import shaft_studies as fg
+from validation._support.style import use_style
 from references.beams import stepped_beam as an
 import construction as cd
 from axisforge.core.loads import LoadPlane
 
-fg.use_style()
+use_style()                                       # house paper style (style/README.md)
 pd.set_option("display.float_format", lambda v: f"{v:.4g}")
 
 # %% [markdown]
@@ -99,15 +102,15 @@ pd.DataFrame(rows, columns=["Shaft", "Load", "Source", "x_lo / mm", "x_hi / mm",
 def layout_figure(shaft: str):
     ss = next(s for s in system.shafts if s.name == shaft)
     x = np.linspace(0.0, cd.SHAFT_LENGTH_MM, 4001)
-    colours = {"parabolic_user_load": "#eb6834"}
+    linestyles = {"parabolic_user_load": "-"}             # input load intensities: formula lines
     series = []
     for ld in ss.distributed_radial_loads:
         q = np.array([abs(ld.q(xi)) if ld.x_lo <= xi <= ld.x_hi else 0.0 for xi in x])
-        series.append(fg.Series(label=f"{ld.label} ({abs(ld.magnitude):.0f} N)", x=x, y=q,
-                                color=colours.get(ld.label, "#2a78d6" if ld.label.endswith("Ft") else "#1baf7a")))
+        series.append(fg.Series(label=f"{ld.label} ({abs(ld.magnitude):.0f} N)", x=x, y=q, kind="theory",
+                                linestyle=linestyles.get(ld.label, "--" if ld.label.endswith("Ft") else "-.")))
     edges = [segs[0].x_lo] + [s.x_hi for s in segs]
     return fg.shaft_layout(edges, [s.d for s in segs], series,
-                           title=f"{shaft}: geometry and distributed load intensities |q(x)|",
+                           note=f"{shaft}: geometry and distributed load intensities |q(x)|",
                            supports=SUPPORTS, support_names=("A", "B"))
 
 fig_layout_1 = layout_figure("shaft1")
@@ -218,10 +221,12 @@ summary
 # the EB result, normalised by the maximum EB deflection.
 
 # %%
-STYLE = {
-    "euler_bernoulli": dict(label="Euler–Bernoulli", color="#2a78d6", linestyle="-"),
-    "timoshenko/cowper": dict(label=r"Timoshenko, $\kappa$ Cowper", color="#eb6834", linestyle="--"),
-    "timoshenko/hutchinson": dict(label=r"Timoshenko, $\kappa$ Hutchinson", color="#1baf7a", linestyle="-."),
+STYLE = {   # FEM nodal fields, dense: drawn as lines (no markers), one line style per model
+    "euler_bernoulli": dict(label="Euler–Bernoulli", kind="numerical", linestyle="-", marker="none"),
+    "timoshenko/cowper": dict(label=r"Timoshenko, $\kappa$ Cowper", kind="numerical", linestyle="--",
+                              marker="none"),
+    "timoshenko/hutchinson": dict(label=r"Timoshenko, $\kappa$ Hutchinson", kind="numerical", linestyle="-.",
+                                  marker="none"),
 }
 
 def shear_figure(shaft: str):
@@ -236,9 +241,9 @@ def shear_figure(shaft: str):
                                     **STYLE[name]))
     return fg.field_comparison(
         series, deltas,
-        title=f"{shaft}: resultant deflection, minimal mesh ({len(ref.x_nodes)} nodes)",
-        ylabel=r"$v$ / mm",
-        delta_label=r"$(v - v_\mathrm{EB})\,/\,\max|v_\mathrm{EB}|$ / %",
+        note=f"{shaft}: resultant deflection, minimal mesh ({len(ref.x_nodes)} nodes)",
+        ylabel=r"$v$ (mm)",
+        delta_label=r"$(v - v_\mathrm{EB})/\max|v_\mathrm{EB}|$ (%)",
         supports=SUPPORTS, support_names=("A", "B"),
     )
 

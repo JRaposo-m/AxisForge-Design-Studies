@@ -5,6 +5,8 @@
 #     text_representation:
 #       extension: .py
 #       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.6
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -44,6 +46,7 @@ import pandas as pd
 from IPython.display import Markdown, display
 
 from validation._support.figures import shaft_studies as fg
+from validation._support.style import use_style
 from references.beams import stepped_beam as an
 import construction as cd
 from axisforge.results.convergence_results.convergence_results import ConvergenceRecord
@@ -62,7 +65,7 @@ from axisforge.solvers.mesh.convergence_solver import (
 from validation._support.reports.solver_results import convergence_report as crep
 from validation._support.convergence import ResultantView
 
-fg.use_style()
+use_style()                                       # house paper style (style/README.md)
 pd.set_option("display.float_format", lambda v: f"{v:.6g}")
 
 segs = cd.segments()
@@ -141,18 +144,17 @@ pd.DataFrame(rows, columns=["plane", "applied / N", "reactions / N", "residual /
 # %%
 v_fem_xd = np.interp(xd, x, base.v)           # linear-element interpolation between nodes
 scale = np.max(exact.v(xd))
+FEM_BASE = f"FEM, minimal mesh ({len(base.x_nodes)} nodes)"
 fig_base = fg.field_comparison(
-    [fg.Series(label="analytical", x=xd, y=exact.v(xd), color="#1f1f1e", linestyle="-",
-               kwargs=dict(linewidth=0.9)),
-     fg.Series(label=f"FEM, minimal mesh ({len(base.x_nodes)} nodes)", x=x, y=base.v,
-               color="#eb6834", linestyle="--", marker="o")],
-    [fg.Series(label="", x=xd, y=100 * (v_fem_xd - exact.v(xd)) / scale,
-               color="#eb6834", linestyle="--"),
-     fg.Series(label="", x=x, y=100 * (np.asarray(base.v) - exact.v(x)) / scale,
-               color="#eb6834", linestyle="none", marker="o")],
-    title=f"{SHAFT}: Timoshenko (Cowper κ) resultant deflection, minimal mesh",
-    ylabel=r"$v$ / mm",
-    delta_label=r"$(v - v_\mathrm{ref})\,/\,\max|v_\mathrm{ref}|$ / %",
+    [fg.Series(label="analytical", x=xd, y=exact.v(xd), kind="theory"),
+     # nodal values (filled markers) joined by the linear-element interpolation
+     fg.Series(label=FEM_BASE, x=x, y=base.v, kind="numerical", linestyle="--")],
+    [fg.Series(label=FEM_BASE, x=xd, y=100 * (v_fem_xd - exact.v(xd)) / scale, kind="numerical",
+               linestyle="--", marker="none"),
+     fg.Series(label=FEM_BASE, x=x, y=100 * (np.asarray(base.v) - exact.v(x)) / scale, kind="numerical")],
+    note=rf"{SHAFT}: Timoshenko (Cowper $\kappa$) resultant deflection, minimal mesh",
+    ylabel=r"$v$ (mm)",
+    delta_label=r"$(v - v_\mathrm{ref})/\max|v_\mathrm{ref}|$ (%)",
     supports=SUPPORTS, support_names=("A", "B"),
 )
 
@@ -288,28 +290,28 @@ gci_check = pd.DataFrame(rows)
 gci_check
 
 # %%
-def true_error_series(rec, name, label, color, ls, marker):
+def true_error_series(rec, name, label, marker):
     n_el = [len(grades[g].x_nodes) - 1 for g in rec.levels]
     err = [abs(h[name] - exact_values[name]) / exact_values[name] for h in rec.point_metrics_history]
-    return fg.Series(label=label, x=n_el, y=err, color=color, linestyle=ls, marker=marker)
+    return fg.Series(label=label, x=n_el, y=err, kind="numerical", marker=marker)
 
-def gci_series(rec, name, label, color, ls, marker):
+def gci_series(rec, name, label, linestyle):
+    # GCI is an estimate from a formula (Roache), not a measured error: a line
     n_el = [len(grades[g].x_nodes) - 1 for g in rec.levels[2:]]
     gci = [g[name].GCI_f_m for g in rec.gci_history]
-    return fg.Series(label=label, x=n_el, y=gci, color=color, linestyle=ls, marker=marker)
+    return fg.Series(label=label, x=n_el, y=gci, kind="other", linestyle=linestyle)
 
 fig_gci = fg.convergence(
     [len(grades[g].x_nodes) - 1 for g in m_rec.levels],
-    [true_error_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: true error", "#eb6834", "-", "o"),
-     gci_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: GCI$_{fm}$", "#eb6834", ":", "o"),
-     true_error_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: true error", "#2a78d6", "-", "s"),
-     gci_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: GCI$_{fm}$", "#2a78d6", ":", "s")],
-    title=f"{SHAFT}: true relative error vs. GCI estimate (span {x_lo:.0f}–{x_hi:.0f} mm)",
+    [true_error_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: true error", "o"),
+     gci_series(v_rec, "v_res:max", r"$v_\mathrm{res,max}$: GCI$_{fm}$", "--"),
+     true_error_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: true error", "s"),
+     gci_series(m_rec, "M_res:max", r"$M_\mathrm{res,max}$: GCI$_{fm}$", ":")],
+    note=f"{SHAFT}: true relative error vs. GCI estimate (span {x_lo:.0f}-{x_hi:.0f} mm)",
     ylabel="relative error",
     xlabel=r"number of elements in the span",
     reference_orders={},
 )
-_ = fig_gci.axes[0].legend(loc="lower left")
 
 # %% [markdown]
 # ### 4.1 Error inherited from the base solution
@@ -383,16 +385,15 @@ summary = pd.DataFrame(
 summary
 
 # %%
+FEM_CONV = f"FEM, converged mesh ({len(converged.x_nodes)} nodes)"
 fig_conv = fg.field_comparison(
-    [fg.Series(label="analytical", x=xd, y=exact.v(xd), color="#1f1f1e", linestyle="-",
-               kwargs=dict(linewidth=0.9)),
-     fg.Series(label=f"FEM, converged mesh ({len(converged.x_nodes)} nodes)", x=xc,
-               y=converged.v, color="#2a78d6", linestyle="--")],
-    [fg.Series(label="", x=xc, y=100 * (np.asarray(converged.v) - exact.v(xc)) / np.max(exact.v(xd)),
-               color="#2a78d6", linestyle="--")],
-    title=f"{SHAFT}: Timoshenko (Cowper κ) resultant deflection, GCI-converged mesh",
-    ylabel=r"$v$ / mm",
-    delta_label=r"$(v - v_\mathrm{ref})\,/\,\max|v_\mathrm{ref}|$ / %",
+    [fg.Series(label="analytical", x=xd, y=exact.v(xd), kind="theory"),
+     fg.Series(label=FEM_CONV, x=xc, y=converged.v, kind="numerical", linestyle="--", marker="none")],
+    [fg.Series(label=FEM_CONV, x=xc, y=100 * (np.asarray(converged.v) - exact.v(xc)) / np.max(exact.v(xd)),
+               kind="numerical", linestyle="--", marker="none")],
+    note=rf"{SHAFT}: Timoshenko (Cowper $\kappa$) resultant deflection, GCI-converged mesh",
+    ylabel=r"$v$ (mm)",
+    delta_label=r"$(v - v_\mathrm{ref})/\max|v_\mathrm{ref}|$ (%)",
     supports=SUPPORTS, support_names=("A", "B"),
 )
 
