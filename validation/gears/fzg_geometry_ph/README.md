@@ -36,6 +36,10 @@ PROVISIONAL. OPEN R-120, R-124, Q-09.
 - E and nu are not printed (20MnCr5 only, R-118).
 - The p_H convention (point, load sharing) is not stated. The criterion is therefore the load-ratio
   test; p_H at A, B+ and C is a record.
+- The p_H computed here is the Hertz p0 of the local equivalent cylinders at each point, under AxisForge's
+  equal-line-load sharing (w = F_bn / l_sum); it is not the ISO 6336-2 sigma_H (no Z_eps, Z_beta, and its
+  nominal load differs). Martins2015 prints one p_H per stage, compared here with every point; which point
+  it refers to is open (R-117, Q-09).
 - AxisForge units (mm, N, N m, MPa, rpm) in the case. SI only inside `slippy_bridge`. The CSV symbol
   column is not printed (GL-23).
 
@@ -51,8 +55,8 @@ OPEN R-121, R-117.
 PROVISIONAL. `construction.build_pair("C40" | "H501")`: the FEUP z, mn, alpha_n, beta, b and x (H501 x from
 L23-24, never the GEARpie entry, GL-11), zero-backlash centre distance from x. H501 hand of helix is not
 printed (OPEN GL-38). `construction.path_times` gives the times of A, B-, B+, C, D-, D+, E with one-sided
-limits 1e-6 mm either side of B and D (GL-09). It refuses eps_alpha >= 2 (GL-25). The steel is registered
-only when E, nu and the density are known (R-118). Assumptions: rigid unmodified involute flanks, rigid load
+limits 1e-6 mm either side of B and D (GL-09). It refuses eps_alpha >= 2 (GL-25). The gears carry
+`material_id` `steel_20MnCr5`, not registered in AxisForge; E and nu are given (R-118 below). Assumptions: rigid unmodified involute flanks, rigid load
 sharing, local equivalent cylinders, smooth frictionless elastic half-spaces. OPEN R-118, GL-09, GL-11,
 GL-25.
 
@@ -72,9 +76,8 @@ PROVISIONAL. Fixed before running; all **[proposed]**. OPEN R-117, R-118, GL-10,
 ## Scripts
 
 PROVISIONAL. Run from this folder: `python 01_geometry.py [--smoke]`, `python 02_ph.py [--smoke]`.
-`01_geometry` uses AxisForge only and runs today; `--smoke` changes nothing. `02_ph` raises
-`NotImplementedError` in the gear adapter (OPEN R-023, R-031); `--smoke`: point A only. No notebook yet
-(D-0022).
+`01_geometry` uses AxisForge only; `--smoke` changes nothing. `02_ph` runs through the gear adapter;
+`--smoke`: point A only. No notebook yet (D-0022).
 
 | Script | Content |
 |---|---|
@@ -91,7 +94,7 @@ PROVISIONAL. OPEN GL-01, R-146.
 | `reference_values.csv` | copied unchanged from vault `80_Inbox/2026-10-16/reference_values/gears/fzg_geometry_ph/reference_values.csv`; sha256 (LF-normalised) `84d30d93e6b519017e8743015d0c6cef6c3c8605b8d5eab19bf48e8b0f1b83f1` |
 | hash rule | sha256 of the bytes with CRLF replaced by LF (R-146: a checkout may turn the CSV to CRLF) |
 | design-studies | set at first run |
-| AxisForge | set at first run. The API used (`contact_inputs`, `path_points`, `mesh_forces`) exists only from `c328999` on branch `refactor/gears-mechanical-system`, not on main (GL-01) |
+| AxisForge | set at first run; checked at `73231b4` of branch `refactor/gears-mechanical-system` (the API used, `contact_inputs`, `path_points`, `mesh_forces`, is not on main, GL-01) |
 | SlipPY | set at first run |
 
 ## Known issues
@@ -100,7 +103,10 @@ PROVISIONAL. OPEN R-117, R-118, R-120, R-121, R-123, R-124, R-125, R-126, GL-01,
 GL-30, GL-38.
 
 - R-117, GL-30: the FEUP p_H point is not stated; at half load A gives about 497 MPa, B+ about 504.5.
-- R-118: no E, nu for 20MnCr5 from a held source; p_H itself depends on E (only the ratio does not).
+- R-118: no E, nu for 20MnCr5 from a held source. Assumed for both gears: E = 206 000 N/mm^2, nu = 0.3, the
+  generic steel of ISO 6336-2:2006 Table 1, not a 20MnCr5-specific value (`construction.GEAR_E_MPA`,
+  `GEAR_NU`); the record shows `material1 = material2 = "given:steel_20MnCr5"`. p_H depends on E; the
+  ratios of P1 do not.
 - R-120: normal or transverse alpha, m not stated. R-121: C40 wheel d_a 115.54 vs 118.54.
 - R-123: C40 Ra 0.7 (L15), 0.9 (L115) or 0.35/0.85 after run-in (L148-149); not used here.
 - R-124, R-126, Q-09: wheel torque and speed, the driver assumed gear 1. R-125: F_bn is passed by hand

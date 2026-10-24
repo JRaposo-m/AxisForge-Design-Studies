@@ -10,8 +10,7 @@ The pair and the path times are this study's OWN copy of ``validation/gears/fzg_
 * density g/cm^3 -> kg/m^3 (x 1e3); kinematic viscosity cSt -> m^2/s (x 1e-6);
 * pressure-viscosity coefficient: the printed number x 1e-8, read as 1/Pa (scale printed, unit not; R-295).
 
-Spur only (R-027). AxisForge units for the pair (mm, N, N m, rpm); SI for the oils. AxisForge API: commit
-c328999 of branch ``refactor/gears-mechanical-system`` (GL-01).
+Spur only (R-027). AxisForge units for the pair (mm, N, N m, rpm); SI for the oils.
 """
 from __future__ import annotations
 
@@ -19,7 +18,6 @@ import math
 from pathlib import Path
 
 from axisforge.core.machine_elements.gears import CylindricalFamily, CylindricalGearData, Gear, GearPair
-from axisforge.core.materials import IsotropicElastic, Material, available_materials, register
 
 __all__ = ["build_pair", "path_times", "FAMILY", "OIL_MARTINS2015", "OIL_FERNANDES2015A", "OIL", "RESULTS"]
 
@@ -33,10 +31,10 @@ _ALPHA_SCALE = 1e-8       # printed "(alpha x 10^-8)": number x 1e-8, read as [1
 # --- C40 (Fernandes2015b Table 1 = Martins2015 Table 3; rows in validation/gears/fzg_geometry_ph) --------
 C40 = dict(mn=4.5, z=(16, 24), alpha_n_deg=20.0, b=40.0, x=(0.1817, 0.1715))   # [mm, -, deg, mm, -]
 
-STEEL_ID = "steel_20MnCr5"
-STEEL_E_MPA = None              # Young's modulus [MPa]. OPEN R-118
-STEEL_NU = None                 # Poisson's ratio [-]. OPEN R-118
-STEEL_DENSITY_KG_PER_M3 = None  # density [kg/m^3]. OPEN R-118
+STEEL_ID = "steel_20MnCr5"       # material_id of both gears, not registered in AxisForge (OPEN R-118)
+# E, nu given to gear_contacts: ISO 6336-2:2006 Table 1 generic steel, assumed (README, R-118)
+GEAR_E_MPA = (206000.0, 206000.0)   # Young's modulus of gear 1, gear 2 [MPa]
+GEAR_NU = (0.3, 0.3)                # Poisson's ratio of gear 1, gear 2 [-]
 
 # --- operating point (not in this study's sources) -----------------------------------------------
 WHEEL_TORQUE_NM = None          # FZG stage torque on the wheel [N m]. OPEN GL-39
@@ -117,7 +115,7 @@ def build_pair() -> GearPair:
     """The FZG C40 spur pair (z 16/24, mn 4.5 mm, FEUP x), assembled and NOT solved.
 
     Own copy of ``validation/gears/fzg_geometry_ph`` ``build_pair("C40")`` (studies import no case). The
-    steel is registered only when E, nu and the density are known and not registered yet (R-118).
+    gears carry ``material_id = STEEL_ID``, not registered: E and nu are ``GEAR_E_MPA``, ``GEAR_NU``.
 
     Returns
     -------
@@ -128,10 +126,6 @@ def build_pair() -> GearPair:
     ----------
     Fernandes2015b Table 1; Martins2015 Table 3.
     """
-    if None not in (STEEL_E_MPA, STEEL_NU, STEEL_DENSITY_KG_PER_M3) and STEEL_ID not in available_materials():
-        register(Material(material_id=STEEL_ID, density=STEEL_DENSITY_KG_PER_M3,
-                          elastic=IsotropicElastic(E=STEEL_E_MPA, poisson_ratio=STEEL_NU),
-                          description="20MnCr5, FZG test gears (E, nu: R-118)"))
     gears = [Gear.assemble(FAMILY, CylindricalGearData(C40["mn"], z, x=x, b=C40["b"], alpha_n_deg=C40["alpha_n_deg"],
                                                        label=f"C40_{member}", material_id=STEEL_ID))
              for z, x, member in zip(C40["z"], C40["x"], ("pinion", "wheel"))]

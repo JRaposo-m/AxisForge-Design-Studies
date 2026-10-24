@@ -17,8 +17,7 @@
 # # FZG C40: EHL film along the path of contact, quasi-steady
 #
 # **PROVISIONAL (scaffold 2026-10-17)**: structure agreed in debate_gears-lubrication-scaffold_2026-10-17;
-# not validated. Raises `NotImplementedError` today in the gear adapter (`contacts`, OPEN R-023 R-031), then
-# in `ehl.run`.
+# not validated. Raises `NotImplementedError` in `ehl.run` (the EHL solve is a scaffold).
 #
 # **Study:** `studies/gears/contact_along_path` (V-GEAR-05, demonstration), stage 2.
 #
@@ -34,15 +33,15 @@ import math
 import sys
 
 from axisforge.outputs._format import format_table, write_records_csv
-from axisforge.solvers.machine_elements.gears.contact import contact_inputs       # c328999 only (GL-01)
+from axisforge.solvers.machine_elements.gears.contact import contact_inputs
 
 from references.contact.ehl import e_prime, film_scalings, groups, moes
 from slippy_bridge.contact import Grid, gear_contacts
 from slippy_bridge.contact.measures import rel_err
 from slippy_bridge.lubrication import ehl
 
-from construction import (DRIVER, FAMILY, OIL, OIL_FERNANDES2015A, OIL_MARTINS2015, RESULTS, ROELANDS_P0_PA, SPAN_X,
-                          WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair, path_times)
+from construction import (DRIVER, FAMILY, GEAR_E_MPA, GEAR_NU, OIL, OIL_FERNANDES2015A, OIL_MARTINS2015, RESULTS,
+                          ROELANDS_P0_PA, SPAN_X, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair, path_times)
 
 SMOKE = "--smoke" in sys.argv                     # smoke run; a notebook runs every point
 NAME = "02_film_path"
@@ -62,7 +61,8 @@ n1_rpm = n2_rpm * z2 / z1
 F_bn_N = FAMILY.mesh_forces(pair, T2_Nm * z1 / z2, rot1=+1).F_bn_N        # gear 1 drives (OPEN Q-09)
 times = path_times(pair, n1_rpm)
 labels = ["A"] if SMOKE else list(times)
-path = gear_contacts(pair, contact_inputs(pair, DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in labels]), points=labels)
+path = gear_contacts(pair, contact_inputs(pair, DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in labels]),
+                     driver=DRIVER, points=labels, E=GEAR_E_MPA, nu=GEAR_NU)
 
 # %% [markdown]
 # ## 2. One steady EHL solve per point

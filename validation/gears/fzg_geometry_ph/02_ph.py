@@ -16,8 +16,7 @@
 # %% [markdown]
 # # FZG C40, load stages K5, K7, K9: Hertz pressure along the path against Martins2015 Table 4
 #
-# **PROVISIONAL (scaffold 2026-10-17)**: structure agreed in debate_gears-lubrication-scaffold_2026-10-17;
-# not validated. Raises `NotImplementedError` today in the gear adapter (`contacts`, OPEN R-023 R-031).
+# Not validated.
 #
 # **Case:** `validation/gears/fzg_geometry_ph` (V-GEAR-04), criteria P0, P1, P2 of the README.
 #
@@ -34,12 +33,13 @@
 import sys
 
 from axisforge.outputs._format import format_table, read_records_csv, write_records_csv
-from axisforge.solvers.machine_elements.gears.contact import contact_inputs       # c328999 only (GL-01)
+from axisforge.solvers.machine_elements.gears.contact import contact_inputs
 
 from slippy_bridge.contact import gear_contacts, hertz
 from slippy_bridge.contact.measures import rel_err
 
-from construction import DRIVER, FAMILY, RESULTS, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair, path_times
+from construction import (DRIVER, FAMILY, GEAR_E_MPA, GEAR_NU, RESULTS, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair,
+                          path_times)
 
 SMOKE = "--smoke" in sys.argv                     # smoke run; a notebook runs every point
 NAME = "02_ph"
@@ -101,7 +101,7 @@ records = []
 for stage, T2_Nm in WHEEL_TORQUE_NM.items():
     T1_Nm = T1[stage]
     inputs = contact_inputs(pair, DRIVER, n1_rpm, forces[stage].F_bn_N, t_s=[times[k] for k in labels])
-    for c in gear_contacts(pair, inputs, points=labels):
+    for c in gear_contacts(pair, inputs, driver=DRIVER, points=labels, E=GEAR_E_MPA, nu=GEAR_NU):
         ref = hertz(c.case)                       # Hertz line contact, SI
         records.append({**c.record(), "stage": stage, "T2_Nm": T2_Nm, "T1_Nm": T1_Nm, "F_bn_N": forces[stage].F_bn_N,
                         "F_r_N": forces[stage].F_r_N, "F_r_printed_N": F_r_printed[stage],

@@ -13,8 +13,6 @@ functions of a construction file (plan sec 3.9; reason: ``02_ph`` and the tests 
 Model: involute spur or helical pair, rigid unmodified flanks, steel 20MnCr5 (E and nu not printed,
 R-118). Torque and speed are printed on the WHEEL (Martins2015 Table 4); the case converts them to
 gear 1 (R-124). Units: AxisForge (mm, N, N m, MPa, rpm); SI only inside ``slippy_bridge``.
-
-AxisForge API: commit c328999 of branch ``refactor/gears-mechanical-system`` (GL-01).
 """
 from __future__ import annotations
 
@@ -22,10 +20,9 @@ import math
 from pathlib import Path
 
 from axisforge.core.machine_elements.gears import CylindricalFamily, CylindricalGearData, Gear, GearPair
-from axisforge.core.materials import IsotropicElastic, Material, available_materials, register
 
-__all__ = ["build_pair", "path_times", "FAMILY", "PAIRS", "STEEL_ID", "WHEEL_TORQUE_NM", "WHEEL_SPEED_RPM",
-           "RESULTS"]
+__all__ = ["build_pair", "path_times", "FAMILY", "PAIRS", "STEEL_ID", "GEAR_E_MPA", "GEAR_NU", "WHEEL_TORQUE_NM",
+           "WHEEL_SPEED_RPM", "RESULTS"]
 
 FAMILY = CylindricalFamily()
 
@@ -51,10 +48,10 @@ PAIRS = {
 }
 
 # --- material (20MnCr5, CSV L114; no E or nu printed) ---------------------------------------
-STEEL_ID = "steel_20MnCr5"
-STEEL_E_MPA = None              # Young's modulus [MPa]. OPEN R-118: no held source
-STEEL_NU = None                 # Poisson's ratio [-]. OPEN R-118
-STEEL_DENSITY_KG_PER_M3 = None  # density [kg/m^3], not read by AxisForge. OPEN R-118
+STEEL_ID = "steel_20MnCr5"       # material_id of both gears, not registered in AxisForge (OPEN R-118)
+# E, nu given to gear_contacts: ISO 6336-2:2006 Table 1 generic steel, assumed (README, R-118)
+GEAR_E_MPA = (206000.0, 206000.0)   # Young's modulus of gear 1, gear 2 [MPa]
+GEAR_NU = (0.3, 0.3)                # Poisson's ratio of gear 1, gear 2 [-]
 
 # --- roughness: three printed values for C40 (record only) ------------------------------------
 RA_C40_UM = {"Fernandes2015b": 0.7,          # CSV L15
@@ -81,9 +78,7 @@ def build_pair(name: str) -> GearPair:
 
     The working centre distance is the zero-backlash one that AxisForge derives from x1 + x2
     (``al=None``); ``01_geometry`` compares it with the printed 91.5 mm. Each gear carries
-    ``material_id = STEEL_ID``; the material is registered only when E, nu and the density are known
-    and it is not registered yet (``available_materials``), so that a second call or another case does
-    not raise.
+    ``material_id = STEEL_ID``, not registered in AxisForge: E and nu are ``GEAR_E_MPA``, ``GEAR_NU``.
 
     Parameters
     ----------
@@ -105,11 +100,6 @@ def build_pair(name: str) -> GearPair:
     Fernandes2015b Table 1; Martins2015 Table 3 (``reference_values.csv`` L2-29, L100-131).
     """
     p = PAIRS[name]
-    # OPEN R-118: with E or nu unknown the material is not registered; get_material then raises (R-025)
-    if None not in (STEEL_E_MPA, STEEL_NU, STEEL_DENSITY_KG_PER_M3) and STEEL_ID not in available_materials():
-        register(Material(material_id=STEEL_ID, density=STEEL_DENSITY_KG_PER_M3,
-                          elastic=IsotropicElastic(E=STEEL_E_MPA, poisson_ratio=STEEL_NU),
-                          description="20MnCr5, FZG test gears (E, nu: R-118)"))
     gears = [Gear.assemble(FAMILY, CylindricalGearData(p["mn"], z, x=x, b=p["b"], alpha_n_deg=p["alpha_n_deg"],
                                                        beta_n_deg=p["beta_n_deg"], hand=hand,
                                                        label=f"{name}_{member}", material_id=STEEL_ID))

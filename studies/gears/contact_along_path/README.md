@@ -51,7 +51,8 @@ PROVISIONAL. FZG C40 (z 16/24, mn 4.5 mm, FEUP x), gear 1 driving (Q-09). Operat
 speed not chosen (OPEN GL-39); the smoke run borrows K5 (104.97 N m) at 200 rpm from
 `fzg_geometry_ph`. Oil at 80 C: the two FEUP sources are kept side by side (`OIL_MARTINS2015`,
 `OIL_FERNANDES2015A`). eta0, the Roelands z and rho(80 C) are not printed (`None`); which oil and which alpha
-is OPEN R-295. Steel E, nu: R-118. Assumptions: rigid load sharing, local equivalent cylinders,
+is OPEN R-295. Steel E, nu (R-118 open): E = 206 000 N/mm^2, nu = 0.3, the generic steel of ISO 6336-2:2006
+Table 1, assumed, not 20MnCr5-specific (`construction.GEAR_E_MPA`, `GEAR_NU`). Assumptions: rigid load sharing, local equivalent cylinders,
 smooth surfaces, steady, isothermal, Newtonian, pure rolling for the film. OPEN R-295, R-118, GL-39.
 
 ## Criteria
@@ -68,8 +69,8 @@ PROVISIONAL. Fixed before running; **[proposed]**; a demonstration check, not a 
 
 PROVISIONAL. Run from this folder: `python 01_hertz_path.py [--smoke]`, `python 02_film_path.py [--smoke]`.
 Without `--smoke` both raise `NotImplementedError` until the operating point is chosen. With `--smoke`,
-point A only, at the smoke operating point; both raise `NotImplementedError` in the gear adapter (OPEN
-R-023, R-031). No notebook yet (D-0022).
+point A only, at the smoke operating point; `01_hertz_path` runs, `02_film_path` raises `NotImplementedError`
+in `ehl.run`. No notebook yet (D-0022).
 
 | Script | Content |
 |---|---|
@@ -86,7 +87,7 @@ PROVISIONAL. OPEN GL-01, R-146.
 | `reference_values.csv` | copied unchanged from vault `80_Inbox/2026-10-16/reference_values/gears/fzg_film_path/reference_values.csv`; sha256 (LF-normalised) `c69645443a3bf1704b84f2785e94f070a7cbff8ffa444ba8320cc9dd597f9ebe` |
 | hash rule | sha256 of the bytes with CRLF replaced by LF (R-146: a checkout may turn the CSV to CRLF) |
 | design-studies | set at first run |
-| AxisForge | set at first run. The API used (`contact_inputs`, `path_points`, `mesh_forces`) exists only from `c328999` on branch `refactor/gears-mechanical-system`, not on main (GL-01) |
+| AxisForge | set at first run; checked at `73231b4` of branch `refactor/gears-mechanical-system` (the API used, `contact_inputs`, `path_points`, `mesh_forces`, is not on main, GL-01) |
 | SlipPY | set at first run |
 
 ## Known issues

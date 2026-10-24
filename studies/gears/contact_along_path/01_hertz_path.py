@@ -16,8 +16,7 @@
 # %% [markdown]
 # # FZG C40: dry Hertz contact along the path of contact
 #
-# **PROVISIONAL (scaffold 2026-10-17)**: structure agreed in debate_gears-lubrication-scaffold_2026-10-17;
-# not validated. Raises `NotImplementedError` today in the gear adapter (`contacts`, OPEN R-023 R-031).
+# Not validated.
 #
 # **Study:** `studies/gears/contact_along_path` (V-GEAR-05, demonstration), stage 1.
 #
@@ -31,11 +30,12 @@
 import sys
 
 from axisforge.outputs._format import format_table, write_records_csv
-from axisforge.solvers.machine_elements.gears.contact import contact_inputs       # c328999 only (GL-01)
+from axisforge.solvers.machine_elements.gears.contact import contact_inputs
 
 from slippy_bridge.contact import gear_contacts, hertz
 
-from construction import DRIVER, FAMILY, RESULTS, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair, path_times
+from construction import (DRIVER, FAMILY, GEAR_E_MPA, GEAR_NU, RESULTS, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair,
+                          path_times)
 
 SMOKE = "--smoke" in sys.argv                     # smoke run; a notebook runs every point
 NAME = "01_hertz_path"
@@ -61,7 +61,7 @@ times = path_times(pair, n1_rpm)
 labels = ["A"] if SMOKE else list(times)
 inputs = contact_inputs(pair, DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in labels])
 records = []
-for c in gear_contacts(pair, inputs, points=labels):
+for c in gear_contacts(pair, inputs, driver=DRIVER, points=labels, E=GEAR_E_MPA, nu=GEAR_NU):
     ref = hertz(c.case)                           # Hertz line contact on the bridge axes, SI
     records.append({**c.record(), "T1_Nm": T1_Nm, "n1_rpm": n1_rpm, "F_bn_N": F_bn_N, "w_N_per_m": c.case.load,
                     "R_x_m": ref["R_x_m"], "p_H_Pa": ref["p0_Pa"], "b_m": ref["s_x_m"]})

@@ -111,8 +111,20 @@ def test_every_axisforge_family_translates_or_raises_clearly(name):
         assert [c.location.race for c in cs] == ["inner", "outer"] and cs[0].subtype == name
 
 
-def _gear_pair(material_id="steel"):
-    """A 20/40 spur pair, module 2 mm, face width 20 mm, as the old stub test built it."""
+_TEST_STEEL = "test_steel_206GPa"     # an AxisForge material registered for the gear tests
+
+
+def _register_test_steel():
+    """Register ``_TEST_STEEL`` (E 206 000 MPa, nu 0.3) once per process (AxisForge has no unregister)."""
+    from axisforge.core.materials import IsotropicElastic, Material, available_materials, register
+    if _TEST_STEEL not in available_materials():
+        register(Material(material_id=_TEST_STEEL, density=7.85e3,
+                          elastic=IsotropicElastic(E=206000.0, poisson_ratio=0.3)))
+
+
+def _gear_pair(material_id=_TEST_STEEL):
+    """A 20/40 spur pair, module 2 mm, face width 20 mm; ``_TEST_STEEL`` is registered, other ids are not."""
+    _register_test_steel()
     from axisforge.core.machine_elements.gears import CylindricalFamily, CylindricalGearData, Gear, GearPair
     family = CylindricalFamily()
     return GearPair.assemble(
@@ -128,9 +140,85 @@ def _gear_inputs(pair):
     return contact.contact_inputs(pair, "gear1", 1000.0, 1000.0, n_points=3)
 
 
-def test_gear_adapter_scaffold_raises():
+def test_fzg_h501_at_C_against_the_hand_check(load_case):
+    """FZG H501 at the pitch point C, gear 1 driving, T1 60.75 N m, n1 1500 rpm, E 206 000 MPa, nu 0.3.
+
+    Expected values from the independent hand check (``math`` only: ISO 21771 geometry, ISO 6336-2
+    forces, Johnson 1985 Eq. (4.43), (4.45) for p0), not recomputed here: rho1_n 14.20546 mm,
+    rho2_n 21.30819 mm, w = F_bn / l_sum = 75.69752 N/mm, u1 = u2 = u_e 2.164387 m/s (pure rolling at C),
+    3 tooth pairs, share 0.9717558, l_sum 24.40118 mm, Hertz p0 565.6666 MPa. That p0 is the Hertz
+    pressure of the local equivalent cylinders under AxisForge's equal-line-load sharing
+    (w = F_bn / l_sum), not the ISO 6336-2 sigma_H (no Z_eps, Z_beta; its nominal load differs).
+    """
+    from axisforge.solvers.machine_elements.gears.contact import contact_inputs
+    cc = load_case("fzg_geometry_ph")
+    pair = cc.build_pair("H501")
+    F_bn_N = cc.FAMILY.mesh_forces(pair, 60.75, rot1=+1).F_bn_N
+    inputs = contact_inputs(pair, "gear1", 1500.0, F_bn_N, t_s=[cc.path_times(pair, 1500.0)["C"]])
+    (c,) = gear_contacts(pair, inputs, driver="gear1", points=["C"], E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    assert (c.element, c.subtype, c.case.line, c.case.label) == ("gear", "CylindricalFamily", True, "H501_C")
+    assert c.case.r1 == pytest.approx((14.20546e-3, math.inf), rel=1e-6)
+    assert c.case.r2 == pytest.approx((21.30819e-3, math.inf), rel=1e-6)
+    assert c.case.E == (206000.0e6, 206000.0e6) and c.case.nu == (0.3, 0.3)
+    assert c.case.load == pytest.approx(75697.52, rel=1e-6)                       # [N/m]
+    assert c.kinematics.ue_m_per_s == pytest.approx(2.164387, rel=1e-6)
+    assert c.kinematics.vg_m_per_s == pytest.approx(0.0, abs=1e-12)
+    assert (c.kinematics.u1_m_per_s, c.kinematics.u2_m_per_s) == pytest.approx((2.164387, 2.164387), rel=1e-6)
+    loc = c.location
+    given = f"given:{cc.STEEL_ID}"                 # an id that AxisForge does not have, kept visible
+    assert (loc.point, loc.n_pairs, loc.driver, loc.material1, loc.material2) == ("C", 3, "gear1", given, given)
+    assert type(loc.n_pairs) is int
+    assert loc.share == pytest.approx(0.9717558, rel=1e-6) and loc.l_sum_mm == pytest.approx(24.40118, rel=1e-6)
+    assert hertz(c.case)["p0_Pa"] == pytest.approx(565.6666e6, rel=1e-5)
+    assert list(c.record()) == ["element", "subtype", "point", "s_mm", "t_s", "g_y_mm", "share", "l_mm", "l_sum_mm",
+                                "n_pairs", "driver", "material1", "material2", "label", "case_hash", "line",
+                                "ue_m_per_s", "vg_m_per_s", "u1_m_per_s", "u2_m_per_s"]
+
+
+def test_gear_material_source_is_recorded():
+    """E, nu from the AxisForge material: the record names the material_id."""
     pair = _gear_pair()
-    with pytest.raises(NotImplementedError, match="OPEN R-023"):
+    cs = gear_contacts(pair, _gear_inputs(pair), driver="gear1", points=["A", "C", "E"])
+    assert {(c.location.material1, c.location.material2) for c in cs} == {(_TEST_STEEL, _TEST_STEEL)}
+    assert cs[1].case.E == (206000.0e6, 206000.0e6)                           # MPa -> Pa once
+
+
+def test_gear_material_source_of_given_values():
+    """E, nu given: "given" for an empty material_id, "given:<id>" for an id AxisForge does not have."""
+    for material_id, recorded in (("", "given"), ("typo_steel", "given:typo_steel")):
+        pair = _gear_pair(material_id)
+        (c,) = gear_contacts(pair, _gear_inputs(pair), driver="gear1", points=["A", "C", "E"],
+                             E=(206000.0, 206000.0), nu=(0.3, 0.3))[1:2]
+        assert (c.location.material1, c.location.material2) == (recorded, recorded)
+
+
+def test_internal_pair_contacts():
+    """Internal spur pair z 24/-60, mn 2 mm (as AxisForge's own internal-pair tests): the ring is concave
+    (rho2 < 0) and turns the same way as the pinion (u2 > 0), so the relative radius stays positive and the
+    speeds come through as AxisForge gives them."""
+    from axisforge.core.machine_elements.gears import CylindricalFamily, CylindricalGearData, Gear, GearPair
+    _register_test_steel()
+    family = CylindricalFamily()
+    pinion, ring = (Gear.assemble(family, CylindricalGearData(2.0, z, x=0.0, b=20.0, alpha_n_deg=20.0,
+                                                              material_id=_TEST_STEEL)) for z in (24, -60))
+    pair = GearPair.assemble(family, gear1=pinion, gear2=ring, label="internal")
+    inputs = _gear_inputs(pair)
+    cs = gear_contacts(pair, inputs, driver="gear1", points=["A", "C", "E"])
+    for i, c in enumerate(cs):
+        assert c.case.r2[0] < 0.0 < relative_radii(c.case)[0]
+        k = c.kinematics
+        assert k.u2_m_per_s > 0.0 and k.ue_m_per_s > 0.0
+        assert (k.ue_m_per_s, k.vg_m_per_s, k.u1_m_per_s, k.u2_m_per_s) == tuple(
+            float(inputs[key][i]) for key in ("ue_m_per_s", "vg_m_per_s", "u1_m_per_s", "u2_m_per_s"))
+        assert math.isfinite(hertz(c.case)["p0_Pa"])
+
+
+@pytest.mark.parametrize("driver", [None, "pinion", "gear3"])
+def test_gear_driver_must_be_named(driver):
+    pair = _gear_pair()
+    with pytest.raises(ValueError, match="driver must be"):
+        gear_contacts(pair, _gear_inputs(pair), driver=driver, points=["A", "C", "E"])
+    with pytest.raises(TypeError):                                              # required keyword
         gear_contacts(pair, _gear_inputs(pair), points=["A", "C", "E"])
 
 
@@ -140,10 +228,11 @@ def test_gear_adapter_scaffold_raises():
     ("points_unknown", "not in"),
     ("rho1_not_positive", "rho1_n_mm must be > 0"),
     ("rho2_wrong_sign", "has not the sign of gear2.z"),
-    ("material_empty", "material_id is empty"),
+    ("material_empty", "has no AxisForge material"),
+    ("material_not_registered", "has no AxisForge material"),
 ])
 def test_gear_adapter_guards(change, match):
-    pair = _gear_pair("" if change == "material_empty" else "steel")
+    pair = _gear_pair({"material_empty": "", "material_not_registered": "not_registered"}.get(change, _TEST_STEEL))
     inputs = dict(_gear_inputs(pair))
     points = {"points_length": ["A", "E"], "points_repeated": ["A", "A", "E"],
               "points_unknown": ["A", "X", "E"]}.get(change, ["A", "C", "E"])
@@ -152,19 +241,21 @@ def test_gear_adapter_guards(change, match):
     if change == "rho2_wrong_sign":
         inputs["rho2_n_mm"] = np.array([30.0, 20.0, -1.0])  # concave gear 2 on an external pair (z2 > 0)
     with pytest.raises(ValueError, match=match):
-        gear_contacts(pair, inputs, points=points)
+        gear_contacts(pair, inputs, driver="gear1", points=points)
 
 
 def test_gear_material_given_only_for_a_gear_without_one():
     pair = _gear_pair()
     with pytest.raises(ValueError, match="given only for a gear without one"):
-        gear_contacts(pair, _gear_inputs(pair), points=["A", "C", "E"], E=(206000.0, None), nu=(0.3, None))
+        gear_contacts(pair, _gear_inputs(pair), driver="gear1", points=["A", "C", "E"], E=(206000.0, None),
+                      nu=(0.3, None))
     bare = _gear_pair("")
-    with pytest.raises(NotImplementedError, match="OPEN R-023"):        # explicit E, nu pass the guard
-        gear_contacts(bare, _gear_inputs(bare), points=["A", "C", "E"], E=(206000.0, 206000.0), nu=(0.3, 0.3))
+    cs = gear_contacts(bare, _gear_inputs(bare), driver="gear1", points=["A", "C", "E"], E=(206000.0, 210000.0),
+                       nu=(0.3, 0.29))
+    assert cs[0].case.E == (206000.0e6, 210000.0e6) and cs[0].case.nu == (0.3, 0.29)
     for bad in (206000.0, (206000.0,), "ab"):
         with pytest.raises(ValueError, match="must be"):
-            gear_contacts(bare, _gear_inputs(bare), points=["A", "C", "E"], E=bad, nu=(0.3, 0.3))
+            gear_contacts(bare, _gear_inputs(bare), driver="gear1", points=["A", "C", "E"], E=bad, nu=(0.3, 0.3))
 
 
 # ---- bearing geometry ----------------------------------------------------------------------
@@ -694,19 +785,11 @@ def test_ehl_run_line_smoke(load_case, tmp_path):
 # ---- FZG C40: AxisForge -> gear adapter -> Hertz (validation/gears/fzg_geometry_ph) -------------
 
 @pytest.fixture
-def fzg_c40(load_case, monkeypatch):
-    """The FZG C40 pair of the case, with a steel registered for this test only.
-
-    E 206 GPa and nu 0.3 are the values of the R-117 hypothesis (no held source, R-118); the density is not
-    read by AxisForge. monkeypatch removes the registry entry after the test, so no other test sees it.
-    """
-    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")   # c328999 only (GL-01)
-    from axisforge.core.materials import IsotropicElastic, Material
-    from axisforge.core.materials import base as materials_base
+def fzg_c40(load_case):
+    """The FZG C40 pair of the case; E 206 000 MPa and nu 0.3 are the case's assumption (``GEAR_E_MPA``,
+    ``GEAR_NU``: ISO 6336-2:2006 Table 1 generic steel, R-118 open), given to the bridge."""
+    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")
     cc = load_case("fzg_geometry_ph")
-    steel = Material(material_id=cc.STEEL_ID, density=7.85e3, elastic=IsotropicElastic(E=206000.0, poisson_ratio=0.3))
-    # AxisForge has no public unregister (materials/base.py:298-320); private _REGISTRY patched, restored by monkeypatch
-    monkeypatch.setitem(materials_base._REGISTRY, cc.STEEL_ID, steel)
     return cc, cc.build_pair("C40")
 
 
@@ -718,10 +801,10 @@ def _fzg_p_H_MPa(cc, pair, stage, points):
     F_bn_N = cc.FAMILY.mesh_forces(pair, cc.WHEEL_TORQUE_NM[stage] * z1 / z2, rot1=+1).F_bn_N
     times = cc.path_times(pair, n1_rpm)
     inputs = contact_inputs(pair, cc.DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in points])
-    return [hertz(c.case)["p0_Pa"] / 1e6 for c in gear_contacts(pair, inputs, points=points)]   # Pa -> MPa
+    contacts = gear_contacts(pair, inputs, driver=cc.DRIVER, points=points, E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    return [hertz(c.case)["p0_Pa"] / 1e6 for c in contacts]                     # Pa -> MPa
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="scaffold OPEN R-023 R-031 (gear adapter)")
 def test_fzg_ph_load_ratios(fzg_c40):
     """V-GEAR-04 criterion P1: p_H(K7)/p_H(K5) = 685/498 = 1.3755, p_H(K9)/p_H(K5) = 874/498 = 1.7550, +-0.2 %.
 
@@ -737,7 +820,7 @@ def test_fzg_ph_load_ratios(fzg_c40):
         assert c / a == pytest.approx(874.0 / 498.0, rel=2e-3)
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="scaffold OPEN R-023 R-031 (gear adapter)")
+@pytest.mark.xfail(strict=False, reason="Q-09 / R-117 not ruled")
 def test_hypothesis_R117_ph_at_A_half_load(fzg_c40):
     """Hypothesis R-117, not a pass criterion; the tolerance depends on E (R-118).
 
@@ -757,7 +840,7 @@ def test_fzg_c40_eps_alpha_known_gap(load_case):
 
     A known gap (GL-10) kept visible: it fails today with AssertionError; an XPASS would mean it closed.
     """
-    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")   # the case needs c328999 (GL-01)
+    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")
     pair = load_case("fzg_geometry_ph").build_pair("C40")
     assert pair.epslon_alpha == pytest.approx(1.44, abs=0.01)
 
@@ -775,7 +858,7 @@ def test_fzg_c40_radial_force(load_case, stage, F_r_printed_N):
     0.5 N is the rounding of the printed integer. The check covers the wheel -> pinion torque (T1 = T2 z1/z2,
     R-124), the working pitch diameter and the working pressure angle; it needs no gear adapter.
     """
-    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")   # the case needs c328999 (GL-01)
+    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")
     cc = load_case("fzg_geometry_ph")
     pair = cc.build_pair("C40")
     T1_Nm = cc.WHEEL_TORQUE_NM[stage] * pair.gear1.z / pair.gear2.z            # CSV L168/178/188, on the wheel
