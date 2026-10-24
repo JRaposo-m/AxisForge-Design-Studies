@@ -22,9 +22,8 @@ Conventions fixed here, because SlipPY does not check them:
 * **Both surfaces discrete** (a zero array for a flat), same shape.
 * Each body keeps its own material (``Elastic`` ``E``, ``v`` from ``case.E``, ``case.nu``), in both builds.
 
-Line contacts are periodic along the roller axis (axis 1): the static or lubrication step must
-be created with ``periodic_geometry=True, periodic_axes=(False, True)`` and the total load
-``case.load * Y_length``.
+Line contacts are periodic along the roller axis (axis 1); the step arguments that follow from
+it (periodic flags, total load on the strip) come from :meth:`Grid.step_args`.
 
 References
 ----------
@@ -154,6 +153,54 @@ class Grid:
         X, Y = np.meshgrid(x, y, indexing="ij")
         return cls(X=X, Y=Y, h=h)
 
+    @property
+    def length_y_m(self) -> float:
+        """Length of the domain across rolling, ``n_y h`` [m]: the period of a line contact."""
+        return self.X.shape[1] * self.h
+
+    def step_args(self, case: ContactCase, normal_load: float | None = None, **step_kwargs) -> dict:
+        """Keyword arguments of the SlipPY step (``StaticStep``, ``IterSemiSystem``) for ``case``.
+
+        The one place of the load given to the step and of the periodic set-up of a line contact.
+        A point contact gets ``normal_load = case.load`` [N]. A line contact is an infinitely long
+        cylinder, modelled by SlipPY as one period of a strip periodic along the roller axis
+        (array axis 1): it gets ``periodic_geometry=True``, ``periodic_axes=(False, True)`` and the
+        load on one period. The adapters give ``case.load`` in N/m (bearing: the element or lamina
+        load Q [N] over its line length; gear: AxisForge ``contact_inputs`` w, N/mm -> N/m); here
+        it is multiplied by the period :attr:`length_y_m` [m] to give the total load on the strip [N].
+
+        Parameters
+        ----------
+        case : ContactCase
+            ``case.load`` [N] (point) or [N/m] (line).
+        normal_load : float, optional
+            Total load on the domain [N]; replaces the value derived from ``case.load``.
+        **step_kwargs
+            Other keywords of the step, passed through.
+
+        Returns
+        -------
+        dict
+            ``normal_load`` [N], the periodic flags of a line contact and ``step_kwargs``.
+
+        Raises
+        ------
+        ValueError
+            For a line contact given ``periodic_geometry`` other than True or ``periodic_axes``
+            other than ``(False, True)``: the load would still be that of one period of an
+            infinite cylinder while the solve is not periodic.
+        """
+        if case.line:
+            for key, value in (("periodic_geometry", True), ("periodic_axes", (False, True))):
+                given = step_kwargs.setdefault(key, value)
+                if (tuple(given) if key == "periodic_axes" else given) != value:
+                    raise ValueError(f"a line contact needs {key}={value!r} (periodic along the "
+                                     f"roller axis), got {given!r}")
+            load = case.load * self.length_y_m                  # [N/m] * [m] = [N]
+        else:
+            load = case.load
+        return {"normal_load": load if normal_load is None else normal_load, **step_kwargs}
+
 
 def _profile(r: tuple[float, float], X: np.ndarray, Y: np.ndarray) -> np.ndarray:
     """SlipPY profile (``-sag``, apex 0) of a body with signed principal radii ``r = (r_x, r_y)``.
@@ -190,6 +237,55 @@ def _surfaces(case: ContactCase, z1: np.ndarray, z2: np.ndarray, h: float, use_f
     s2.material = c.Elastic(f"{case.label}_body2_{i}", {"E": case.E[1], "v": case.nu[1]},
                             use_frequency_domain=use_frequency_domain)
     return s1, s2
+
+
+def _case_and_surfaces(contact, grid: Grid, surfaces, build: str, rough, use_frequency_domain: bool):
+    """The case of ``contact`` and its surface pair on ``grid``, with the record keys of the pair.
+
+    Shared by ``static_step.run`` and ``lubrication.ehl.run``, so that both take a contact and its
+    surfaces the same way. ``surfaces=None``: the pair is built here with :func:`pair`. Given
+    surfaces are checked against ``grid`` (SlipPY solves on the shape and spacing of the surfaces,
+    without comparing them to anything) and recorded as ``build = "given"``, with the kernel flag
+    read from their materials (SlipPY ``Material.use_frequency``, ``slippy/core/materials.py``
+    ``_IMMaterial.__init__``, set from ``Elastic(use_frequency_domain=)``).
+
+    Returns
+    -------
+    case : ContactCase
+    surfaces : (surface_1, surface_2)
+    keys : dict
+        ``build`` and ``use_frequency_domain`` for the record.
+
+    Raises
+    ------
+    ValueError
+        With ``surfaces`` given: a non-default ``build``, ``rough`` or ``use_frequency_domain``
+        (they describe a pair built here); a surface without a material, whose shape is not
+        ``grid.X.shape`` or whose ``grid_spacing`` is not ``grid.h``; two surfaces with different
+        kernel flags; a line contact on the spatial kernel (as :func:`pair`).
+    """
+    case = getattr(contact, "case", contact)                 # Contact or ContactCase
+    if surfaces is None:
+        surfaces = pair(case, grid, build, rough, use_frequency_domain=use_frequency_domain)
+        return case, surfaces, {"build": build, "use_frequency_domain": use_frequency_domain}
+    if build != "composite" or any(r is not None for r in rough) or use_frequency_domain is not True:
+        raise ValueError("build, rough and use_frequency_domain describe surfaces built here; "
+                         "they cannot be given with surfaces")
+    for k, s in enumerate(surfaces):
+        if getattr(s, "material", None) is None:
+            raise ValueError(f"surfaces[{k}] has no material (SlipPY needs one per body)")
+        # exact comparison: a grid from Grid.around has a dyadic h
+        if np.shape(s.profile) != grid.X.shape or s.grid_spacing != grid.h:
+            raise ValueError(f"surfaces[{k}] has shape {np.shape(s.profile)} and grid_spacing "
+                             f"{s.grid_spacing}, the grid {grid.X.shape} and {grid.h}")
+    flags = {bool(s.material.use_frequency) for s in surfaces}
+    if len(flags) != 1:
+        raise ValueError("the two surfaces have different elastic kernels (use_frequency)")
+    use_frequency_domain = flags.pop()
+    if case.line and not use_frequency_domain:
+        raise ValueError("a line contact needs use_frequency_domain=True "
+                         "(the spatial kernel is a finite strip, not plane strain)")
+    return case, tuple(surfaces), {"build": "given", "use_frequency_domain": use_frequency_domain}
 
 
 def pair(case: ContactCase, grid: Grid, build: str = "composite", rough=(None, None), *,

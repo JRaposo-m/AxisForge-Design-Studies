@@ -15,7 +15,8 @@ that descriptor to the Hertz/SlipPY form:
   ``alpha_j`` and the rolling radius of the raceway is re-evaluated at it. This repeats the
   one-line formula of AxisForge ``geometry.py`` (``r_bx_inner``/``r_bx_outer``) on purpose:
   ``alpha_j`` is a solver result read by design-studies (D-0019);
-* load: N for a point contact; N/m for a line contact (load over the given length).
+* load: N for a point contact; N/m for a line contact (load over the given length; on to the
+  step: ``surfaces.Grid.step_args``).
 
 A new AxisForge family needs no change here as long as it provides the same three radii and
 its point/line registration.

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from slippy_bridge.contact import Grid, pair, static_step
+from slippy_bridge.contact import Grid, static_step
 from slippy_bridge.contact.surfaces import SPAN_X_0
 
 __all__ = ["ResultantView", "sweep", "RECORD_COLUMNS"]
@@ -105,8 +105,8 @@ def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=SPAN
     -------
     list of dict
         One record of ``static_step.run`` per solve (measurements, Hertz reference, relative
-        errors as fractions, checks), plus ``build``, ``sweep`` (``"mesh"`` or ``"domain"``),
-        ``span_x`` [-] and ``use_frequency_domain``. The default grid appears once in each sweep.
+        errors as fractions, checks, ``build``, ``use_frequency_domain``), plus ``sweep``
+        (``"mesh"`` or ``"domain"``) and ``span_x`` [-]. The default grid appears once in each sweep.
     """
     case = getattr(contact, "case", contact)
     h0 = Grid.around(case).h
@@ -115,9 +115,8 @@ def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=SPAN
     for build in builds:
         for i, (kind, h, span_x) in enumerate(grids):
             grid = Grid.around(case, h=h, span_x=span_x)
-            surfaces = pair(case, grid, build=build, use_frequency_domain=use_frequency_domain)
-            record, _ = static_step.run(contact, surfaces, grid, output_dir,
+            record, _ = static_step.run(contact, grid, output_dir, build=build,
+                                        use_frequency_domain=use_frequency_domain,
                                         name=f"{case.label}_{build}_{kind}_{i}")
-            records.append({"build": build, "sweep": kind, "span_x": span_x,
-                            "use_frequency_domain": use_frequency_domain, **record})
+            records.append({"sweep": kind, "span_x": span_x, **record})
     return records

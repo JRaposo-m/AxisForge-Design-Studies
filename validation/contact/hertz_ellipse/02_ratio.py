@@ -40,7 +40,7 @@ from axisforge.outputs._format import format_table, read_records_csv, write_reco
 from scipy.special import ellipe, ellipk
 
 from references.contact.hertz import hertz_point
-from slippy_bridge.contact import Grid, pair, static_step
+from slippy_bridge.contact import Grid, static_step
 
 from construction import ALPHAS, CM, N_PER_CM2, RATIO_CASES, RESULTS
 
@@ -107,7 +107,7 @@ for alpha in ALPHAS:
 
     h0 = Grid.around(case).h
     grid = Grid.around(case, h=2.0 * h0 if SMOKE else None)         # default grid (smoke: 2 h0)
-    record, _ = static_step.run(case, pair(case, grid), grid, RESULTS / "slippy_02", name=case.label)
+    record, _ = static_step.run(case, grid, RESULTS / "slippy_02", name=case.label)
     bem.append({"alpha": alpha, **record})
     for q, key in (("s_x", "s_x_m"), ("s_y", "s_y_m"), ("p0", "p0_Pa")):
         criteria.append(row("E3", alpha, q, record[key], judge[key], 0.01))

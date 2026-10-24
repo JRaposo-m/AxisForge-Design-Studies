@@ -36,7 +36,7 @@ import numpy as np
 from axisforge.outputs._format import format_table, write_records_csv
 
 from references.contact.hertz import hertz_line
-from slippy_bridge.contact import Grid, contacts, pair, static_step
+from slippy_bridge.contact import Grid, contacts, static_step
 from validation._support.convergence import RECORD_COLUMNS, sweep
 from validation._support.figures import contact_plots
 
@@ -67,10 +67,9 @@ np.testing.assert_allclose(c.r1 + c.r2 + c.E + c.nu + (c.load,),
                            CASE.r1 + CASE.r2 + CASE.E + CASE.nu + (CASE.load,), rtol=1e-12, atol=0.0)
 h0 = Grid.around(c).h
 grid = Grid.around(c, h=2.0 * h0 if SMOKE else None, span_x=SPAN_X_0)   # the default grid (smoke: 2 h0)
-record, p = static_step.run(link, pair(c, grid), grid, RESULTS / "slippy_01", name=f"{CASE.label}_axisforge")
+record, p = static_step.run(link, grid, RESULTS / "slippy_01", name=f"{CASE.label}_axisforge")
 # written beside the sweep, but kept out of the convergence figure
-table = records + [{"build": "composite", "sweep": "axisforge", "span_x": SPAN_X_0,
-                    "use_frequency_domain": True, **record}]
+table = records + [{"sweep": "axisforge", "span_x": SPAN_X_0, **record}]
 for r in table:                                   # errors against the judge (fractions)
     r.update({"eps_b": r["s_x_m"] / JUDGE["s_x_m"] - 1.0, "eps_p0": r["p0_Pa"] / JUDGE["p0_Pa"] - 1.0})
 

@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 import pyvista as pv
 
-from slippy_bridge.contact import Grid, contact_case, hertz, pair, static_step
+from slippy_bridge.contact import Grid, contact_case, hertz, static_step
 from viz import contact as vc, scene as vs, shaft as vsh
 
 pv.OFF_SCREEN = True
@@ -14,7 +14,7 @@ def test_contact_scene(load_case, tmp_path):
     case = contact_case(load_case("iso16281_ball_contact").build_bearing(0.0), "inner", 1000.0)
     ref = hertz(case)
     grid = Grid.around(case, h=ref["s_x_m"] / 4.0)   # coarser than the default s_x / 10: a fast solve
-    _, p = static_step.run(case, pair(case, grid), grid, tmp_path / "slippy")
+    _, p = static_step.run(case, grid, tmp_path / "slippy")
     scene = vc.contact_scene(case, grid, p, case="test contact")
     assert scene.keys() == ["pressure", "contours"]
     surface, factor = scene["pressure"], scene.field_data["height_factor"][0]

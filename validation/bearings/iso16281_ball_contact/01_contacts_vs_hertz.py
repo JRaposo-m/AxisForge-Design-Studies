@@ -213,14 +213,14 @@ for name in ("radial_heavy", "combined"):
 # %%
 import tempfile
 
-from slippy_bridge.contact import Grid, pair, static_step
+from slippy_bridge.contact import Grid, static_step
 
 from viz import contact as vc
 
 contact = contacts(*solved["radial_heavy"], races=("inner",), elements="max")[0]
 grid = Grid.around(contact.case)                          # bridge defaults
 with tempfile.TemporaryDirectory() as tmp:
-    record, p = static_step.run(contact, pair(contact.case, grid), grid, tmp)
+    record, p = static_step.run(contact, grid, tmp)
 CONTACT_TEXT = "Ball on the inner raceway, most loaded ball, radial load (heavy)"
 hill = vc.contact_scene(contact, grid, p, case=CONTACT_TEXT)
 top = vc.contact_scene(contact, grid, p, case=CONTACT_TEXT, view="top")

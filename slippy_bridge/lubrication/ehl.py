@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 
 from ..contact.base import Contact, ContactCase
-from ..contact.surfaces import Grid
+from ..contact.surfaces import Grid, _case_and_surfaces
 
 __all__ = ["run", "FILM_KEYS"]
 
@@ -44,13 +44,14 @@ _DENSITY_MODELS = ("dowson_higginson", "incompressible")
 # OPEN GL-20: which static keys are carried
 # Viscosity fields of the model not used are nan. roelands_p0_Pa is the Roelands constant, not the
 # measured maximum pressure p0_Pa nor the Hertz p0_ref_Pa (GL-07).
-FILM_KEYS = ("u_mean_m_per_s", "w_N_per_m", "eta0_Pa_s", "rho0_kg_per_m3", "viscosity_model", "roelands_z",
-             "roelands_p0_Pa", "barus_alpha_per_Pa", "alpha_initial_per_Pa", "density_model", "R_x_m",
+FILM_KEYS = ("u_mean_m_per_s", "eta0_Pa_s", "rho0_kg_per_m3", "viscosity_model", "roelands_z",
+             "roelands_p0_Pa", "barus_alpha_per_Pa", "alpha_initial_per_Pa", "density_model",
              "rtol_pressure", "h_c_m", "h_min_m", "x_h_min_m", "y_h_min_m")
 
 
-def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None, eta0_Pa_s: float,
-        rho0_kg_per_m3: float, viscosity: tuple, density: str = "dowson_higginson",
+def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None,
+        build: str = "composite", rough=(None, None), use_frequency_domain: bool = True,
+        eta0_Pa_s: float, rho0_kg_per_m3: float, viscosity: tuple, density: str = "dowson_higginson",
         u_mean_m_per_s: float | None = None, normal_load: float | None = None, name: str | None = None,
         **step_kwargs):
     """Solve one steady EHL contact with SlipPY and measure its film.
@@ -72,9 +73,9 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     output_dir : path
         Where SlipPY writes its files (required: SlipPY otherwise writes to its global OUTPUT_DIR or
         the cwd, and a repeated model name overwrites, R-088).
-    surfaces : (surface_1, surface_2), optional
-        SlipPY surfaces on ``grid`` (``surfaces.pair``, smooth or rough). None: the smooth composite pair
-        is built from ``contact.case`` and ``grid``, as ``surfaces.pair(case, grid)`` (GL-21).
+    surfaces, build, rough, use_frequency_domain
+        As ``static_step.run``: the pair built on ``grid`` by ``surfaces.pair`` (default the smooth
+        composite pair, GL-21), or given and checked against ``grid``.
     eta0_Pa_s : float
         Viscosity of the oil at ambient pressure and the working temperature [Pa s].
     rho0_kg_per_m3 : float
@@ -88,8 +89,7 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     u_mean_m_per_s : float, optional
         Mean entrainment speed (u1 + u2)/2 [m/s], > 0. None: ``contact.kinematics["u_e_m_per_s"]``.
     normal_load : float, optional
-        TOTAL load on the domain [N]. None: ``case.load`` for a point contact; for a line contact the
-        load per unit length times the periodic length, ``w_N_per_m * n_y * h`` (as ``static_step.run``).
+        TOTAL load on the domain [N]; default from ``case.load`` (see ``Grid.step_args``).
     name : str, optional
         Name of the SlipPY ``ContactModel``. Default: the case label and a counter (unique, R-088).
     **step_kwargs
@@ -110,13 +110,13 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     ValueError
         In this order: ``output_dir`` None (R-088); ``viscosity`` not a known law tuple (R-079); unknown
         ``density`` (R-078); eta0, z, p0 or alpha outside the ranges of this module (unit slips, R-077);
-        no mean speed, or not > 0 (R-073, GL-19); ``interference`` given (load control only, R-081); a
-        finite ``max_load`` on a surface material (it caps the pressure, R-082; can fire only with
-        ``surfaces`` given: the smooth pair built here keeps the default inf); a transient request,
-        ``time_step != 0``, ``number_of_steps != 1`` or ``no_time=False`` (steady only, R-083, R-087);
-        a line contact with ``periodic_geometry`` or ``periodic_axes`` other than ``True``,
-        ``(False, True)`` (R-084);
-        with ``surfaces`` given, a surface whose ``grid_spacing`` is not ``grid.h`` (R-085).
+        no mean speed, or not > 0 (R-073, GL-19); ``interference`` given (load control only, R-081);
+        given ``surfaces`` not on ``grid`` (R-085) or given with ``build``/``rough``/
+        ``use_frequency_domain`` (``surfaces._case_and_surfaces``); a finite ``max_load`` on a
+        surface material (it caps the pressure, R-082; can fire only with ``surfaces`` given: the
+        pair built here keeps the default inf); a transient request, ``time_step != 0``,
+        ``number_of_steps != 1`` or ``no_time=False`` (steady only, R-083, R-087); a line contact
+        made non-periodic (``Grid.step_args``, R-084).
     NotImplementedError
         Always, after the checks: the solve is a scaffold.
 
@@ -141,10 +141,13 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     5. ``load_ok = abs(err_load) <= rtol_pressure``, the tolerance SlipPY's step itself uses
        (default 2e-6, lubrication_steps.py:518-519), recorded (GL-08); the film keys come from
        ``measures.measure(p, h, line, gap=, X=, Y=)`` (R-033).
-    6. The record (OPEN GL-20): the identification, ``h_m``, ``n_x``, ``n_y``, ``load_N_applied``, the
-       ``measure`` keys, ``p0_ref_Pa``, ``s_x_ref_m``, ``err_load``, ``converged``, ``load_ok``,
-       ``solve_time_s`` of the ``static_step.run`` record, then ``FILM_KEYS``. Not carried, because their
-       meaning is dry Hertz: ``within_reference``, ``err_p0``, ``err_s_x``, ``err_delta``, ``margin_ok``.
+    6. The record (OPEN GL-20): the identification, ``build``, ``use_frequency_domain``, ``h_m``,
+       ``n_x``, ``n_y``, ``length_m`` (a line load is ``load_N_applied / length_m``),
+       ``load_N_applied``, the ``measure`` keys, ``p0_ref_Pa``, ``s_x_ref_m``, ``R_x_m``, ``R_y_m``,
+       ``err_load``, ``converged``, ``load_ok``, ``solve_time_s`` of the ``static_step.run`` record,
+       then ``FILM_KEYS`` (``build``, ``use_frequency_domain``: the ``surface_keys`` of the body). Not
+       carried, because their meaning is dry Hertz: ``within_reference``, ``err_p0``, ``err_s_x``,
+       ``err_delta``, ``margin_ok``.
 
     Limits (R-089, R-090): isothermal, Newtonian, cavitation by clipping p >= 0, no asperity contact
     model and no traction. For a line contact the elastic kernel is a finite periodic strip
@@ -163,7 +166,6 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     # OPEN R-115: EHL is feasibility-tested only in SlipPY; venner_bos_circular gates the results.
     # OPEN R-089 R-090: isothermal, Newtonian, clipped cavitation, no traction.
     # OPEN GL-07 GL-08 GL-16 GL-20: key names, load_ok tolerance, finite-strip kernel, record layout.
-    case = contact.case if isinstance(contact, Contact) else contact
     # 1. SlipPY writes .sar/.sdb/.log; never let it fall back to its global directory (R-088)
     if output_dir is None:
         raise ValueError("output_dir is required (SlipPY otherwise writes to its global OUTPUT_DIR; R-088)")
@@ -200,24 +202,19 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     # 6. IterSemiSystem ignores a prescribed interference: load control only (R-081)
     if "interference" in step_kwargs:
         raise ValueError("interference is not accepted: SlipPY's EHL step is load-controlled only (R-081)")
-    # 7. a finite max_load crops the pressure and changes the solver (R-082)
-    if surfaces is not None:
-        for k, s in enumerate(surfaces):
-            max_load = getattr(getattr(s, "material", None), "max_load", math.inf)
-            if math.isfinite(max_load):
-                raise ValueError(f"surfaces[{k}] material has max_load = {max_load}; EHL needs inf (R-082)")
+    # 7. the surfaces on the grid (R-085), shared with static_step.run; a finite max_load crops the
+    # pressure and changes the solver (R-082)
+    case, surfaces, surface_keys = _case_and_surfaces(contact, grid, surfaces, build, rough,
+                                                      use_frequency_domain)
+    for k, s in enumerate(surfaces):
+        max_load = getattr(getattr(s, "material", None), "max_load", math.inf)
+        if math.isfinite(max_load):
+            raise ValueError(f"surfaces[{k}] material has max_load = {max_load}; EHL needs inf (R-082)")
     # 8. steady only: SlipPY resets the previous gap every sub-step and never passes its time step (R-083, R-087)
     # time_step belongs to the URS, number_of_steps and no_time to IterSemiSystem (LS:194-211)
     if (step_kwargs.get("time_step", 0) != 0 or step_kwargs.get("number_of_steps", 1) != 1
             or not step_kwargs.get("no_time", True)):
         raise ValueError("only steady EHL is supported: time_step 0, number_of_steps 1, no_time True (R-083, R-087)")
-    # 9. a line contact is periodic along the roller axis (axis 1) only (R-084)
-    if case.line and (step_kwargs.get("periodic_geometry", True) is not True
-                      or tuple(step_kwargs.get("periodic_axes", (False, True))) != (False, True)):
-        raise ValueError("a line contact needs periodic_geometry=True, periodic_axes=(False, True) (R-084)")
-    # 10. the solver takes grid.h; surfaces sampled at another spacing would be solved without warning (R-085)
-    if surfaces is not None:
-        for k, s in enumerate(surfaces):
-            if s.grid_spacing != grid.h:
-                raise ValueError(f"surfaces[{k}].grid_spacing = {s.grid_spacing} is not grid.h = {grid.h} (R-085)")
+    # 9. load on the domain and periodic set-up of a line contact (R-084)
+    grid.step_args(case, normal_load, **step_kwargs)     # the body passes this dict to IterSemiSystem
     raise NotImplementedError("ehl.run: scaffold, OPEN R-076 R-086 R-115 R-033 R-048")

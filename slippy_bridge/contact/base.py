@@ -59,7 +59,8 @@ class ContactCase:
         Poisson's ratios ``(nu1, nu2)`` [-]; a scalar applies to both bodies (``v`` in SlipPY's
         ``hertz_full``).
     load : float
-        Normal load [N] for a point contact; load per unit length [N/m] for a line contact.
+        Normal load [N] for a point contact; load per unit length [N/m] for a line contact (the
+        total load given to the step: ``surfaces.Grid.step_args``).
     angle : float, optional
         Angle between the x axes of the two bodies [rad]. Default 0.
     line : bool, optional

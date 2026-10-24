@@ -495,10 +495,10 @@ def test_static_step_end_to_end(ball, race, tmp_path):
     pytest.importorskip("pyfftw")
     c = contacts(ball, load=300.0, races=(race,))[0]
     g = Grid.around(c.case)
-    recs = {b: static_step.run(c, pair(c.case, g, build=b), g, tmp_path)[0]
-            for b in ("composite", "two_profiles")}
+    recs = {b: static_step.run(c, g, tmp_path, build=b)[0] for b in ("composite", "two_profiles")}
     rc = recs["composite"]
     assert rc["element"] == "bearing" and rc["race"] == race
+    assert (rc["build"], rc["use_frequency_domain"]) == ("composite", True)
     assert (rc["method"], rc["tolerance"]) == ("pk", 1e-9) and math.isnan(rc["length_m"])
     assert (rc["R_x_m"], rc["R_y_m"]) == relative_radii(c.case)
     assert math.isfinite(rc["delta_m"])
@@ -514,7 +514,7 @@ def test_static_step_line_contact_has_no_approach(roller, tmp_path):
     pytest.importorskip("pyfftw")
     c = contacts(roller, load=500.0, races=("inner",))[0]
     g = Grid.around(c.case)
-    rec, _ = static_step.run(c, pair(c.case, g), g, tmp_path)
+    rec, _ = static_step.run(c, g, tmp_path)
     assert math.isnan(rec["delta_m"]) and math.isnan(rec["delta_ref_m"]) and math.isnan(rec["err_delta"])
     assert rec["length_m"] == pytest.approx(rec["n_y"] * rec["h_m"])
     assert rec["load_N_applied"] == pytest.approx(c.case.load * rec["length_m"])
@@ -525,8 +525,59 @@ def test_static_step_flags_a_short_domain(ball, tmp_path):
     pytest.importorskip("pyfftw")
     case = contact_case(ball, "inner", 300.0)
     g = Grid.around(case, span_x=2.0)
-    rec, _ = static_step.run(case, pair(case, g), g, tmp_path)
+    rec, _ = static_step.run(case, g, tmp_path)
     assert rec["edge_clear"] and not rec["margin_ok"]
+
+
+def test_step_args_line_load_and_periodic_flags():
+    """Line contact: the step gets w n_y h [N] and the strip periodic along the roller axis only."""
+    case = ContactCase("roller", r1=(5e-3, math.inf), r2=(30e-3, math.inf), E=210e9, nu=0.3, load=5e4, line=True)
+    g = Grid.around(case)
+    args = g.step_args(case, unloading=False)
+    assert args == {"normal_load": pytest.approx(5e4 * g.X.shape[1] * g.h), "periodic_geometry": True,
+                    "periodic_axes": (False, True), "unloading": False}
+    assert g.length_y_m == g.X.shape[1] * g.h
+    assert g.step_args(case, normal_load=3.0)["normal_load"] == 3.0
+    point = ContactCase("ball", r1=6.35e-3, r2=math.inf, E=210e9, nu=0.3, load=500.0)
+    assert Grid.around(point).step_args(point) == {"normal_load": 500.0}
+
+
+@pytest.mark.parametrize("contrary", [{"periodic_geometry": False}, {"periodic_axes": (False, False)}])
+def test_step_args_refuses_a_non_periodic_line(contrary):
+    case = ContactCase("roller", r1=(5e-3, math.inf), r2=(30e-3, math.inf), E=210e9, nu=0.3, load=5e4, line=True)
+    with pytest.raises(ValueError, match="line contact needs"):
+        Grid.around(case).step_args(case, **contrary)
+
+
+def test_static_step_refuses_surfaces_off_the_grid(ball, tmp_path):
+    """SlipPY solves on the spacing of the surfaces; surfaces of another grid would be solved silently."""
+    case = contact_case(ball, "inner", 300.0)
+    g = Grid.around(case)
+    with pytest.raises(ValueError, match="grid_spacing"):
+        static_step.run(case, g, tmp_path, surfaces=pair(case, Grid.around(case, h=g.h / 2)))
+    with pytest.raises(ValueError, match="cannot be given with surfaces"):
+        static_step.run(case, g, tmp_path, surfaces=pair(case, g), build="two_profiles")
+    import slippy.surface as ss
+    bare = [ss.Surface(profile=surface.profile, grid_spacing=g.h) for surface in pair(case, g)]   # material None
+    with pytest.raises(ValueError, match="no material"):
+        static_step.run(case, g, tmp_path, surfaces=bare)
+
+
+def test_given_spatial_kernel_surfaces_refused_for_a_line(tmp_path):
+    """Same rule as ``pair``: on the periodic line axis the spatial kernel is a finite strip."""
+    line = ContactCase("roller", r1=(5e-3, math.inf), r2=(30e-3, math.inf), E=210e9, nu=0.3, load=5e4, line=True)
+    g = Grid.around(line)
+    point = replace(line, r1=(5e-3, 5e-3), line=False)          # spatial-kernel surfaces on the same grid
+    with pytest.raises(ValueError, match="use_frequency_domain=True"):
+        static_step.run(line, g, tmp_path, surfaces=pair(point, g, use_frequency_domain=False))
+
+
+def test_static_step_records_given_surfaces_and_their_kernel(ball, tmp_path):
+    pytest.importorskip("pyfftw")
+    case = contact_case(ball, "inner", 300.0)
+    g = Grid.around(case, h=semi_axes(case)[0] / 4.0)       # coarse: a fast solve
+    rec, _ = static_step.run(case, g, tmp_path, surfaces=pair(case, g, use_frequency_domain=False))
+    assert (rec["build"], rec["use_frequency_domain"]) == ("given", False)
 
 
 def test_contact_case_hash_ignores_label():

@@ -43,7 +43,7 @@ import numpy as np
 from axisforge.outputs._format import format_table, write_records_csv
 
 from references.contact.hertz import hertz_point
-from slippy_bridge.contact import Grid, pair, static_step
+from slippy_bridge.contact import Grid, static_step
 from validation._support.convergence import RECORD_COLUMNS, sweep
 from validation._support.figures import contact_plots
 
@@ -98,7 +98,7 @@ print(format_table(JUDGED_COLUMNS, records))
 pk = []
 for i, f in enumerate(H_RUN):
     grid = Grid.around(CASE, h=f * h0, span_x=SPAN_X_0)
-    record, p = static_step.run(CASE, pair(CASE, grid), grid, RESULTS / "slippy_01", name=f"{CASE.label}_pk_{i}")
+    record, p = static_step.run(CASE, grid, RESULTS / "slippy_01", name=f"{CASE.label}_pk_{i}")
     p_h = JUDGE["p0_Pa"] * np.sqrt(np.clip(1.0 - (grid.X**2 + grid.Y**2) / A**2, 0.0, None))
     loaded = p > 0.0                                                # I_c: the loaded nodes of the solution
     area = loaded.sum() * grid.h**2                                 # A = N_c h^2 [m^2]
@@ -123,9 +123,8 @@ print(format_table((("h_m", "h [um]", ".3f", 1e6), ("M", "M", ".1f"), ("N_c", "N
 muser = None
 if not SMOKE:
     grid = Grid.around(CASE, h=MUSER_H_OVER_A * A, span_x=MUSER_SPAN, span_y=MUSER_SPAN)
-    record, _ = static_step.run(CASE, pair(CASE, grid), grid, RESULTS / "slippy_01", name=f"{CASE.label}_muser")
-    muser = judged({"build": "composite", "sweep": "muser", "span_x": MUSER_SPAN,
-                    "use_frequency_domain": True, **record})
+    record, _ = static_step.run(CASE, grid, RESULTS / "slippy_01", name=f"{CASE.label}_muser")
+    muser = judged({"sweep": "muser", "span_x": MUSER_SPAN, **record})
 
 # %% [markdown]
 # ## 4. Criteria
