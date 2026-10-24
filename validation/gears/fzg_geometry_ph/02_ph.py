@@ -37,7 +37,7 @@ from axisforge.outputs._format import format_table, read_records_csv, write_reco
 from axisforge.solvers.machine_elements.gears.contact import contact_inputs       # c328999 only (GL-01)
 
 from slippy_bridge.contact import contacts, hertz
-from slippy_bridge.contact.outputs import rel_err
+from slippy_bridge.contact.measures import rel_err
 
 from construction import DRIVER, FAMILY, RESULTS, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair, path_times
 

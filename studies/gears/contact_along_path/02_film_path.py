@@ -38,7 +38,7 @@ from axisforge.solvers.machine_elements.gears.contact import contact_inputs     
 
 from references.contact.ehl import e_prime, film_scalings, groups, moes
 from slippy_bridge.contact import Grid, contacts
-from slippy_bridge.contact.outputs import rel_err
+from slippy_bridge.contact.measures import rel_err
 from slippy_bridge.lubrication import ehl
 
 from construction import (DRIVER, FAMILY, OIL, OIL_FERNANDES2015A, OIL_MARTINS2015, RESULTS, ROELANDS_P0_PA, SPAN_X,

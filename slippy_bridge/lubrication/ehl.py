@@ -9,7 +9,7 @@ Reynolds equation for the film coupled with the elastic deflection of both bodie
 (``UnifiedReynoldsSolver`` inside an ``IterSemiSystem`` step, with ``no_time=True``); the template
 of the call is SlipPY ``slippy/contact/tests/test_mixed_lubrication.py:9-74``.
 
-Conventions fixed here (as ``smooth.py`` fixes the dry ones):
+Conventions fixed here (as ``surfaces.py`` fixes the dry ones):
 
 * SI units everywhere; the unit is in every keyword and record key.
 * Entrainment speed: the MEAN speed ``(u1 + u2)/2`` (SlipPY ``rolling_speed``, R-075), along
@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 
 from ..contact.base import Contact, ContactCase
-from ..contact.smooth import Grid
+from ..contact.surfaces import Grid
 
 __all__ = ["run", "FILM_KEYS"]
 
@@ -68,13 +68,13 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
         ``kinematics["u_e_m_per_s"]``. A bare ``ContactCase`` has no kinematics, so it needs
         ``u_mean_m_per_s``. SI units (``ContactCase``).
     grid : Grid
-        Grid of the solve (``smooth.Grid.around``): spacing ``h`` [m], ``X`` rolling along axis 0.
+        Grid of the solve (``surfaces.Grid.around``): spacing ``h`` [m], ``X`` rolling along axis 0.
     output_dir : path
         Where SlipPY writes its files (required: SlipPY otherwise writes to its global OUTPUT_DIR or
         the cwd, and a repeated model name overwrites, R-088).
     surfaces : (surface_1, surface_2), optional
-        SlipPY surfaces on ``grid`` (``smooth.pair``, smooth or rough). None: the smooth composite pair
-        is built from ``contact.case`` and ``grid``, as ``smooth.pair(case, grid)`` (GL-21).
+        SlipPY surfaces on ``grid`` (``surfaces.pair``, smooth or rough). None: the smooth composite pair
+        is built from ``contact.case`` and ``grid``, as ``surfaces.pair(case, grid)`` (GL-21).
     eta0_Pa_s : float
         Viscosity of the oil at ambient pressure and the working temperature [Pa s].
     rho0_kg_per_m3 : float
@@ -140,7 +140,7 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
        ``(ln eta0 + 9.67) z / p0`` for Roelands (R-091).
     5. ``load_ok = abs(err_load) <= rtol_pressure``, the tolerance SlipPY's step itself uses
        (default 2e-6, lubrication_steps.py:518-519), recorded (GL-08); the film keys come from
-       ``outputs.measure(p, h, line, gap=, X=, Y=)`` (R-033).
+       ``measures.measure(p, h, line, gap=, X=, Y=)`` (R-033).
     6. The record (OPEN GL-20): the identification, ``h_m``, ``n_x``, ``n_y``, ``load_N_applied``, the
        ``measure`` keys, ``p0_ref_Pa``, ``s_x_ref_m``, ``err_load``, ``converged``, ``load_ok``,
        ``solve_time_s`` of the ``static_step.run`` record, then ``FILM_KEYS``. Not carried, because their

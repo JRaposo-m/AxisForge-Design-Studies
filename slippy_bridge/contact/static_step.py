@@ -32,9 +32,9 @@ from pathlib import Path
 import numpy as np
 
 from .base import Contact, ContactCase
-from .outputs import measure, rel_err
+from .measures import measure, rel_err
 from .reference import hertz
-from .smooth import SPAN_X_0, Grid
+from .surfaces import SPAN_X_0, Grid
 
 __all__ = ["run"]
 
@@ -51,9 +51,9 @@ def run(contact: Contact | ContactCase, surfaces, grid: Grid, output_dir, *,
     ----------
     contact : Contact or ContactCase
     surfaces : (surface_1, surface_2)
-        From ``smooth.pair`` (smooth or rough).
+        From ``surfaces.pair`` (smooth or rough).
     grid : Grid
-        The grid of the surfaces (``smooth.Grid.around``): its rolling coordinate ``X`` [m] and
+        The grid of the surfaces (``surfaces.Grid.around``): its rolling coordinate ``X`` [m] and
         spacing ``h`` [m] are used.
     output_dir : path
         Where SlipPY writes its .sar/.sdb/.log files (required: SlipPY otherwise writes to cwd).

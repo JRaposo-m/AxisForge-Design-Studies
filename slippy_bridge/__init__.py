@@ -5,17 +5,17 @@ uses SlipPY". Another contact solver would get its own bridge; the studies chang
 import. Organised by physics, then by machine element:
 
     contact/            dry contact
-        base.py         ContactCase, Contact (element, subtype, location, kinematics),
-                        ElementAdapter and its registry
-        elements/       bearings/ (BearingContacts, every AxisForge family), gears/
-                        (SpurHelicalContacts, registered, adapter to come)
+        base.py         ContactCase, Contact, ElementAdapter and its registry
+        elements/       bearings/ (BearingContacts, every AxisForge family);
+                        gears/ (SpurHelicalContacts, registered; conversion is a scaffold)
         reference.py    Hertz (SlipPY hertz_full) on the bridge axes
-        smooth.py       Grid and pair(case, grid, build, rough): composite or two_profiles
-                        surfaces, smooth or rough (rolling = array axis 0)
+        surfaces.py     Grid and pair: composite or two_profiles, smooth or rough
+                        (rolling = array axis 0)
         rough.py        roughness generation
-        static_step.py  SlipPY StaticStep + measurements + boolean checks -> record
-        outputs.py      measurements as records (written with axisforge.outputs._format)
-    lubrication/        (to come) imports from contact/, never the reverse
+        static_step.py  SlipPY StaticStep + measurements + checks -> record
+        measures.py     measurements of a pressure field, as records
+    lubrication/        imports from contact/, never the reverse
+        ehl.py          steady EHL solve (scaffold)
 
 Decisions: D-0019 (proposed), D-0018 (reuse first).
 """

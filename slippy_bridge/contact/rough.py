@@ -1,7 +1,7 @@
 """Roughness generation.
 
 Roughness is a height array [m] on the same grid as the surfaces: generated here
-(:func:`fractal`) or measured and resampled by the caller. ``smooth.pair`` adds it to the
+(:func:`fractal`) or measured and resampled by the caller. ``surfaces.pair`` adds it to the
 profiles (argument ``rough``); how it is shared between the two bodies in the composite and
 two_profiles builds is explained there.
 """

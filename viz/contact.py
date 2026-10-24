@@ -23,7 +23,7 @@ import numpy as np
 import pyvista as pv
 
 from slippy_bridge.contact import Contact, hertz
-from slippy_bridge.contact.outputs import rel_err
+from slippy_bridge.contact.measures import rel_err
 
 from .scene import MM_PER_M, MPA_PER_PA, set_view, tick_values
 

@@ -46,7 +46,7 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.con
 
 from references.contact.hertz import hertz_point
 from slippy_bridge.contact import contact_case, contacts
-from slippy_bridge.contact.outputs import rel_err
+from slippy_bridge.contact.measures import rel_err
 
 import construction as cd
 

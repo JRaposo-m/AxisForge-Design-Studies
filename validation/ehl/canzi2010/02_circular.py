@@ -33,7 +33,7 @@ from axisforge.outputs._format import format_table, read_records_csv, write_reco
 
 from references.contact.ehl import canzi_moes, e_prime, film_scalings, groups, moes, moes_inverse
 from slippy_bridge.contact import ContactCase, Grid, hertz
-from slippy_bridge.contact.outputs import rel_err
+from slippy_bridge.contact.measures import rel_err
 from slippy_bridge.lubrication import ehl
 
 from construction import (CIRC_ALPHA_BAR, CIRC_CALCULATED_LINES, CIRC_M2, DENSITY, E_PA, NU, RESULTS, RHO0_KG_PER_M3,

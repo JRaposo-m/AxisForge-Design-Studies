@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 
 from slippy_bridge.contact import Grid, pair, static_step
-from slippy_bridge.contact.smooth import SPAN_X_0
+from slippy_bridge.contact.surfaces import SPAN_X_0
 
 __all__ = ["ResultantView", "sweep", "RECORD_COLUMNS"]
 
@@ -99,7 +99,7 @@ def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=SPAN
         Elastic kernel of both bodies, passed to ``slippy_bridge.contact.pair``: True is SlipPY's
         frequency-domain kernel (periodic images of the load), False the spatial-domain kernel
         (no images on a non-periodic axis). Not available for a line contact:
-        ``slippy_bridge.contact.smooth.pair`` raises ``ValueError``.
+        ``slippy_bridge.contact.surfaces.pair`` raises ``ValueError``.
 
     Returns
     -------

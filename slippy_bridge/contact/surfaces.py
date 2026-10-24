@@ -59,7 +59,7 @@ class Grid:
 
     A grid built by hand is checked for its axes and spacing (see Raises). One more thing
     :meth:`around` guarantees is assumed and not checked: the origin on node
-    ``(n_x//2, n_y//2)`` (``outputs.measure`` counts ``apex_offset_nodes`` from it, and so do
+    ``(n_x//2, n_y//2)`` (``measures.measure`` counts ``apex_offset_nodes`` from it, and so do
     callers that cut through the centre node).
 
     Parameters
