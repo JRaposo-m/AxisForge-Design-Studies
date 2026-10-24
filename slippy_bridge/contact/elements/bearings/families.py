@@ -184,16 +184,20 @@ class BearingContacts(ElementAdapter):
 
         Two ways to give the load:
 
-        * ``result``: the ISO/TS 16281 result (``BearingResult`` or one of its rows). Each selected
-          element j gives its ``Q_j`` and operating angle ``alpha_j``; rollers give their whole load
-          over ``Lwe``, or with ``laminae=True`` one contact per loaded lamina (``q_jk`` over
-          ``Lwe / n_s``).
+        * ``result``: the ISO/TS 16281 result. Each selected element j gives its ``Q_j`` and
+          operating angle ``alpha_j``; rollers give their whole load over ``Lwe``, or with
+          ``laminae=True`` one contact per loaded lamina (``q_jk`` over ``Lwe / n_s``).
         * ``load`` (and optionally ``alpha``): one contact per race, no element index.
 
         Parameters
         ----------
         bearing : axisforge Bearing
-        result : BearingResult or LoadDistributionResult, optional
+        result : BearingAnalysisResult, BearingResult or LoadDistributionResult, optional
+            What AxisForge returns: one value of the dict of ``SolverBase.solve`` (its
+            ``load_distribution`` is read), the ``BearingResult`` of ``solve_contact``, or one row of
+            it. A ``BearingResult`` must be converged (``ok``) and, when both carry a label, belong
+            to ``bearing``; it adds ``phi_global_rad`` to the location. A bare row carries neither
+            flag nor label and is taken as given.
         races : sequence of {"inner", "outer"}
         elements : "loaded" | "max" | sequence of int
             Which rolling elements (with ``result``); unloaded elements in a list are skipped.
@@ -204,7 +208,8 @@ class BearingContacts(ElementAdapter):
         load : float, optional
             Element load [N] when no ``result`` is given.
         alpha : float, optional
-            Contact angle [rad] when no ``result`` is given (default: the family angle).
+            Contact angle [rad] with ``load`` (default: the family angle ``alpha_0``). Refused with
+            ``result``, whose own ``alpha_j`` is used. The angle used is the location ``alpha_rad``.
         n_inner_rpm, n_outer_rpm : float, optional
             Ring speeds [rpm]; if ``n_inner_rpm`` is given, ``kinematics`` gets ``u_e_m_per_s`` and
             ``slide_roll = 0`` (pure rolling).
@@ -217,11 +222,14 @@ class BearingContacts(ElementAdapter):
         Raises
         ------
         ValueError
-            If both or neither of ``result`` and ``load`` are given, or ``laminae`` is asked for a
-            point contact.
+            If both or neither of ``result`` and ``load`` are given, ``alpha`` is given with
+            ``result``, the result is not converged or belongs to another bearing, or ``laminae`` is
+            asked for a point contact.
         """
         if (result is None) == (load is None):
             raise ValueError("give either result (ISO/TS 16281) or load, not both")
+        if result is not None and alpha is not None:
+            raise ValueError("alpha applies to load= only; with result= the solved alpha_j is used")
         line = _is_line_contact(bearing)
         if laminae and not line:
             raise ValueError("laminae applies to roller (line contact) bearings only")
@@ -230,10 +238,21 @@ class BearingContacts(ElementAdapter):
 
         items = []          # (location, load [N], alpha [rad] or None, length [mm] or None)
         if result is None:
-            items.append(({}, load, alpha, None))
+            # radii at alpha_0 as AxisForge stores them when alpha is None; record the angle either way
+            alpha_used = bearing.alpha_0 if alpha is None else alpha
+            items.append(({"alpha_rad": float(alpha_used)}, load, alpha, None))
         else:
+            result = getattr(result, "load_distribution", result)   # BearingAnalysisResult -> BearingResult
+            if hasattr(result, "rows"):
+                # AxisForge does not enforce convergence; its root tolerance is not a residual bound,
+                # so the flag ``ok`` is the only test it documents.
+                if not result.ok:
+                    raise ValueError(f"result {result.label!r} is not converged (ok=False, "
+                                     f"residual {result.residual:.3g} N)")
+                if result.label and bearing.label and result.label != bearing.label:
+                    raise ValueError(f"result {result.label!r} is not of bearing {bearing.label!r}")
+            phi_global = result.phi_j_global(row) if hasattr(result, "rows") else None
             row_result = _row_of(result, row)
-            phi_global = result.phi_j_global(row) if hasattr(result, "phi_j_global") else None
             for j in _select(row_result.Q_j, elements):
                 loc = {"row": row, "element_j": j, "phi_local_rad": float(row_result.phi_j[j]),
                        **({} if phi_global is None else {"phi_global_rad": float(phi_global[j])}),

@@ -154,7 +154,7 @@ which uses the same `arctan2` on a caller-supplied Fr.
 
 **What A2 changes.** With psi = 0, or psi != 0 on a symmetric single row with Fa = 0, A2 only
 places the loaded zone 180 deg off: `phi_j_global`, loaded-zone plots and the `Contact.location`
-angles passed to `slippy_bridge` (`elements/bearings/families.py:241-243`). With psi from the FEM
+angles passed to `slippy_bridge` (`elements/bearings/families.py:254-258`). With psi from the FEM
 together with Fa != 0 or an angular-contact row, the projection
 `psi = psi_xz cos(phi_Fr) + psi_xy sin(phi_Fr)` (`contact_solver.py:201`) also reverses the tilt
 relative to the load line, so `Q_j`, `alpha_j` and the life can change: not checked here (psi is

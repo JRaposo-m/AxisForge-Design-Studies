@@ -152,13 +152,15 @@ class Contact:
     subtype : str
         AxisForge class of the element subtype (e.g. ``"DeepGrooveBallFamily"``).
     location : dict
-        Where the contact is, element-specific, units in the keys. Bearings: ``race``,
-        ``element_j``, ``row``, ``phi_local_rad`` (and ``phi_global_rad`` from a multi-row result),
-        ``alpha_rad``; for a roller lamina also ``lamina_k`` and ``x_k_mm``, the position of the
-        lamina along the roller axis (AxisForge ``x_k`` [mm]; the roller axis is the bridge ``y``,
-        across rolling). Gears: the point on the path of contact (``point``, ``s_mm``, ``g_y_mm``,
-        ``t_s``) and its load sharing (``share``, ``n_pairs``, ``l_sum_mm``); see
-        ``SpurHelicalContacts.contacts``.
+        Where the contact is, element-specific, units in the keys. Bearings: ``race`` and
+        ``alpha_rad``, the contact angle used (the given one or ``alpha_0`` with a load, ``alpha_j``
+        with a result); with a result also ``element_j``, ``row``, ``phi_local_rad``, and
+        ``phi_global_rad`` when the result is a ``BearingResult`` (single or multi row; not a bare
+        row; convention: see AxisForge ``BearingResult.phi_j_global``). For a roller lamina also
+        ``lamina_k`` and ``x_k_mm``, the position of the lamina along the roller axis (AxisForge
+        ``x_k`` [mm]; the roller axis is the bridge ``y``, across rolling). Gears: the point on the
+        path of contact (``point``, ``s_mm``, ``g_y_mm``, ``t_s``) and its load sharing (``share``,
+        ``n_pairs``, ``l_sum_mm``); see ``SpurHelicalContacts.contacts``.
     case : ContactCase
         The Hertz inputs.
     kinematics : dict, optional

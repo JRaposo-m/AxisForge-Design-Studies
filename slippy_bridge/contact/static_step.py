@@ -17,6 +17,10 @@ Hertz reference and boolean checks:
 * ``resolution_ok`` - at least ``min_nodes`` nodes across the smaller Hertz semi-axis;
 * ``within_reference`` - p0, s_x, s_y (and the approach for a point contact) within
   ``rtol_reference`` of Hertz (only meaningful for smooth surfaces).
+
+The approach ``delta_m`` is recorded for a point contact only: in a line contact the approach of
+two bodies is not defined by the contact alone, it needs a datum inside each body (Johnson1985
+§4.2(c), Eq. (4.37)).
 """
 from __future__ import annotations
 
@@ -30,7 +34,7 @@ import numpy as np
 from .base import Contact, ContactCase
 from .outputs import measure, rel_err
 from .reference import hertz
-from .smooth import Grid
+from .smooth import SPAN_X_0, Grid
 
 __all__ = ["run"]
 
@@ -39,7 +43,7 @@ _ids = itertools.count()
 
 def run(contact: Contact | ContactCase, surfaces, grid: Grid, output_dir, *,
         normal_load: float | None = None, method: str = "pk", tolerance: float = 1e-9,
-        span_x_min: float = 4.0, min_nodes: float = 8.0, rtol_reference: float = 0.03,
+        span_x_min: float = SPAN_X_0, min_nodes: float = 8.0, rtol_reference: float = 0.03,
         name: str | None = None, **step_kwargs):
     """Solve one static contact and measure it.
 
@@ -76,7 +80,11 @@ def run(contact: Contact | ContactCase, surfaces, grid: Grid, output_dir, *,
     Returns
     -------
     record : dict
-        Identification, measured values, reference, relative errors, checks, ``solve_time_s``.
+        Identification, ``method``, ``tolerance``, grid (``h_m``, ``n_x``, ``n_y``, ``length_m`` =
+        periodic length ``n_y h`` [m] of a line contact, nan for a point), measured values
+        (``delta_m`` nan for a line), the relative radii of the case ``R_x_m``, ``R_y_m`` [m]
+        (geometry, ``1/R = 1/r1 + 1/r2`` per bridge axis), Hertz reference, relative errors, checks,
+        ``solve_time_s``.
     pressure : ndarray
         Pressure field [Pa] (for plots; not stored in the record).
     """
@@ -87,10 +95,11 @@ def run(contact: Contact | ContactCase, surfaces, grid: Grid, output_dir, *,
                                                                    "line": case.line}
     s1, s2 = surfaces
     X, h = grid.X, grid.h
+    length = X.shape[1] * h if case.line else math.nan      # [m] periodic length across rolling
     if case.line:
         step_kwargs.setdefault("periodic_geometry", True)
         step_kwargs.setdefault("periodic_axes", (False, True))
-        load = case.load * X.shape[1] * h if normal_load is None else normal_load
+        load = case.load * length if normal_load is None else normal_load      # [N/m] * [m]
     else:
         load = case.load if normal_load is None else normal_load
 
@@ -106,7 +115,7 @@ def run(contact: Contact | ContactCase, surfaces, grid: Grid, output_dir, *,
     p = np.asarray(sol["loads_z"], dtype=float)          # SlipPY a4fbb44: a pressure [Pa]
     m = measure(p, h, line=case.line)
     ref = hertz(case)
-    delta = float(sol.get("interference", math.nan))
+    delta = math.nan if case.line else float(sol.get("interference", math.nan))
     edge = np.concatenate([p[0, :], p[-1, :]] + ([] if case.line else [p[:, 0], p[:, -1]]))
     small = min(ref["s_x_m"], ref["s_y_m"])
     err = {"err_p0": rel_err(m["p0_Pa"], ref["p0_Pa"]), "err_s_x": rel_err(m["s_x_m"], ref["s_x_m"]),
@@ -123,8 +132,10 @@ def run(contact: Contact | ContactCase, surfaces, grid: Grid, output_dir, *,
         "within_reference": all(math.isfinite(err[k]) and abs(err[k]) <= rtol_reference
                                 for k, r in refs.items() if math.isfinite(r)),
     }
-    record = {**ident, "h_m": h, "n_x": X.shape[0], "n_y": X.shape[1], "load_N_applied": load,
+    record = {**ident, "method": method, "tolerance": tolerance,
+              "h_m": h, "n_x": X.shape[0], "n_y": X.shape[1], "length_m": length, "load_N_applied": load,
               **m, "delta_m": delta,
               "p0_ref_Pa": ref["p0_Pa"], "s_x_ref_m": ref["s_x_m"], "s_y_ref_m": ref["s_y_m"],
-              "delta_ref_m": ref["delta_m"], **err, **checks, "solve_time_s": dt}
+              "delta_ref_m": ref["delta_m"], "R_x_m": ref["R_x_m"], "R_y_m": ref["R_y_m"],
+              **err, **checks, "solve_time_s": dt}
     return record, p

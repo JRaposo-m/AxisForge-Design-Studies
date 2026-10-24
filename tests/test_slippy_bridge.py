@@ -9,7 +9,8 @@ af_c = pytest.importorskip("axisforge.core")
 pytest.importorskip("slippy")
 
 from axisforge.core.machine_elements.bearings.contact_models.iso16281 import PointContactStiffness  # noqa: E402
-from axisforge.results import BallLoadDistributionResult, RollerLoadDistributionResult  # noqa: E402
+from axisforge.results import (BallBearingResult, BallLoadDistributionResult,  # noqa: E402
+                               BearingAnalysisResult, RollerLoadDistributionResult)
 from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.contact_solver import (  # noqa: E402
     ISO16281BallSolver)
 
@@ -17,7 +18,7 @@ from references.contact.ehl import e_prime, film_scalings, groups, moes_inverse 
 from references.contact.hertz import hertz_point  # noqa: E402
 from slippy_bridge.contact import (BearingContacts, Contact, ContactCase, Grid, contact_case,  # noqa: E402
                                    contacts, entrainment_speed, hertz, measure, pair, register,
-                                   registered, rough, semi_axes, static_step)
+                                   registered, relative_radii, rough, semi_axes, static_step)
 from slippy_bridge.lubrication import ehl  # noqa: E402
 
 CONTACT = dict(e1=210000.0, e2=210000.0, nu1=0.3, nu2=0.3)
@@ -228,12 +229,46 @@ def test_listed_unloaded_element_is_skipped_and_row_checked(ball, ball_row):
         contacts(ball, ball_row, row=1)
 
 
-def test_multirow_result_gives_global_angle(ball, ball_row):
-    from axisforge.results import BallBearingResult
-    res = BallBearingResult.single(ball_row, label="b", delta_r=0.0, delta_a=0.0, psi=0.0, phi_Fr=0.5,
-                                   Fr_xz=0.0, Fr_xy=0.0, Fa=0.0, n_iter=1, residual=0.0, ok=True)
-    loc = contacts(ball, res, races=("inner",), elements="max")[0].location
-    assert loc["phi_global_rad"] == pytest.approx(res.phi_j_global(0)[0])
+@pytest.fixture(scope="module")
+def ball_result(ball_row):
+    """Single-row AxisForge ``BallBearingResult`` of the ``ball`` fixture (label "b"), converged."""
+    return BallBearingResult.single(ball_row, label="b", delta_r=0.0, delta_a=0.0, psi=0.0, phi_Fr=0.5,
+                                    Fr_xz=0.0, Fr_xy=0.0, Fa=0.0, n_iter=1, residual=0.0, ok=True)
+
+
+def test_bearing_result_gives_global_angle(ball, ball_result):
+    loc = contacts(ball, ball_result, races=("inner",), elements="max")[0].location
+    assert loc["phi_global_rad"] == pytest.approx(ball_result.phi_j_global(0)[0])
+    assert "phi_global_rad" not in contacts(ball, ball_result.rows[0], races=("inner",))[0].location
+
+
+def test_analysis_result_of_the_solver_is_accepted(ball, ball_result):
+    """``SolverBase.solve`` returns a ``BearingAnalysisResult`` per label; the bridge reads its
+    load distribution."""
+    analysis = BearingAnalysisResult(label="b", load_distribution=ball_result)
+    got, expected = contacts(ball, analysis), contacts(ball, ball_result)
+    assert [(c.location, c.case) for c in got] == [(c.location, c.case) for c in expected]
+
+
+def test_unconverged_result_is_refused(ball, ball_result):
+    with pytest.raises(ValueError, match="not converged"):
+        contacts(ball, replace(ball_result, ok=False, residual=12.0))
+
+
+def test_result_of_another_bearing_is_refused(ball, ball_result):
+    with pytest.raises(ValueError, match="not of bearing"):
+        contacts(ball, replace(ball_result, label="other"))
+
+
+def test_alpha_with_result_is_refused(ball, ball_row):
+    with pytest.raises(ValueError, match="alpha"):
+        contacts(ball, ball_row, alpha=0.1)
+
+
+def test_load_path_records_the_angle_used(ball):
+    assert contacts(ball, load=100.0, races=("inner",))[0].location == {"race": "inner",
+                                                                         "alpha_rad": ball.alpha_0}
+    assert contacts(ball, load=100.0, alpha=0.3, races=("inner",))[0].location["alpha_rad"] == 0.3
 
 
 def test_record_keys_must_not_overlap(ball):
@@ -464,10 +499,26 @@ def test_static_step_end_to_end(ball, race, tmp_path):
             for b in ("composite", "two_profiles")}
     rc = recs["composite"]
     assert rc["element"] == "bearing" and rc["race"] == race
+    assert (rc["method"], rc["tolerance"]) == ("pk", 1e-9) and math.isnan(rc["length_m"])
+    assert (rc["R_x_m"], rc["R_y_m"]) == relative_radii(c.case)
+    assert math.isfinite(rc["delta_m"])
     assert abs(rc["err_p0"]) < 0.02
     assert all(rc[k] for k in ("converged", "load_ok", "edge_clear", "margin_ok", "resolution_ok",
                                "within_reference"))
     assert recs["two_profiles"]["p0_Pa"] == pytest.approx(rc["p0_Pa"], rel=0.01)
+
+
+def test_static_step_line_contact_has_no_approach(roller, tmp_path):
+    """Line contact: the approach needs a datum in each body (Johnson1985 §4.2(c), Eq. (4.37)), so
+    ``delta_m`` is nan; the load is the load per length times the periodic length ``n_y h``."""
+    pytest.importorskip("pyfftw")
+    c = contacts(roller, load=500.0, races=("inner",))[0]
+    g = Grid.around(c.case)
+    rec, _ = static_step.run(c, pair(c.case, g), g, tmp_path)
+    assert math.isnan(rec["delta_m"]) and math.isnan(rec["delta_ref_m"]) and math.isnan(rec["err_delta"])
+    assert rec["length_m"] == pytest.approx(rec["n_y"] * rec["h_m"])
+    assert rec["load_N_applied"] == pytest.approx(c.case.load * rec["length_m"])
+    assert rec["converged"] and rec["within_reference"]
 
 
 def test_static_step_flags_a_short_domain(ball, tmp_path):

@@ -20,6 +20,7 @@ from __future__ import annotations
 import numpy as np
 
 from slippy_bridge.contact import Grid, pair, static_step
+from slippy_bridge.contact.smooth import SPAN_X_0
 
 __all__ = ["ResultantView", "sweep", "RECORD_COLUMNS"]
 
@@ -65,7 +66,7 @@ RECORD_COLUMNS = (("build", "build", "s"), ("sweep", "sweep", "s"), ("span_x", "
                   ("err_delta", "err delta [%]", "+.3f", 100.0), ("solve_time_s", "t [s]", ".2f"))
 
 
-def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=4.0,
+def sweep(contact, builds, h_levels, span_x_levels, output_dir, *, span_x_0=SPAN_X_0,
           use_frequency_domain=True) -> list[dict]:
     """Solve one smooth static contact on a series of grids, for each build.
 
