@@ -1,6 +1,6 @@
 """slippy_bridge.contact: AxisForge bearing -> Contact -> surfaces -> static step."""
 import math
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import numpy as np
 import pytest
@@ -9,6 +9,7 @@ af_c = pytest.importorskip("axisforge.core")
 pytest.importorskip("slippy")
 
 from axisforge.core.machine_elements.bearings.contact_models.iso16281 import PointContactStiffness  # noqa: E402
+from axisforge.core.machine_elements.bearings.families import available_families  # noqa: E402
 from axisforge.results import (BallBearingResult, BallLoadDistributionResult,  # noqa: E402
                                BearingAnalysisResult, RollerLoadDistributionResult)
 from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.contact_solver import (  # noqa: E402
@@ -16,19 +17,23 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.con
 
 from references.contact.ehl import e_prime, film_scalings, groups, moes_inverse  # noqa: E402
 from references.contact.hertz import hertz_point  # noqa: E402
-from slippy_bridge.contact import (BearingContacts, Contact, ContactCase, Grid, contact_case,  # noqa: E402
-                                   contacts, entrainment_speed, hertz, measure, pair, register,
-                                   registered, relative_radii, rough, semi_axes, static_step)
+from slippy_bridge.contact import (BearingLocation, Contact, ContactCase, Grid, Kinematics,  # noqa: E402
+                                   bearing_contacts, contact_case, gear_contacts, hertz, measure, pair,
+                                   rough, semi_axes, static_step)
+from slippy_bridge.contact.elements.bearings import _entrainment_speed  # noqa: E402
+from slippy_bridge.contact.reference import relative_radii  # noqa: E402
 from slippy_bridge.lubrication import ehl  # noqa: E402
 
 CONTACT = dict(e1=210000.0, e2=210000.0, nu1=0.3, nu2=0.3)
 
 
-def _bearing(family, arrangement, **geometry):
+def _bearing(family, arrangement, contact: bool = True, **geometry):
+    """Assembled AxisForge bearing; ``contact`` adds the ISO/TS 16281 contact constants (steel)."""
     catalog = af_c.BearingCatalog(d=20.0, D=42.0, b=12.0, designation="test", position=0.0,
                                   arrangement=arrangement, label="b")
-    return af_c.Bearing.assemble(family=family, catalog=catalog,
-                                 geometry={**geometry, "contact": af_c.ContactAnalysis.ISO16281, **CONTACT})
+    if contact:
+        geometry = {**geometry, "contact": af_c.ContactAnalysis.ISO16281, **CONTACT}
+    return af_c.Bearing.assemble(family=family, catalog=catalog, geometry=geometry)
 
 
 @pytest.fixture(scope="module")
@@ -69,13 +74,41 @@ def roller_row():
                                         delta_jk=np.zeros((Z, n_s)), q_jk=q)
 
 
-# ---- registry ------------------------------------------------------------------------------
+# ---- every AxisForge bearing family --------------------------------------------------------
 
-def test_every_axisforge_bearing_family_is_registered():
-    from axisforge.core.machine_elements.bearings.families.family import _FAMILY_REGISTRY
-    reg = registered()
-    assert set(_FAMILY_REGISTRY) == set(reg["bearing"]) and len(reg["bearing"]) >= 8
-    assert "CylindricalFamily" in reg["gear"]
+# Single-row geometry of each AxisForge family, the values of AxisForge's own family tests
+# (axisforge/core/machine_elements/bearings/families/tests/conftest.py); multi-row families take
+# a list of rows. A new AxisForge family fails the test below until it has an entry here.
+_FAMILY_GEOMETRY = {
+    "DeepGrooveBallFamily": dict(Dw=7.0, Dpw=31.0, Z=9, s=0.010),
+    "AngularContactFamily": dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=25.0),
+    "SelfAligningBallFamily": dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=25.0),
+    "ThrustBallSingleRowFamily": dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=90.0),
+    "ThrustBallMultiRowFamily": dict(rows=[dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=90.0)] * 2),
+    "CylindricalRollerFamily": dict(Dwe=5.0, Lwe=5.0, Dpw=31.0, Z=14, n_s=50, s=0.010),
+    "ThrustCylindricalRollerFamily": dict(Dwe=8.0, Lwe=8.0, Dpw=72.5, Z=18, s=0.01, n_s=40, alpha_0_deg=90.0),
+    "RollerThrustMultiRowFamily": dict(rows=[dict(Dwe=8.0, Lwe=8.0, Dpw=72.5, Z=18, s=0.01, n_s=40,
+                                                  alpha_0_deg=90.0)] * 2),
+}
+
+
+@pytest.mark.parametrize("name", sorted(available_families()))
+def test_every_axisforge_family_translates_or_raises_clearly(name):
+    """Each family in AxisForge ``available_families()`` either gives contacts or a NotImplementedError
+    that names it. A family AxisForge itself cannot assemble is skipped (an AxisForge bug, not the bridge)."""
+    geometry = _FAMILY_GEOMETRY[name]
+    contact = "rows" not in geometry and "ThrustCylindrical" not in name     # these take no contact constants
+    arrangement = "thrust" if "Thrust" in name else "non-locating" if "Cylindrical" in name else "locating"
+    try:
+        bearing = _bearing(available_families()[name](), arrangement, contact=contact, **geometry)
+    except Exception as exc:                                              # noqa: BLE001
+        pytest.skip(f"AxisForge cannot assemble {name}: {type(exc).__name__}: {exc}")
+    try:
+        cs = bearing_contacts(bearing, load=100.0)
+    except NotImplementedError as exc:
+        assert name in str(exc)
+    else:
+        assert [c.location.race for c in cs] == ["inner", "outer"] and cs[0].subtype == name
 
 
 def _gear_pair(material_id="steel"):
@@ -98,7 +131,7 @@ def _gear_inputs(pair):
 def test_gear_adapter_scaffold_raises():
     pair = _gear_pair()
     with pytest.raises(NotImplementedError, match="OPEN R-023"):
-        contacts(pair, _gear_inputs(pair), points=["A", "C", "E"])
+        gear_contacts(pair, _gear_inputs(pair), points=["A", "C", "E"])
 
 
 @pytest.mark.parametrize("change, match", [
@@ -119,25 +152,19 @@ def test_gear_adapter_guards(change, match):
     if change == "rho2_wrong_sign":
         inputs["rho2_n_mm"] = np.array([30.0, 20.0, -1.0])  # concave gear 2 on an external pair (z2 > 0)
     with pytest.raises(ValueError, match=match):
-        contacts(pair, inputs, points=points)
+        gear_contacts(pair, inputs, points=points)
 
 
-def test_unregistered_subtype_raises():
-    with pytest.raises(NotImplementedError, match="no SlipPY adapter"):
-        contacts(object())
-
-
-def test_register_refuses_what_is_not_an_adapter():
-    class Dummy:
-        pass
-
-    before = registered()
-    for not_an_adapter in (type("Plain", (), {}), lambda obj: []):
-        with pytest.raises(TypeError):
-            register(Dummy)(not_an_adapter)
-    assert registered() == before
-    with pytest.raises(NotImplementedError):
-        contacts(Dummy())
+def test_gear_material_given_only_for_a_gear_without_one():
+    pair = _gear_pair()
+    with pytest.raises(ValueError, match="given only for a gear without one"):
+        gear_contacts(pair, _gear_inputs(pair), points=["A", "C", "E"], E=(206000.0, None), nu=(0.3, None))
+    bare = _gear_pair("")
+    with pytest.raises(NotImplementedError, match="OPEN R-023"):        # explicit E, nu pass the guard
+        gear_contacts(bare, _gear_inputs(bare), points=["A", "C", "E"], E=(206000.0, 206000.0), nu=(0.3, 0.3))
+    for bad in (206000.0, (206000.0,), "ab"):
+        with pytest.raises(ValueError, match="must be"):
+            gear_contacts(bare, _gear_inputs(bare), points=["A", "C", "E"], E=bad, nu=(0.3, 0.3))
 
 
 # ---- bearing geometry ----------------------------------------------------------------------
@@ -182,14 +209,15 @@ def test_bad_input_raises(ball, kwargs):
 # ---- bearing contacts from the ISO/TS 16281 result -----------------------------------------
 
 def test_ball_contacts_from_result(ball, ball_row):
-    cs = BearingContacts.contacts(ball, ball_row, races=("inner", "outer"), elements="loaded")
+    cs = bearing_contacts(ball, ball_row, races=("inner", "outer"), elements="loaded")
     assert len(cs) == 2 * 5                                         # 5 loaded balls x 2 races
     c0 = cs[0]
     assert isinstance(c0, Contact) and (c0.element, c0.subtype) == ("bearing", "DeepGrooveBallFamily")
-    assert c0.location == {"race": "inner", "row": 0, "element_j": 0, "phi_local_rad": 0.0, "alpha_rad": 0.2}
+    assert isinstance(c0.location, BearingLocation)
+    assert asdict(c0.location) == asdict(BearingLocation(race="inner", alpha_rad=0.2, row=0, j=0, phi_rad=0.0))
     assert c0.case.load == 300.0
     assert c0.case.r2[0] == pytest.approx(contact_case(ball, "inner", 300.0, alpha=0.2).r2[0])
-    assert contacts(ball, ball_row, elements="max", races=("outer",))[0].location["element_j"] == 0
+    assert bearing_contacts(ball, ball_row, elements="max", races=("outer",))[0].location.j == 0
 
 
 def test_contacts_of_a_real_iso16281_solve(ball_6210, load_case):
@@ -205,28 +233,38 @@ def test_contacts_of_a_real_iso16281_solve(ball_6210, load_case):
     assert result.ok
     row = result.rows[0]
     loaded = np.flatnonzero(row.Q_j > 0.0)
-    cs = contacts(ball_6210, result)
+    cs = bearing_contacts(ball_6210, result)
     assert len(loaded) > 0 and len(cs) == 2 * len(loaded)
     assert not np.allclose(row.alpha_j[loaded], ball_6210.alpha_0, rtol=0.01)
     for j, inner, outer in zip(loaded, cs[0::2], cs[1::2]):
         for race, c in (("inner", inner), ("outer", outer)):
-            assert (c.location["race"], c.location["element_j"]) == (race, j)
-            assert c.case.load == row.Q_j[j] and c.location["alpha_rad"] == row.alpha_j[j]
+            assert (c.location.race, c.location.j) == (race, j)
+            assert c.case.load == row.Q_j[j] and c.location.alpha_rad == row.alpha_j[j]
+
+
+def test_phi_is_wrapped_as_the_axisforge_element_record(ball, ball_result):
+    """``phi_rad`` is AxisForge's own element record value: local angle wrapped to [-pi, pi)."""
+    from axisforge.outputs.solvers.bearings.load_distribution.load_distribution_results import element_records
+    by_j = {e["j"]: e["phi_rad"] for e in element_records(ball_result)}
+    cs = bearing_contacts(ball, ball_result, races=("inner",))
+    assert any(ball_result.rows[0].phi_j[c.location.j] >= math.pi for c in cs)     # some angles do wrap
+    for c in cs:
+        assert -math.pi <= c.location.phi_rad < math.pi and c.location.phi_rad == by_j[c.location.j]
 
 
 def test_roller_laminae_from_result(roller, roller_row):
-    whole = contacts(roller, roller_row, races=("inner",))
+    whole = bearing_contacts(roller, roller_row, races=("inner",))
     assert [c.case.load for c in whole] == pytest.approx([500.0 / 5e-3, 200.0 / 5e-3])     # Q_j / Lwe
-    lam = contacts(roller, roller_row, races=("inner",), laminae=True, elements=[1])
+    lam = bearing_contacts(roller, roller_row, races=("inner",), laminae=True, elements=[1])
     assert len(lam) == 50 and lam[0].case.load == pytest.approx(4.0 / 0.1e-3)          # q_jk / (Lwe/n_s)
-    assert lam[3].location["lamina_k"] == 3 and lam[0].case.line
-    assert lam[3].location["x_k_mm"] == pytest.approx(roller_row.x_k[3])
+    assert lam[3].location.k == 3 and lam[0].case.line and lam[3].case.label == "b_inner_e1_l3"
+    assert lam[3].location.x_mm == pytest.approx(roller_row.x_k[3])
 
 
 def test_listed_unloaded_element_is_skipped_and_row_checked(ball, ball_row):
-    assert [c.location["element_j"] for c in contacts(ball, ball_row, races=("inner",), elements=[0, 4])] == [0]
+    assert [c.location.j for c in bearing_contacts(ball, ball_row, races=("inner",), elements=[0, 4])] == [0]
     with pytest.raises(ValueError):
-        contacts(ball, ball_row, row=1)
+        bearing_contacts(ball, ball_row, row=1)
 
 
 @pytest.fixture(scope="module")
@@ -237,61 +275,66 @@ def ball_result(ball_row):
 
 
 def test_bearing_result_gives_global_angle(ball, ball_result):
-    loc = contacts(ball, ball_result, races=("inner",), elements="max")[0].location
-    assert loc["phi_global_rad"] == pytest.approx(ball_result.phi_j_global(0)[0])
-    assert "phi_global_rad" not in contacts(ball, ball_result.rows[0], races=("inner",))[0].location
+    loc = bearing_contacts(ball, ball_result, races=("inner",), elements="max")[0].location
+    assert loc.phi_global_rad == pytest.approx(ball_result.phi_j_global(0)[0])
+    assert bearing_contacts(ball, ball_result.rows[0], races=("inner",))[0].location.phi_global_rad is None
 
 
 def test_analysis_result_of_the_solver_is_accepted(ball, ball_result):
     """``SolverBase.solve`` returns a ``BearingAnalysisResult`` per label; the bridge reads its
     load distribution."""
     analysis = BearingAnalysisResult(label="b", load_distribution=ball_result)
-    got, expected = contacts(ball, analysis), contacts(ball, ball_result)
-    assert [(c.location, c.case) for c in got] == [(c.location, c.case) for c in expected]
+    got, expected = bearing_contacts(ball, analysis), bearing_contacts(ball, ball_result)
+    assert [(c.record(), c.case) for c in got] == [(c.record(), c.case) for c in expected]
 
 
 def test_unconverged_result_is_refused(ball, ball_result):
     with pytest.raises(ValueError, match="not converged"):
-        contacts(ball, replace(ball_result, ok=False, residual=12.0))
+        bearing_contacts(ball, replace(ball_result, ok=False, residual=12.0))
 
 
 def test_result_of_another_bearing_is_refused(ball, ball_result):
     with pytest.raises(ValueError, match="not of bearing"):
-        contacts(ball, replace(ball_result, label="other"))
+        bearing_contacts(ball, replace(ball_result, label="other"))
 
 
 def test_alpha_with_result_is_refused(ball, ball_row):
     with pytest.raises(ValueError, match="alpha"):
-        contacts(ball, ball_row, alpha=0.1)
+        bearing_contacts(ball, ball_row, alpha=0.1)
 
 
 def test_load_path_records_the_angle_used(ball):
-    assert contacts(ball, load=100.0, races=("inner",))[0].location == {"race": "inner",
-                                                                         "alpha_rad": ball.alpha_0}
-    assert contacts(ball, load=100.0, alpha=0.3, races=("inner",))[0].location["alpha_rad"] == 0.3
+    loc = bearing_contacts(ball, load=100.0, races=("inner",))[0].location
+    assert asdict(loc) == asdict(BearingLocation(race="inner", alpha_rad=ball.alpha_0))
+    assert bearing_contacts(ball, load=100.0, alpha=0.3, races=("inner",))[0].location.alpha_rad == 0.3
 
 
-def test_record_keys_must_not_overlap(ball):
-    c = contacts(ball, load=1.0, races=("inner",))[0]
-    assert {"element", "subtype", "race", "label", "case_hash"} <= set(c.record())
-    bad = Contact("bearing", "X", {"label": "clash"}, c.case)
-    with pytest.raises(ValueError, match="overlap"):
-        bad.record()
+def test_record_of_a_bearing_contact(roller, roller_row):
+    """The record keys: AxisForge element and lamina record names, every location field always present."""
+    c = bearing_contacts(roller, roller_row, races=("outer",), laminae=True, elements=[0], n_inner_rpm=1000.0)[0]
+    assert list(c.record()) == ["element", "subtype", "race", "alpha_rad", "row", "j", "phi_rad",
+                                "phi_global_rad", "k", "x_mm", "label", "case_hash", "line",
+                                "ue_m_per_s", "vg_m_per_s", "u1_m_per_s", "u2_m_per_s"]
+    rec = bearing_contacts(roller, load=100.0, races=("inner",))[0].record()
+    assert rec["j"] is None and "ue_m_per_s" not in rec
 
 
 def test_load_or_result_not_both(ball, ball_row):
     with pytest.raises(ValueError):
-        contacts(ball, ball_row, load=1.0)
+        bearing_contacts(ball, ball_row, load=1.0)
     with pytest.raises(ValueError):
-        contacts(ball)
+        bearing_contacts(ball)
 
 
 def test_kinematics_only_when_speeds_are_given(ball):
-    assert contacts(ball, load=100.0)[0].kinematics == {}
-    k = contacts(ball, load=100.0, n_inner_rpm=3000.0)[0].kinematics
+    assert bearing_contacts(ball, load=100.0)[0].kinematics is None
+    k = bearing_contacts(ball, load=100.0, n_inner_rpm=3000.0)[0].kinematics
     g = ball.Dw * math.cos(ball.alpha_0) / ball.Dpw
-    assert k["u_e_m_per_s"] == pytest.approx(31e-3 / 4 * (1 - g**2) * 3000 * 2 * math.pi / 60)
-    assert k["u_e_m_per_s"] == entrainment_speed(ball.Dpw, ball.Dw, ball.alpha_0, 3000.0, 0.0)
+    assert isinstance(k, Kinematics) and (k.vg_m_per_s, k.u1_m_per_s, k.u2_m_per_s) == (0.0, None, None)
+    with pytest.raises(TypeError):                                      # no silent pure rolling
+        Kinematics(ue_m_per_s=1.0)
+    assert k.ue_m_per_s == pytest.approx(31e-3 / 4 * (1 - g**2) * 3000 * 2 * math.pi / 60)
+    assert k.ue_m_per_s == _entrainment_speed(ball.Dpw, ball.Dw, ball.alpha_0, 3000.0, 0.0)
 
 
 # ---- reference, grid, measurements ----------------------------------------------------------
@@ -493,7 +536,7 @@ def test_line_contact_refuses_the_spatial_kernel():
 def test_static_step_end_to_end(ball, race, tmp_path):
     """AxisForge bearing -> both builds -> SlipPY static BEM: p0 vs Hertz, builds agree, checks true."""
     pytest.importorskip("pyfftw")
-    c = contacts(ball, load=300.0, races=(race,))[0]
+    c = bearing_contacts(ball, load=300.0, races=(race,))[0]
     g = Grid.around(c.case)
     recs = {b: static_step.run(c, g, tmp_path, build=b)[0] for b in ("composite", "two_profiles")}
     rc = recs["composite"]
@@ -512,7 +555,7 @@ def test_static_step_line_contact_has_no_approach(roller, tmp_path):
     """Line contact: the approach needs a datum in each body (Johnson1985 §4.2(c), Eq. (4.37)), so
     ``delta_m`` is nan; the load is the load per length times the periodic length ``n_y h``."""
     pytest.importorskip("pyfftw")
-    c = contacts(roller, load=500.0, races=("inner",))[0]
+    c = bearing_contacts(roller, load=500.0, races=("inner",))[0]
     g = Grid.around(c.case)
     rec, _ = static_step.run(c, g, tmp_path)
     assert math.isnan(rec["delta_m"]) and math.isnan(rec["delta_ref_m"]) and math.isnan(rec["err_delta"])
@@ -598,7 +641,7 @@ def test_contact_case_keeps_slippy_keys_and_the_saved_hash():
 # SlipPY's own EHL test (z 0.68, p0 = 1/5.1e-9 Pa), rolling at a mean 2 m/s
 _EHL_CASE = ContactCase("ehl_ball_flat", r1=6.35e-3, r2=math.inf, E=210e9, nu=0.3, load=500.0)
 _EHL_OK = dict(eta0_Pa_s=0.1, rho0_kg_per_m3=870.0, viscosity=("roelands", 0.68, 1.0 / 5.1e-9),
-               u_mean_m_per_s=2.0)
+               ue_m_per_s=2.0)
 
 
 @pytest.mark.parametrize("change, exc, match", [
@@ -606,7 +649,7 @@ _EHL_OK = dict(eta0_Pa_s=0.1, rho0_kg_per_m3=870.0, viscosity=("roelands", 0.68,
     ({"output_dir": None}, ValueError, "output_dir"),
     ({"viscosity": ("roelands", 0.68)}, ValueError, "viscosity must be"),
     ({"viscosity": ("roelands", 0.68, 196.0)}, ValueError, "in MPa"),        # p0 given in MPa
-    ({"u_mean_m_per_s": 0.0}, ValueError, "> 0"),
+    ({"ue_m_per_s": 0.0}, ValueError, "> 0"),
     ({"interference": 1e-6}, ValueError, "load-controlled"),
     ({"number_of_steps": 2}, ValueError, "steady"),
     ({"surfaces": "other_h"}, ValueError, "grid_spacing"),
@@ -640,7 +683,7 @@ def test_ehl_run_line_smoke(load_case, tmp_path):
     grid = Grid.around(case, span_x=cc.SPAN_X_LOW)                   # (inlet, outlet) 4 b and 1.5 b (CSV L56)
     rec, p, gap = ehl.run(case, grid, tmp_path, eta0_Pa_s=point["eta0_Pa_s"], rho0_kg_per_m3=cc.RHO0_KG_PER_M3,
                           viscosity=("roelands", cc.ROELANDS_Z, cc.ROELANDS_P0_PA), density="incompressible",
-                          u_mean_m_per_s=cc.U_MEAN_M_PER_S, rtol_pressure=1e-4, relaxation_factor=0.05)
+                          ue_m_per_s=cc.U_MEAN_M_PER_S, rtol_pressure=1e-4, relaxation_factor=0.05)
     assert {"n_x", "n_y", "h_m", "solve_time_s"} <= rec.keys()      # grid, domain (n h) and run time recorded
     U_mean = groups(u_mean_m_per_s=cc.U_MEAN_M_PER_S, eta0_Pa_s=point["eta0_Pa_s"], E_prime_Pa=E["E_prime_Pa"],
                     R_x_m=cc.R_X_M, alpha_per_Pa=point["alpha_initial_per_Pa"], w_N_per_m=point["w_N_per_m"])["U_mean"]
@@ -675,7 +718,7 @@ def _fzg_p_H_MPa(cc, pair, stage, points):
     F_bn_N = cc.FAMILY.mesh_forces(pair, cc.WHEEL_TORQUE_NM[stage] * z1 / z2, rot1=+1).F_bn_N
     times = cc.path_times(pair, n1_rpm)
     inputs = contact_inputs(pair, cc.DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in points])
-    return [hertz(c.case)["p0_Pa"] / 1e6 for c in contacts(pair, inputs, points=points)]   # Pa -> MPa
+    return [hertz(c.case)["p0_Pa"] / 1e6 for c in gear_contacts(pair, inputs, points=points)]   # Pa -> MPa
 
 
 @pytest.mark.xfail(strict=True, raises=NotImplementedError, reason="scaffold OPEN R-023 R-031 (gear adapter)")

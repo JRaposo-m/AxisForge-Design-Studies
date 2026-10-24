@@ -34,7 +34,7 @@ PROVISIONAL. OPEN GL-14, R-091.
   converted inside `references.contact.ehl` only. FEUP Eq. (4) uses the SUM `U_S` (L177) in a
   Hamrock-Dowson-form formula: read with the mean or the sum, h changes by `2^0.67 = 1.59`. It is shown as
   that bracket, never pass/fail (GL-14).
-- slide_roll = (u1 - u2)/u_e, referenced to gear 1; its sign is set by g_y and is zero at C.
+- v_g = u1 - u2 [m/s], signed, referenced to gear 1 (AxisForge `surface_speeds`); zero at C.
 - Quasi-steady: each point is a steady line contact; sliding is ignored (isothermal, Newtonian).
 - Spur only (R-027). Oil data converted to SI once in `construction.py`; alpha printed as "x 10^-8", read
   as 1/Pa (R-295). Units: AxisForge for the pair, SI for the oils and the contacts. The CSV symbol column is
@@ -60,7 +60,7 @@ PROVISIONAL. Fixed before running; **[proposed]**; a demonstration check, not a 
 
 | ID | Quantity | Criterion | Script |
 |---|---|---|---|
-| - | p_H, b, R_x, u_e, slide_roll, share at A, B-, B+, C, D-, D+, E | record (no criterion) | `01_hertz_path` |
+| - | p_H, b, R_x, u_e, v_g, share at A, B-, B+, C, D-, D+, E | record (no criterion) | `01_hertz_path` |
 | S1 | h_c per point | within +-10 % of `moes(line=True)` at the same M, L [proposed] | `02_film_path` |
 | - | FEUP Eqs (3)-(4) | mean/sum bracket x 1.59, record only, never pass/fail (GL-14) | `02_film_path` |
 

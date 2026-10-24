@@ -44,7 +44,7 @@ _DENSITY_MODELS = ("dowson_higginson", "incompressible")
 # OPEN GL-20: which static keys are carried
 # Viscosity fields of the model not used are nan. roelands_p0_Pa is the Roelands constant, not the
 # measured maximum pressure p0_Pa nor the Hertz p0_ref_Pa (GL-07).
-FILM_KEYS = ("u_mean_m_per_s", "eta0_Pa_s", "rho0_kg_per_m3", "viscosity_model", "roelands_z",
+FILM_KEYS = ("ue_m_per_s", "eta0_Pa_s", "rho0_kg_per_m3", "viscosity_model", "roelands_z",
              "roelands_p0_Pa", "barus_alpha_per_Pa", "alpha_initial_per_Pa", "density_model",
              "rtol_pressure", "h_c_m", "h_min_m", "x_h_min_m", "y_h_min_m")
 
@@ -52,12 +52,12 @@ FILM_KEYS = ("u_mean_m_per_s", "eta0_Pa_s", "rho0_kg_per_m3", "viscosity_model",
 def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None,
         build: str = "composite", rough=(None, None), use_frequency_domain: bool = True,
         eta0_Pa_s: float, rho0_kg_per_m3: float, viscosity: tuple, density: str = "dowson_higginson",
-        u_mean_m_per_s: float | None = None, normal_load: float | None = None, name: str | None = None,
+        ue_m_per_s: float | None = None, normal_load: float | None = None, name: str | None = None,
         **step_kwargs):
     """Solve one steady EHL contact with SlipPY and measure its film.
 
     Physically: two smooth (or rough) elastic bodies of the case, lubricated by a Newtonian oil at
-    one uniform temperature, rolling at the mean speed ``u_mean_m_per_s`` along +x, pressed by a
+    one uniform temperature, rolling at the mean speed ``ue_m_per_s`` along +x, pressed by a
     constant load. The result is the steady pressure field and the film thickness (gap) between the
     deformed surfaces: the central film ``h_c`` and the minimum film ``h_min`` in the outlet
     constriction.
@@ -66,8 +66,8 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     ----------
     contact : Contact or ContactCase
         The contact, as ``static_step.run`` accepts it; a ``Contact`` may carry
-        ``kinematics["u_e_m_per_s"]``. A bare ``ContactCase`` has no kinematics, so it needs
-        ``u_mean_m_per_s``. SI units (``ContactCase``).
+        ``kinematics.ue_m_per_s``. A bare ``ContactCase`` has no kinematics, so it needs
+        ``ue_m_per_s``. SI units (``ContactCase``).
     grid : Grid
         Grid of the solve (``surfaces.Grid.around``): spacing ``h`` [m], ``X`` rolling along axis 0.
     output_dir : path
@@ -86,8 +86,8 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     density : {"dowson_higginson", "incompressible"}
         Pressure-density law: Dowson-Higginson, ``rho/rho0 = (5.9e8 + 1.34 p)/(5.9e8 + p)`` with p in Pa
         (SlipPY ``nd_dowson_higginson``), or constant ``rho0``.
-    u_mean_m_per_s : float, optional
-        Mean entrainment speed (u1 + u2)/2 [m/s], > 0. None: ``contact.kinematics["u_e_m_per_s"]``.
+    ue_m_per_s : float, optional
+        Mean entrainment speed (u1 + u2)/2 [m/s], > 0. None: ``contact.kinematics.ue_m_per_s``.
     normal_load : float, optional
         TOTAL load on the domain [N]; default from ``case.load`` (see ``Grid.step_args``).
     name : str, optional
@@ -160,7 +160,7 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
     Roelands (1966) (viscosity law; source to get). Dowson & Higginson (1966) (density law).
     SlipPY ``slippy/contact/tests/test_mixed_lubrication.py:9-74``.
     """
-    # OPEN R-073: u_mean is placed along +axis 0; to test on an ellipse.
+    # OPEN R-073: ue is placed along +axis 0; to test on an ellipse.
     # OPEN R-076: p_h, s_x and R_x from one reference.hertz(case) into laws, solver and step.
     # OPEN R-086: Hertz initial guess on bridge coordinates, centred, dimensional approach.
     # OPEN R-115: EHL is feasibility-tested only in SlipPY; venner_bos_circular gates the results.
@@ -192,13 +192,13 @@ def run(contact: Contact | ContactCase, grid: Grid, output_dir, *, surfaces=None
         if not _BARUS_ALPHA_RANGE_PER_PA[0] <= alpha <= _BARUS_ALPHA_RANGE_PER_PA[1]:
             raise ValueError(f"Barus alpha = {alpha} 1/Pa is outside {_BARUS_ALPHA_RANGE_PER_PA} (a value in 1/MPa?)")
     # 5. the keyword first, then the kinematics of the contact; checked > 0 only after the fallback (GL-19)
-    u_mean = u_mean_m_per_s
-    if u_mean is None and isinstance(contact, Contact):
-        u_mean = contact.kinematics.get("u_e_m_per_s")
-    if u_mean is None:
-        raise ValueError("no mean entrainment speed: give u_mean_m_per_s or a Contact with kinematics['u_e_m_per_s']")
-    if not u_mean > 0:
-        raise ValueError(f"the mean entrainment speed must be > 0 m/s (along +x), got {u_mean}")
+    ue = ue_m_per_s
+    if ue is None and isinstance(contact, Contact) and contact.kinematics is not None:
+        ue = contact.kinematics.ue_m_per_s
+    if ue is None:
+        raise ValueError("no mean entrainment speed: give ue_m_per_s or a Contact with kinematics")
+    if not ue > 0:
+        raise ValueError(f"the mean entrainment speed must be > 0 m/s (along +x), got {ue}")
     # 6. IterSemiSystem ignores a prescribed interference: load control only (R-081)
     if "interference" in step_kwargs:
         raise ValueError("interference is not accepted: SlipPY's EHL step is load-controlled only (R-081)")

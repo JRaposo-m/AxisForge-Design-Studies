@@ -82,7 +82,7 @@ def solve(label, M, L, span_x, density):
     grid = Grid.around(case, h=(span_x[0] + span_x[1]) * s_x / (N_X_RUN - 1), span_x=span_x)
     rec, p, gap = ehl.run(case, grid, RESULTS / NAME, eta0_Pa_s=point["eta0_Pa_s"], rho0_kg_per_m3=RHO0_KG_PER_M3,
                           viscosity=("roelands", ROELANDS_Z, ROELANDS_P0_PA), density=density,
-                          u_mean_m_per_s=U_MEAN_M_PER_S)
+                          ue_m_per_s=U_MEAN_M_PER_S)
     U_mean = groups(u_mean_m_per_s=U_MEAN_M_PER_S, eta0_Pa_s=point["eta0_Pa_s"], E_prime_Pa=E["E_prime_Pa"],
                     R_x_m=R_X_M, alpha_per_Pa=point["alpha_initial_per_Pa"], w_N_per_m=point["w_N_per_m"])["U_mean"]
     return rec, U_mean

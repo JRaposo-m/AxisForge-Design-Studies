@@ -36,7 +36,7 @@ import numpy as np
 from axisforge.outputs._format import format_table, write_records_csv
 
 from references.contact.hertz import hertz_line
-from slippy_bridge.contact import Grid, contacts, static_step
+from slippy_bridge.contact import Grid, bearing_contacts, static_step
 from validation._support.convergence import RECORD_COLUMNS, sweep
 from validation._support.figures import contact_plots
 
@@ -61,7 +61,7 @@ records = sweep(CASE, BUILDS, H_RUN, SPAN_RUN, RESULTS / "slippy_01", span_x_0=S
 # The mm -> m conversion may change the last bit, so values are compared, not the case hash.
 bearing = roller_bearing()
 roller_load = CASE.load * bearing.Lwe * 1e-3             # [N/m] x [mm] x [m/mm] = roller load [N]
-link = contacts(bearing, load=roller_load, races=("inner",))[0]
+link = bearing_contacts(bearing, load=roller_load, races=("inner",))[0]
 c = link.case
 np.testing.assert_allclose(c.r1 + c.r2 + c.E + c.nu + (c.load,),
                            CASE.r1 + CASE.r2 + CASE.E + CASE.nu + (CASE.load,), rtol=1e-12, atol=0.0)
@@ -76,7 +76,7 @@ for r in table:                                   # errors against the judge (fr
 print(f"{CASE.label}   case_hash {CASE.case_hash()}   judge: b {JUDGE['s_x_m'] * 1e6:.3f} um, "
       f"p0 {JUDGE['p0_Pa'] * 1e-6:.2f} MPa")
 print(format_table(RECORD_COLUMNS, table))
-print(f"\nAxisForge link: PASS  {link.subtype} {link.location['race']} race gives the case contact "
+print(f"\nAxisForge link: PASS  {link.subtype} {link.location.race} race gives the case contact "
       f"within 1e-12 (case_hash {c.case_hash()})")
 
 # %% [markdown]

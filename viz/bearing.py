@@ -36,7 +36,7 @@ import math
 import numpy as np
 import pyvista as pv
 
-from slippy_bridge.contact import contacts, hertz
+from slippy_bridge.contact import bearing_contacts, hertz
 
 from .scene import MM_PER_M, MPA_PER_PA, revolve, set_view
 
@@ -199,8 +199,8 @@ def bearing_scene(bearing, result, case: str = "", ellipse_scale: float = 4.0,
     u = np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False)[:, None]          # ellipse parameter
     drawn = {race: dict(points=[], p0=[], s_x=[], s_y=[], j=[]) for race in ("inner", "outer")}
     line_ends = []
-    for c in contacts(bearing, result):                 # loaded balls, inner and outer raceway
-        j, alpha, race = c.location["element_j"], c.location["alpha_rad"], c.location["race"]
+    for c in bearing_contacts(bearing, result):               # loaded balls, inner and outer raceway
+        j, alpha, race = c.location.j, c.location.alpha_rad, c.location.race
         if not shown[j]:
             continue
         ref = hertz(c.case)                             # SI
@@ -243,7 +243,7 @@ def bearing_scene(bearing, result, case: str = "", ellipse_scale: float = 4.0,
     sign = "+" if result.Fa > 0 else "-"
     if view == "side":
         # Contact line and, lighter, the radial line through the ball centre: the angle between
-        # them is the contact angle. contacts() gives inner then outer of each ball, so consecutive
+        # them is the contact angle. bearing_contacts() gives inner then outer of each ball, so consecutive
         # ends are the two ends of one line. The radial line is set just behind the section plane
         # (the camera is on the -y side), so the contact line covers it when alpha = 0.
         reach = (0.5 + CONTACT_LINE_OVERHANG) * bearing.Dw

@@ -36,7 +36,7 @@ import sys
 from axisforge.outputs._format import format_table, read_records_csv, write_records_csv
 from axisforge.solvers.machine_elements.gears.contact import contact_inputs       # c328999 only (GL-01)
 
-from slippy_bridge.contact import contacts, hertz
+from slippy_bridge.contact import gear_contacts, hertz
 from slippy_bridge.contact.measures import rel_err
 
 from construction import DRIVER, FAMILY, RESULTS, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair, path_times
@@ -101,7 +101,7 @@ records = []
 for stage, T2_Nm in WHEEL_TORQUE_NM.items():
     T1_Nm = T1[stage]
     inputs = contact_inputs(pair, DRIVER, n1_rpm, forces[stage].F_bn_N, t_s=[times[k] for k in labels])
-    for c in contacts(pair, inputs, points=labels):
+    for c in gear_contacts(pair, inputs, points=labels):
         ref = hertz(c.case)                       # Hertz line contact, SI
         records.append({**c.record(), "stage": stage, "T2_Nm": T2_Nm, "T1_Nm": T1_Nm, "F_bn_N": forces[stage].F_bn_N,
                         "F_r_N": forces[stage].F_r_N, "F_r_printed_N": F_r_printed[stage],

@@ -88,7 +88,7 @@ for alpha_bar, M2 in RUN:
     grid = Grid.around(case, span_x=SPAN_X, span_y=SPAN_Y)                    # OPEN R-048 R-114: domain and h
     rec, p, gap = ehl.run(case, grid, RESULTS / NAME, eta0_Pa_s=point["eta0_Pa_s"], rho0_kg_per_m3=RHO0_KG_PER_M3,
                           viscosity=("roelands", ROELANDS_Z, ROELANDS_P0_PA), density=DENSITY,
-                          u_mean_m_per_s=U_MEAN_M_PER_S)
+                          ue_m_per_s=U_MEAN_M_PER_S)
     U_mean = groups(u_mean_m_per_s=U_MEAN_M_PER_S, eta0_Pa_s=point["eta0_Pa_s"], E_prime_Pa=E["E_prime_Pa"],
                     R_x_m=R_X_M, alpha_per_Pa=point["alpha_initial_per_Pa"], load_N=point["load_N"])["U_mean"]
     H_c = film_scalings(h_m=rec["h_c_m"], R_x_m=rec["R_x_m"], s_x_ref_m=rec["s_x_ref_m"], U_mean=U_mean)["H_moes"]

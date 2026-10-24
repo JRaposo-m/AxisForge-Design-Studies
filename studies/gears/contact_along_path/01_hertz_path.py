@@ -33,7 +33,7 @@ import sys
 from axisforge.outputs._format import format_table, write_records_csv
 from axisforge.solvers.machine_elements.gears.contact import contact_inputs       # c328999 only (GL-01)
 
-from slippy_bridge.contact import contacts, hertz
+from slippy_bridge.contact import gear_contacts, hertz
 
 from construction import DRIVER, FAMILY, RESULTS, WHEEL_SPEED_RPM, WHEEL_TORQUE_NM, build_pair, path_times
 
@@ -61,7 +61,7 @@ times = path_times(pair, n1_rpm)
 labels = ["A"] if SMOKE else list(times)
 inputs = contact_inputs(pair, DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in labels])
 records = []
-for c in contacts(pair, inputs, points=labels):
+for c in gear_contacts(pair, inputs, points=labels):
     ref = hertz(c.case)                           # Hertz line contact on the bridge axes, SI
     records.append({**c.record(), "T1_Nm": T1_Nm, "n1_rpm": n1_rpm, "F_bn_N": F_bn_N, "w_N_per_m": c.case.load,
                     "R_x_m": ref["R_x_m"], "p_H_Pa": ref["p0_Pa"], "b_m": ref["s_x_m"]})
@@ -73,5 +73,5 @@ for c in contacts(pair, inputs, points=labels):
 print(format_table((("point", "point", "s"), ("g_y_mm", "g_y [mm]", "+.3f"), ("share", "share", ".3f"),
                     ("w_N_per_m", "w [N/mm]", ".1f", 1e-3), ("R_x_m", "R_x [mm]", ".3f", 1e3),
                     ("p_H_Pa", "p_H [MPa]", ".1f", 1e-6), ("b_m", "b [um]", ".1f", 1e6),
-                    ("u_e_m_per_s", "u_e [m/s]", ".3f"), ("slide_roll", "SRR", "+.3f")), records))
+                    ("ue_m_per_s", "u_e [m/s]", ".3f"), ("vg_m_per_s", "v_g [m/s]", "+.3f")), records))
 write_records_csv(RESULTS / f"{NAME}.csv", records)

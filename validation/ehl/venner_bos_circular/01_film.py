@@ -93,7 +93,7 @@ for M, density in RUN:
     grid = Grid.around(case, h=(span_x[0] + span_x[1]) * s_x / (N - 1), span_x=span_x, span_y=span_y)
     rec, p, gap = ehl.run(case, grid, RESULTS / NAME, eta0_Pa_s=point["eta0_Pa_s"], rho0_kg_per_m3=RHO0_KG_PER_M3,
                           viscosity=("roelands", ROELANDS_Z, ROELANDS_P0_PA), density=density,
-                          u_mean_m_per_s=U_MEAN_M_PER_S)
+                          ue_m_per_s=U_MEAN_M_PER_S)
     U_mean = groups(u_mean_m_per_s=U_MEAN_M_PER_S, eta0_Pa_s=point["eta0_Pa_s"], E_prime_Pa=E["E_prime_Pa"],
                     R_x_m=R_X_M, alpha_per_Pa=point["alpha_initial_per_Pa"], load_N=point["load_N"])["U_mean"]
     H = {k: film_scalings(h_m=rec[f"{k}_m"], R_x_m=rec["R_x_m"], s_x_ref_m=rec["s_x_ref_m"], U_mean=U_mean)["H_venner"]

@@ -5,9 +5,10 @@ uses SlipPY". Another contact solver would get its own bridge; the studies chang
 import. Organised by physics, then by machine element:
 
     contact/            dry contact
-        base.py         ContactCase, Contact, ElementAdapter and its registry
-        elements/       bearings/ (BearingContacts, every AxisForge family);
-                        gears/ (SpurHelicalContacts, registered; conversion is a scaffold)
+        base.py         ContactCase, Kinematics, Contact
+        elements/       bearings.py (BearingLocation, bearing_contacts, every AxisForge family
+                        with single-row geometry); gears.py (GearLocation, gear_contacts; the
+                        conversion is a scaffold)
         reference.py    Hertz (SlipPY hertz_full) on the bridge axes
         surfaces.py     Grid and pair: composite or two_profiles, smooth or rough
                         (rolling = array axis 0)

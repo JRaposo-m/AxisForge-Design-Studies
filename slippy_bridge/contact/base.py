@@ -1,30 +1,28 @@
-"""Inputs of the contact part of the bridge, and the registry of machine elements.
+"""Inputs of the contact part of the bridge.
 
 * :class:`ContactCase` - the Hertz inputs of one contact (radii, materials, load), SI units,
-  ``x`` = rolling direction. Pure data; no AxisForge and no SlipPY import.
+  ``x`` = rolling direction. Pure data; no SlipPY import.
+* :class:`Kinematics` - the surface speeds of one contact, AxisForge names, SI units.
 * :class:`Contact` - one contact of one machine element: the case plus *which* element, subtype
-  and location it is, and (optionally) its kinematics. This is what the elements hand to the
-  surface, reference and step modules, and what the outputs record.
-* :class:`ElementAdapter` - the translator of one machine element (bearing, gear) into a list of
-  :class:`Contact`; one subclass per element, stateless.
-* Registry - every machine element subtype that the bridge can translate is registered here by
-  its AxisForge class (bearing family, gear mesh), as AxisForge registers its own families.
-  :func:`contacts` dispatches to the registered adapter; an unregistered subtype raises.
+  and location it is, and (optionally) its kinematics. This is what the element functions
+  (``elements.bearings.bearing_contacts``, ``elements.gears.gear_contacts``) hand to the surface,
+  reference and step modules, and what the outputs record.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import math
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
-__all__ = ["ContactCase", "Contact", "ElementAdapter", "register", "contacts", "registered"]
+from axisforge.results._base import DC
 
-# AxisForge -> SI factors, used only by the element adapters at the boundary (R-001)
-_MM = 1e-3      # [m/mm]
-_MPA = 1e6      # [Pa/MPa]
+if TYPE_CHECKING:
+    from .elements.bearings import BearingLocation
+    from .elements.gears import GearLocation
+
+__all__ = ["ContactCase", "Kinematics", "Contact"]
 
 
 def _pair(value, name: str) -> tuple[float, float]:
@@ -142,7 +140,34 @@ class ContactCase:
 # One contact of one machine element
 # =============================================================================
 
-@dataclass(frozen=True)
+@dataclass(**DC)
+class Kinematics:
+    """Surface speeds of one contact, in the direction of rolling ``x`` [m/s].
+
+    Names and signs are those of AxisForge ``CylindricalFamily.surface_speeds`` (gears), where
+    ``u1``, ``u2`` are the speeds of the two surfaces relative to the contact point. Needed by
+    lubrication, not by the static step.
+
+    Parameters
+    ----------
+    ue_m_per_s : float
+        MEAN entrainment speed ``(u1 + u2) / 2`` [m/s], never the sum ``u1 + u2`` (the rolling
+        speed of SlipPY's Reynolds solver is this mean).
+    vg_m_per_s : float
+        Sliding speed ``u1 - u2`` [m/s], signed (body 1 referenced). For a bearing, pure rolling:
+        ``vg = 0`` and ``u1``, ``u2`` not computed.
+    u1_m_per_s, u2_m_per_s : float, optional
+        Surface speeds of body 1 and body 2 [m/s], when the element gives them (gears); None
+        for a bearing, where only the entrainment speed is formed.
+    """
+
+    ue_m_per_s: float
+    vg_m_per_s: float
+    u1_m_per_s: float | None = None
+    u2_m_per_s: float | None = None
+
+
+@dataclass(**DC)
 class Contact:
     """One contact of one machine element, ready for the surface, reference and step modules.
 
@@ -152,121 +177,23 @@ class Contact:
         Machine element: ``"bearing"`` or ``"gear"``.
     subtype : str
         AxisForge class of the element subtype (e.g. ``"DeepGrooveBallFamily"``).
-    location : dict
-        Where the contact is, element-specific, units in the keys. Bearings: ``race`` and
-        ``alpha_rad``, the contact angle used (the given one or ``alpha_0`` with a load, ``alpha_j``
-        with a result); with a result also ``element_j``, ``row``, ``phi_local_rad``, and
-        ``phi_global_rad`` when the result is a ``BearingResult`` (single or multi row; not a bare
-        row; convention: see AxisForge ``BearingResult.phi_j_global``). For a roller lamina also
-        ``lamina_k`` and ``x_k_mm``, the position of the lamina along the roller axis (AxisForge
-        ``x_k`` [mm]; the roller axis is the bridge ``y``, across rolling). Gears: the point on the
-        path of contact (``point``, ``s_mm``, ``g_y_mm``, ``t_s``) and its load sharing (``share``,
-        ``n_pairs``, ``l_sum_mm``); see ``SpurHelicalContacts.contacts``.
+    location : BearingLocation or GearLocation
+        Where the contact is, element-specific, units in the field names (see the two classes).
     case : ContactCase
         The Hertz inputs.
-    kinematics : dict, optional
-        ``u_e_m_per_s``: MEAN entrainment speed (u1+u2)/2 [m/s], never the sum u1+u2 (R-075, R-028);
-        ``slide_roll`` (sliding/entrainment ratio) [-], when the caller gave the speeds; empty
-        otherwise. Needed by lubrication, not by the static step.
+    kinematics : Kinematics, optional
+        The surface speeds; None when the caller gave no speeds.
     """
 
     element: str
     subtype: str
-    location: dict
+    location: BearingLocation | GearLocation
     case: ContactCase
-    kinematics: dict = field(default_factory=dict)
+    kinematics: Kinematics | None = None
 
     def record(self) -> dict:
-        """Flat record (identification + case hash + kinematics), for the outputs."""
-        head = {"element": self.element, "subtype": self.subtype}
-        case = {"label": self.case.label, "case_hash": self.case.case_hash(), "line": self.case.line}
-        parts = (head, self.location, case, self.kinematics)
-        keys = [k for part in parts for k in part]
-        if len(keys) != len(set(keys)):
-            raise ValueError(f"record keys overlap: {sorted({k for k in keys if keys.count(k) > 1})}")
-        return {k: v for part in parts for k, v in part.items()}
-
-
-# =============================================================================
-# Registry: AxisForge subtype class -> adapter
-# =============================================================================
-
-class ElementAdapter(ABC):
-    """Translator of one AxisForge machine element into the contacts it contains.
-
-    One subclass per machine element (bearing, gear mesh). An adapter holds no state and is never
-    instantiated: it is the named place of the conversion AxisForge (mm, N, MPa, its own sign of
-    the outer raceway) -> :class:`Contact` (SI, convex > 0, ``x`` = rolling direction), registered
-    with :func:`register` for the AxisForge subtype classes it serves.
-
-    Attributes
-    ----------
-    element : str
-        Machine element the adapter serves (``"bearing"``, ``"gear"``); written to
-        ``Contact.element`` and used as the key of :func:`registered`.
-    """
-
-    element: ClassVar[str]
-
-    @classmethod
-    @abstractmethod
-    def contacts(cls, obj: Any, *args, **kwargs) -> list[Contact]:
-        """Return the requested contacts of the AxisForge object ``obj`` (SI units)."""
-
-
-_ADAPTERS: dict[type, type[ElementAdapter]] = {}
-
-
-def register(*subtypes: type):
-    """Class-level registration of an adapter for one or more AxisForge subtype classes.
-
-    Used as a decorator on an :class:`ElementAdapter` subclass; the machine element is read from
-    its ``element`` attribute.
-
-    Raises
-    ------
-    TypeError
-        If the decorated object is not a subclass of :class:`ElementAdapter`.
-    ValueError
-        If one of the subtypes already has an adapter.
-    """
-    def wrap(adapter: type[ElementAdapter]) -> type[ElementAdapter]:
-        if not (isinstance(adapter, type) and issubclass(adapter, ElementAdapter)):
-            raise TypeError(f"register decorates an ElementAdapter subclass, got {adapter!r}")
-        for cls in subtypes:
-            if cls in _ADAPTERS:
-                raise ValueError(f"{cls.__name__} is already registered")
-            _ADAPTERS[cls] = adapter
-        return adapter
-    return wrap
-
-
-def _subtype(obj: Any) -> type:
-    """The registry key of an AxisForge object: a bearing's family class, else the object's class."""
-    family = getattr(obj, "family", None)
-    return type(family) if family is not None else type(obj)
-
-
-def contacts(obj: Any, *args, **kwargs) -> list[Contact]:
-    """All requested contacts of an AxisForge machine element, through its registered adapter.
-
-    Raises
-    ------
-    NotImplementedError
-        If the element subtype has no adapter (the message lists the registered ones).
-    """
-    from . import elements  # noqa: F401  (registers the adapters if contact/__init__ did not)
-    key = _subtype(obj)
-    if key not in _ADAPTERS:
-        raise NotImplementedError(f"no SlipPY adapter for {key.__name__}; registered: "
-                                  f"{', '.join(sorted(c.__name__ for c in _ADAPTERS)) or 'none'}")
-    return _ADAPTERS[key].contacts(obj, *args, **kwargs)
-
-
-def registered() -> dict[str, list[str]]:
-    """Registered subtypes per machine element: ``{"bearing": [...], "gear": [...]}``."""
-    from . import elements  # noqa: F401
-    out: dict[str, list[str]] = {}
-    for cls, adapter in _ADAPTERS.items():
-        out.setdefault(adapter.element, []).append(cls.__name__)
-    return {k: sorted(v) for k, v in out.items()}
+        """Flat record for the outputs: ``element``, ``subtype``, the location fields, ``label``,
+        ``case_hash``, ``line`` and, when given, the kinematics fields (None = empty cell)."""
+        return {"element": self.element, "subtype": self.subtype, **asdict(self.location),
+                "label": self.case.label, "case_hash": self.case.case_hash(), "line": self.case.line,
+                **(asdict(self.kinematics) if self.kinematics is not None else {})}

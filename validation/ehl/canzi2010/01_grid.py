@@ -88,7 +88,7 @@ for n in RUN_N:
     grid = Grid.around(case, h=(SPAN_X[0] + SPAN_X[1]) * s_x / (n - 1), span_x=SPAN_X, span_y=SPAN_Y)
     rec, p, gap = ehl.run(case, grid, RESULTS / NAME, eta0_Pa_s=point["eta0_Pa_s"], rho0_kg_per_m3=RHO0_KG_PER_M3,
                           viscosity=("roelands", ROELANDS_Z, ROELANDS_P0_PA), density=DENSITY,
-                          u_mean_m_per_s=U_MEAN_M_PER_S)
+                          ue_m_per_s=U_MEAN_M_PER_S)
     H = {k: film_scalings(h_m=rec[f"{k}_m"], R_x_m=rec["R_x_m"], s_x_ref_m=rec["s_x_ref_m"], U_mean=U_mean)["H_moes"]
          for k in ("h_c", "h_min")}
     line_hc, line_hm = TABLE1.get(n, (None, None))

@@ -20,7 +20,7 @@
 # **Type:** implementation check, same theory (AxisForge `cp` is Hertz; the judge is Hertz)
 #
 # For each load case the bearing is solved with the ISO/TS 16281 ball solver, every loaded ball
-# is handed to the bridge (`slippy_bridge.contact.contacts`: one contact per raceway, SI units,
+# is handed to the bridge (`slippy_bridge.contact.bearing_contacts`: one contact per raceway, SI units,
 # rolling radius at the operating angle $\alpha_j$) and the independent Hertz
 # (`references.contact.hertz.hertz_point`) is evaluated on it.
 #
@@ -45,7 +45,7 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.con
 )
 
 from references.contact.hertz import hertz_point
-from slippy_bridge.contact import contact_case, contacts
+from slippy_bridge.contact import bearing_contacts, contact_case
 from slippy_bridge.contact.measures import rel_err
 
 import construction as cd
@@ -76,13 +76,13 @@ for name, load in cd.LOADS.items():
     result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=load["Fr"], Fr_xy=0.0, Fa=load["Fa"],
                                                 delta_r_init=0.0, delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
     approach_alpha0_m = defaultdict(float)                # Hertz, summed over both raceways, per ball [m]
-    for c in contacts(bearing, result):                   # loaded balls, inner and outer raceway
-        race, alpha_j = c.location["race"], c.location["alpha_rad"]
+    for c in bearing_contacts(bearing, result):                   # loaded balls, inner and outer raceway
+        race, alpha_j = c.location.race, c.location.alpha_rad
         judge = hertz_point(c.case.r1, c.case.r2, c.case.E, c.case.nu, c.case.load)
         # the same contact with the raceway radii as AxisForge stores them, at the free angle alpha_0
         at_alpha0 = contact_case(bearing, race, c.case.load)
         judge_alpha0 = hertz_point(at_alpha0.r1, at_alpha0.r2, at_alpha0.E, at_alpha0.nu, at_alpha0.load)
-        approach_alpha0_m[c.location["element_j"]] += judge_alpha0["delta_m"]
+        approach_alpha0_m[c.location.j] += judge_alpha0["delta_m"]
         contact_records.append({
             "case": name, "solver_ok": bool(result.ok), **c.record(), "Q_N": c.case.load, **judge,
             "p0_alpha0_Pa": judge_alpha0["p0_Pa"], "delta_alpha0_m": judge_alpha0["delta_m"],
@@ -112,8 +112,8 @@ write_records_csv(RESULTS / "approach.csv", approach_records)
 # %%
 DEG = math.degrees(1.0)
 CONTACT_COLUMNS = [
-    ("case", "case", ""), ("race", "race", ""), ("element_j", "j", "d"),
-    ("phi_local_rad", "phi [deg]", ".1f", DEG), ("Q_N", "Q [N]", ".1f"),
+    ("case", "case", ""), ("race", "race", ""), ("j", "j", "d"),
+    ("phi_rad", "phi [deg]", ".1f", DEG), ("Q_N", "Q [N]", ".1f"),
     ("alpha_rad", "alpha [deg]", ".3f", DEG), ("p0_Pa", "p0 [MPa]", ".1f", 1e-6),
     ("s_x_m", "s_x [mm]", ".4f", 1e3), ("s_y_m", "s_y [mm]", ".4f", 1e3),
     ("delta_m", "delta [um]", ".3f", 1e6),
@@ -217,7 +217,7 @@ from slippy_bridge.contact import Grid, static_step
 
 from viz import contact as vc
 
-contact = contacts(*solved["radial_heavy"], races=("inner",), elements="max")[0]
+contact = bearing_contacts(*solved["radial_heavy"], races=("inner",), elements="max")[0]
 grid = Grid.around(contact.case)                          # bridge defaults
 with tempfile.TemporaryDirectory() as tmp:
     record, p = static_step.run(contact, grid, tmp)

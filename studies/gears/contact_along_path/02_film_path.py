@@ -37,7 +37,7 @@ from axisforge.outputs._format import format_table, write_records_csv
 from axisforge.solvers.machine_elements.gears.contact import contact_inputs       # c328999 only (GL-01)
 
 from references.contact.ehl import e_prime, film_scalings, groups, moes
-from slippy_bridge.contact import Grid, contacts
+from slippy_bridge.contact import Grid, gear_contacts
 from slippy_bridge.contact.measures import rel_err
 from slippy_bridge.lubrication import ehl
 
@@ -62,7 +62,7 @@ n1_rpm = n2_rpm * z2 / z1
 F_bn_N = FAMILY.mesh_forces(pair, T2_Nm * z1 / z2, rot1=+1).F_bn_N        # gear 1 drives (OPEN Q-09)
 times = path_times(pair, n1_rpm)
 labels = ["A"] if SMOKE else list(times)
-path = contacts(pair, contact_inputs(pair, DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in labels]), points=labels)
+path = gear_contacts(pair, contact_inputs(pair, DRIVER, n1_rpm, F_bn_N, t_s=[times[k] for k in labels]), points=labels)
 
 # %% [markdown]
 # ## 2. One steady EHL solve per point
@@ -78,12 +78,12 @@ for c in path:
     grid = Grid.around(c.case, span_x=SPAN_X)                                    # OPEN R-048: inlet/outlet domain
     rec, p, gap = ehl.run(c, grid, RESULTS / NAME, eta0_Pa_s=oil["eta0_Pa_s"], rho0_kg_per_m3=oil["rho80_kg_per_m3"],
                           viscosity=("roelands", oil["roelands_z"], ROELANDS_P0_PA),
-                          density="dowson_higginson")                        # u_mean from c.kinematics
+                          density="dowson_higginson")                        # ue from c.kinematics
     # the run and the Moes formula must see the same pressure-viscosity slope (OPEN GL-40)
     if not math.isclose(rec["alpha_initial_per_Pa"], oil[alpha_key], rel_tol=1e-9):
         raise ValueError(f"SlipPY initial alpha {rec['alpha_initial_per_Pa']} is not the printed {oil[alpha_key]}")
     E = e_prime(c.case.E[0], c.case.nu[0], c.case.E[1], c.case.nu[1])
-    g = groups(u_mean_m_per_s=rec["u_mean_m_per_s"], eta0_Pa_s=oil["eta0_Pa_s"], E_prime_Pa=E["E_prime_Pa"],
+    g = groups(u_mean_m_per_s=rec["ue_m_per_s"], eta0_Pa_s=oil["eta0_Pa_s"], E_prime_Pa=E["E_prime_Pa"],
                R_x_m=rec["R_x_m"], alpha_per_Pa=rec["alpha_initial_per_Pa"], w_N_per_m=c.case.load)
     H_run = film_scalings(h_m=rec["h_c_m"], R_x_m=rec["R_x_m"], s_x_ref_m=rec["s_x_ref_m"],
                           U_mean=g["U_mean"])["H_moes"]
