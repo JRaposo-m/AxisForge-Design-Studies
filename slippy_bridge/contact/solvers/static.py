@@ -219,22 +219,24 @@ def _rel_err(num: float, ref: float) -> float:
 
 @functools.cache
 def _commits() -> dict:
-    """HEAD commit of the axisforge, slippy and design-studies repositories, with ``"+dirty"`` when
-    tracked files differ from it (R-099); ``"unknown"`` when not readable (not a git checkout, git
-    missing). Read once per process: a study run starts from a committed state; in a long
-    interactive kernel the value may be stale."""
+    """HEAD commit of the axisforge, slippy and design-studies repositories, with ``"+dirty"``
+    when tracked files other than ``.pyc`` differ from it (R-099); ``"unknown"`` when not
+    readable (not a git checkout, git missing). Read once per process: a study run starts from a
+    committed state; in a long interactive kernel the value may be stale."""
     import axisforge
 
     import slippy_bridge
 
     out = {}
     for key, module in (("axisforge", axisforge), ("slippy", slippy), ("design_studies", slippy_bridge)):
-        git = ["git", "-C", str(Path(module.__file__).resolve().parent)]
         try:
+            git = ["git", "-C", str(Path(module.__file__).resolve().parent)]     # TypeError: no __file__
             head = subprocess.run([*git, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10,
                                   check=True).stdout.strip()
-            dirty = subprocess.run([*git, "status", "--porcelain", "--untracked-files=no"], capture_output=True,
-                                   text=True, timeout=10, check=True).stdout.strip()
+            status = subprocess.run([*git, "status", "--porcelain", "--untracked-files=no"], capture_output=True,
+                                    text=True, timeout=10, check=True).stdout.splitlines()
+            # tracked .pyc files (AxisForge tracks some) change on every import: not a change of the code
+            dirty = [line for line in status if not line.rstrip().endswith(".pyc")]
             out[key] = (head + ("+dirty" if dirty else "")) if head else "unknown"
         except (OSError, subprocess.SubprocessError, TypeError):
             out[key] = "unknown"
