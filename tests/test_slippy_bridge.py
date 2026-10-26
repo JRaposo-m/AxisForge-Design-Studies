@@ -17,6 +17,7 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.con
 from slippy_bridge.contact.core.contact import Body, Contact  # noqa: E402
 from slippy_bridge.contact.core.machine_elements.bearings import (BallRacewayContact, BearingContact,  # noqa: E402
                                                                   RollerRacewayContact, bearing_contacts)
+from slippy_bridge.contact.mesh.grid import SPAN_X_0, Grid  # noqa: E402
 
 STEEL = dict(E=210e9, nu=0.3)                      # [Pa], [-]
 MM = 1e-3                                          # [m/mm]
@@ -299,6 +300,13 @@ def roller():
 
 
 @pytest.fixture(scope="module")
+def roller_10():
+    """Cylindrical roller 10 x 10 mm on Dpw 70 mm (BR1 section 5)."""
+    return _bearing(af_c.CylindricalRollerFamily(), "non-locating", catalog=dict(d=50.0, D=90.0, b=20.0),
+                    Dwe=10.0, Lwe=10.0, Dpw=70.0, Z=14, n_s=50, s=0.010)
+
+
+@pytest.fixture(scope="module")
 def ball_row():
     Z = 9
     Q = np.array([300.0, 200.0, 50.0, 0.0, 0.0, 0.0, 0.0, 50.0, 200.0])
@@ -346,12 +354,10 @@ def test_6210_hand_check(load_case):
     assert inner.E_star == pytest.approx(210e9 / (2 * (1 - 0.3**2)), rel=1e-12)            # MPa -> Pa once
 
 
-def test_roller_hand_check():
+def test_roller_hand_check(roller_10):
     """Cylindrical roller 10 x 10 mm on Dpw 70 mm, Q 1000 N, inner race: line load Q/Lwe = 1000 N / 0.010 m =
     100 000 N/m; R = 1/(1/5 + 1/30) = 4.2857 mm (raceway (Dpw - Dwe)/2 = 30 mm)."""
-    bearing = _bearing(af_c.CylindricalRollerFamily(), "non-locating", catalog=dict(d=50.0, D=90.0, b=20.0),
-                       Dwe=10.0, Lwe=10.0, Dpw=70.0, Z=14, n_s=50, s=0.010)
-    (c,) = bearing_contacts(bearing, load=1000.0, races=("inner",))
+    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
     assert isinstance(c, RollerRacewayContact) and c.line and (c.k, c.x_mm) == (None, None)
     assert c.load == pytest.approx(1e5, rel=1e-12)
     assert 1 / c.kappa_max / MM == pytest.approx(4.2857, abs=0.00005)
@@ -594,6 +600,128 @@ def test_thrust_raceway_accepts_any_angle(alpha):
 def test_bearing_contact_is_abstract():
     with pytest.raises(TypeError, match="abstract"):
         BearingContact(body1=Body(r=6.35 * MM, **STEEL), body2=Body(**_RACE), load=1.0, race="inner", alpha_rad=0.0)
+
+
+# ---- mesh: Grid around a contact and the step arguments (mesh/grid.py) ----------------------------
+
+def _ellipse(a_mm, b_mm):
+    """Stand-in for the HertzResult semi-axes that size the grid (mm -> m; a = inf for a line)."""
+    return SimpleNamespace(a=a_mm * MM, b=b_mm * MM)
+
+
+@pytest.mark.parametrize("race, a_mm, b_mm, n_x, n_y", [("inner", 1.5307, 0.1666, 90, 264),
+                                                         ("outer", 1.4877, 0.2025, 110, 256)])
+def test_grid_of_the_6210_contacts(load_case, race, a_mm, b_mm, n_x, n_y):
+    """BR3 section 5: 6210, Q 1000 N; h = b/10 rounded down to 2^-16 m, n = 2 ceil(span s / h) + 2."""
+    bearing = load_case("iso16281_ball_contact").build_bearing(0.0)
+    (c,) = bearing_contacts(bearing, load=1000.0, races=(race,))
+    grid = Grid.around(c, _ellipse(a_mm, b_mm))
+    assert grid.h == 2.0**-16 and grid.X.shape == (n_x, n_y)
+    assert grid.step_args(c) == {"normal_load": 1000.0}
+
+
+def test_grid_origin_on_the_centre_node(load_case):
+    """The contact centre is node (n_x//2, n_y//2); the +x side is the short one and still reaches span_x b."""
+    (c,) = bearing_contacts(load_case("iso16281_ball_contact").build_bearing(0.0), load=1000.0, races=("inner",))
+    grid = Grid.around(c, _ellipse(1.5307, 0.1666))
+    n_x, n_y = grid.X.shape
+    assert grid.X[n_x // 2, 0] == 0.0 and grid.Y[0, n_y // 2] == 0.0
+    assert grid.X.max() >= SPAN_X_0 * 0.1666 * MM and -grid.X.min() > grid.X.max()
+
+
+def test_grid_of_a_roller_line_contact(roller_10):
+    """BR3 section 5: roller line contact b 0.0688 mm -> h 2^-18 m, n_x 148, n_y 16; period 16 h = 61.04 um;
+    load on the strip 100 000 N/m x period = 6.10 N."""
+    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    grid = Grid.around(c, _ellipse(math.inf, 0.0688))
+    assert grid.h == 2.0**-18 and grid.X.shape == (148, 16)
+    assert grid.length_y_m == 16 * 2.0**-18
+    assert grid.step_args(c, max_it=50) == {"normal_load": pytest.approx(1e5 * 16 * 2.0**-18, rel=1e-12),
+                                            "periodic_geometry": True, "periodic_axes": (False, True),
+                                            "max_it": 50}
+
+
+def test_grid_of_the_fzg_h501_line_contact():
+    """BR2: FZG H501 at C, b 0.08519 mm -> h 2^-17, n_x 92, n_y 16; 75 697.52 N/m on 16 h = 9.24 N."""
+    c = _Line(body1=Body(r=(14.20546 * MM, math.inf), **STEEL), body2=Body(r=(21.30819 * MM, math.inf), **STEEL),
+              load=75697.52)
+    grid = Grid.around(c, _ellipse(math.inf, 0.08519))
+    assert grid.h == 2.0**-17 and grid.X.shape == (92, 16)
+    assert grid.step_args(c)["normal_load"] == pytest.approx(75697.52 * 16 * 2.0**-17, rel=1e-12)
+
+
+def test_grid_covers_a_rotated_ellipse():
+    """Two equal crossed cylinders at 0.8 rad: psi = 0.4 (the bisector). The domain covers the bounding box of
+    the ellipse (b along psi, a across it), found here by sampling its boundary."""
+    cyl = Body(r=(10 * MM, math.inf), **STEEL)
+    c = _Point(body1=cyl, body2=cyl, load=1.0, angle=0.8)
+    assert c.psi == pytest.approx(0.4, rel=1e-12)
+    a, b = 1.0 * MM, 0.2 * MM
+    t = np.linspace(0.0, 2 * math.pi, 100001)
+    x = b * np.cos(t) * math.cos(c.psi) - a * np.sin(t) * math.sin(c.psi)
+    y = b * np.cos(t) * math.sin(c.psi) + a * np.sin(t) * math.cos(c.psi)
+    grid = Grid.around(c, SimpleNamespace(a=a, b=b))
+    for coord, extent, span in ((grid.X, x.max(), SPAN_X_0), (grid.Y, y.max(), 1.3)):
+        assert coord.max() >= span * extent and coord.max() - grid.h < span * extent + 1e-12   # tight on +side
+    assert grid.X.max() > 2 * SPAN_X_0 * b                                    # wider than the unrotated b
+
+
+def test_grid_spacing_is_dyadic_and_never_coarser():
+    c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=1.0)
+    assert Grid.around(c, _ellipse(0.2, 0.1), h=3e-6).h == 2.0**-19          # 1.9 um <= 3 um
+    assert Grid.around(c, _ellipse(0.2, 0.1), h=2.0**-19).h == 2.0**-19
+
+
+@pytest.mark.parametrize("ellipse, h, match", [
+    (_ellipse(0.2, 0.0), None, "minor semi-axis b"),
+    (_ellipse(0.2, math.nan), None, "minor semi-axis b"),
+    (_ellipse(0.2, 0.1), -1e-6, "h must be positive"),
+    (_ellipse(0.2, 0.1), math.inf, "h must be positive"),
+    (_ellipse(math.inf, 0.1), None, "finite major semi-axis"),
+])
+def test_grid_around_refuses(ellipse, h, match):
+    c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=1.0)
+    with pytest.raises(ValueError, match=match):
+        Grid.around(c, ellipse, h=h)
+
+
+_h = 2.0**-20
+_x, _y = np.meshgrid(np.arange(4) * _h, np.arange(3) * _h, indexing="ij")
+
+
+@pytest.mark.parametrize("X, Y, h, match", [
+    (_x, _y[:, :2], _h, "same shape"),
+    (_x, _y, 0.0, "h must be positive"),
+    (_x / _h * 1e-6, _y / _h * 1e-6, 1e-6, "power of two"),                    # consistent but not dyadic
+    (_x.T, _y.T, _h, "X must vary only along axis 0"),                         # axes swapped
+    (_x, _y, 2 * _h, "step of X"),
+    (_x, 2 * _y, _h, "step of Y"),
+])
+def test_hand_built_grid_is_checked(X, Y, h, match):
+    with pytest.raises(ValueError, match=match):
+        Grid(X=X, Y=Y, h=h)
+
+
+@pytest.mark.parametrize("contrary", [{"periodic_geometry": False}, {"periodic_axes": (False, False)},
+                                      {"periodic_axes": True}])
+def test_step_args_refuses_a_non_periodic_line(roller_10, contrary):
+    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    grid = Grid.around(c, _ellipse(math.inf, 0.0688))
+    with pytest.raises(ValueError, match="a line contact needs"):
+        grid.step_args(c, **contrary)
+
+
+@pytest.mark.parametrize("key", ["normal_load", "interference", "mean_gap"])
+def test_step_args_refuses_another_load(key):
+    c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=1.0)
+    with pytest.raises(ValueError, match=f"{key} not accepted"):
+        Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, **{key: 1.0})
+
+
+def test_step_args_point_with_periodic_flags_keeps_the_full_load():
+    c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=7.0)
+    args = Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, periodic_geometry=True, periodic_axes=(True, True))
+    assert args == {"normal_load": 7.0, "periodic_geometry": True, "periodic_axes": (True, True)}
 
 
 # ---- FZG C40 checks that do not use the bridge (validation/gears/fzg_geometry_ph) -------------
