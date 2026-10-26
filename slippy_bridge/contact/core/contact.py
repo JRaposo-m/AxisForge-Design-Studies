@@ -7,7 +7,8 @@
   principal relative curvatures of the gap, their orientation ``psi`` and the contact modulus
   ``E*``. The machine elements subclass it and set ``line`` (point or line contact).
 
-Bridge axes: x is the rolling direction (array axis 0 of every grid), y across it, z along the
+Bridge axes: x is the rolling direction (array axis 0 of a grid with ``Grid.angle = 0``), y across
+it, z along the
 common normal. The origin is the point of first contact. SI units throughout. Numpy and the
 standard library only: no SlipPY here.
 
@@ -91,15 +92,16 @@ class Body:
         object.__setattr__(self, "r", r)
 
     def profile(self, X: np.ndarray, Y: np.ndarray, angle: float = 0.0) -> np.ndarray:
-        """Exact surface height of the body on bridge coordinates, in the SlipPY sign (apex 0).
+        """Exact surface height of the body on the coordinates of a frame, in the SlipPY sign (apex 0).
 
         Parameters
         ----------
         X, Y : ndarray
-            Bridge coordinates [m] of the nodes (x = rolling, y across), same shape.
+            Coordinates [m] of the nodes along the frame axes, same shape: the bridge axes (x
+            rolling, y across), or the grid axes when called by :meth:`Contact.profiles`.
         angle : float, optional
-            Angle of the body x axis from the bridge x axis [rad], positive from x toward y.
-            Default 0 (body frame = bridge frame).
+            Angle of the body x axis from the frame x axis [rad], positive from x toward y.
+            Default 0 (body frame = that frame).
 
         Returns
         -------
@@ -273,15 +275,23 @@ class Contact:
     def profiles(self, grid) -> tuple[np.ndarray, np.ndarray]:
         """Exact profiles of the two bodies on a grid, body 2 turned by ``angle``.
 
+        The node coordinates are along the grid axes, at ``grid.angle`` (gamma) from bridge x, so
+        each body is evaluated at its angle relative to the grid: body 1 at ``-gamma``, body 2 at
+        ``angle - gamma`` (a rotation of the frame, :meth:`Body.profile`). The single place where
+        the grid angle reaches the profiles.
+
         Parameters
         ----------
-        grid : object with ``X``, ``Y``
-            Node coordinates [m] on the bridge axes (``mesh.grid.Grid`` or any object with
-            these arrays).
+        grid : object with ``X``, ``Y`` and optionally ``angle``
+            Node coordinates [m] along the grid axes and the grid angle gamma from bridge x [rad]
+            (``mesh.grid.Grid``; an object without ``angle`` is on the bridge axes, gamma = 0).
 
         Returns
         -------
         z1, z2 : ndarray
             ``-sag`` [m] of body 1 and body 2 (see :meth:`Body.profile`).
         """
-        return self.body1.profile(grid.X, grid.Y), self.body2.profile(grid.X, grid.Y, self.angle)
+        # OPEN SB-35: an object without `angle` is read as gamma = 0 (existing tests pass X, Y only)
+        gamma = getattr(grid, "angle", 0.0)
+        return (self.body1.profile(grid.X, grid.Y, -gamma),
+                self.body2.profile(grid.X, grid.Y, self.angle - gamma))

@@ -72,38 +72,46 @@ class HertzResult:
     valid: bool
     line: bool
 
-    def pressure(self, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
-        """Hertz pressure on bridge coordinates [Pa], zero outside the contact.
+    def pressure(self, X: np.ndarray, Y: np.ndarray, frame_angle: float = 0.0) -> np.ndarray:
+        """Hertz pressure on the coordinates of a frame at ``frame_angle`` from bridge x [Pa], zero
+        outside the contact.
 
         ``p0 sqrt(1 - (xi/b)^2 - (eta/a)^2)`` with ``xi`` along ``psi`` and ``eta`` across it
         (Johnson 1985 p. 95, the unnumbered line from Eq. (3.58)); a line has ``a = inf``, so the strip
-        ``p0 sqrt(1 - (x/b)^2)`` (Eq. (4.44), p. 101).
+        ``p0 sqrt(1 - (x/b)^2)`` (Eq. (4.44), p. 101). In the frame the ellipse is turned by
+        ``psi - frame_angle``.
 
         Parameters
         ----------
         X, Y : ndarray
-            Bridge coordinates [m] (x rolling, y across), same shape.
+            Coordinates [m] along the frame axes, same shape: bridge coordinates (x rolling,
+            y across) for ``frame_angle = 0``, grid coordinates for ``frame_angle = grid.angle``.
+        frame_angle : float, optional
+            Angle of the frame x axis from bridge x [rad], positive toward y. Default 0.
 
         Returns
         -------
         ndarray
             Pressure [Pa], same shape as ``X``.
         """
-        c, s = math.cos(self.psi), math.sin(self.psi)
+        t = self.psi - frame_angle
+        c, s = math.cos(t), math.sin(t)
         xi = X * c + Y * s                                   # along psi: minor semi-axis b
         eta = -X * s + Y * c                                 # across psi: major semi-axis a (inf: 0)
         return self.p0 * np.sqrt(np.clip(1.0 - (xi / self.b) ** 2 - (eta / self.a) ** 2, 0.0, None))
 
-    def half_extents(self) -> tuple[float, float]:
-        """Half-extents of the contact ellipse on the bridge axes, ``(X_half, Y_half)`` [m].
+    def half_extents(self, frame_angle: float = 0.0) -> tuple[float, float]:
+        """Half-extents of the contact ellipse along the axes of a frame at ``frame_angle`` from
+        bridge x, ``(X_half, Y_half)`` [m] (bridge axes for 0, grid axes for ``grid.angle``).
 
-        The bounding box of the ellipse turned by ``psi``: ``X_half = hypot(b cos psi, a sin psi)``,
-        ``Y_half = hypot(b sin psi, a cos psi)`` (``b``, ``a`` when ``psi = 0``). A line along y:
-        ``(b, inf)`` (the formula would give ``inf * 0``).
+        The bounding box of the ellipse turned by ``t = psi - frame_angle``: ``X_half = hypot(b cos t,
+        a sin t)``, ``Y_half = hypot(b sin t, a cos t)`` (``b``, ``a`` when ``t = 0``). A line along
+        y: ``(b, inf)`` (the formula would give ``inf * 0``); a line exists only with ``t = 0``
+        (``Grid`` refuses another angle).
         """
         if self.line:
             return self.b, math.inf
-        c, s = math.cos(self.psi), math.sin(self.psi)
+        c, s = math.cos(self.psi - frame_angle), math.sin(self.psi - frame_angle)
         return math.hypot(self.b * c, self.a * s), math.hypot(self.b * s, self.a * c)
 
     # OPEN SB-10: record keys carry the unit (p0_Pa, a_m), attributes do not

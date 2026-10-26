@@ -24,14 +24,15 @@ def surface_pair(contact: Contact, grid: Grid, *, name: str, use_frequency_domai
     """SlipPY surfaces of body 1 and body 2 of ``contact`` on ``grid``, ready for ``ContactModel``.
 
     Each body is its exact profile (``Contact.profiles``: ``-sag`` [m], apex 0, body 2 turned by
-    ``contact.angle``) on the grid nodes, with an ``Elastic`` material of its own ``E`` [Pa] and
-    ``nu``. Both surfaces are discrete, of the grid's shape and spacing ``h``.
+    ``contact.angle``, both turned by ``-grid.angle`` into the grid frame) on the grid nodes, with
+    an ``Elastic`` material of its own ``E`` [Pa] and ``nu``. Both surfaces are discrete, of the
+    grid's shape and spacing ``h``.
 
     Parameters
     ----------
     contact : Contact
     grid : Grid
-        From ``Grid.around``; rolling = array axis 0.
+        From ``Grid.around``; grid x = array axis 0 (rolling when ``grid.angle = 0``).
     name : str
         Unique in the process (SlipPY material names are process-wide); the materials are
         ``<name>_body1`` and ``<name>_body2``. ``solve`` passes its model name.

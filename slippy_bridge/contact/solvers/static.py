@@ -67,10 +67,11 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
         ``Grid.step_args``, which refuses another load and an offset).
     span_x_min : float
         Limit of ``margin_ok`` [-]: the domain must reach ``span_x_min`` half-extents of the Hertz
-        ellipse on each side along rolling, because the frequency-domain kernel's image loads
-        change p0 even where the pressure is zero (see ``mesh.grid.SPAN_X_0``). Rolling direction
-        only: the image error across rolling is not bounded by a margin (it is not monotonic in the
-        domain size, R-509). Conservative with the spatial kernel, which has no images.
+        ellipse on each side along grid x (rolling when ``grid.angle = 0``; the minor axis on a
+        principal grid), because the frequency-domain kernel's image loads change p0 even where the
+        pressure is zero (see ``mesh.grid.SPAN_X_0``). Grid x only: the image error along grid y is
+        not bounded by a margin (it is not monotonic in the domain size, R-509). Conservative with
+        the spatial kernel, which has no images.
     min_nodes : float
         Limit of ``resolution_ok`` [-]: nodes across the minor semi-axis ``b``; fewer cannot
         resolve the Hertz profile near its edge.
@@ -89,7 +90,7 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
         * ``load_ok`` - the pressure integrates to the applied load within 1e-3: a consistency
           check of the solve (what tolerance a study needs is open, R-057);
         * ``edge_clear`` - the pressure on the domain boundary is at most 1e-6 p0 (the threshold
-          of the measured edge); a line: only the two ends along rolling (y is periodic).
+          of the measured edge); a line: only the two ends along grid x (y is periodic).
           Necessary, not sufficient;
         * ``margin_ok``, ``resolution_ok``, ``within_reference`` - see the parameters;
         * ``hertz_valid`` - Hertz validity of the reference (``HertzResult.valid``).
@@ -122,7 +123,8 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
     if p.shape != grid.X.shape:
         raise ValueError(f"SlipPY returned a pressure field of shape {p.shape}, the grid is {grid.X.shape}")
     h = grid.h
-    p0, b, a, apex_offset = _measure(p, h, contact.psi, contact.line)
+    # psi is from bridge x; the cuts are on the grid, at psi - gamma from grid x (a, b stay intrinsic)
+    p0, b, a, apex_offset = _measure(p, h, contact.psi - grid.angle, contact.line)
     load = float(p.sum() * h**2)
     # SlipPY interference: the approach of the bodies; not defined locally for a line (Johnson 4.2(c))
     delta = math.nan if contact.line else float(sol["interference"])
@@ -156,6 +158,8 @@ def _measure(p: np.ndarray, h: float, psi: float, line: bool) -> tuple[float, fl
     """Peak pressure [Pa], semi-axes ``b`` along ``psi`` and ``a`` across it [m] (``a = inf`` for a
     line), and the distance of the peak from the grid centre node [nodes].
 
+    ``psi`` is the direction of ``b`` from the grid x axis (array axis 0) [rad]: ``contact.psi -
+    grid.angle``, which is ``contact.psi`` on a grid on the bridge axes and 0 on a principal grid.
     Each semi-axis is measured on the cut through the peak: for ``psi = 0`` the grid lines through
     it (b along axis 0, a along axis 1); otherwise the line through the peak sampled every ``h``
     by bilinear interpolation of ``p**2`` (``scipy.ndimage.map_coordinates``, order 1), keeping
@@ -176,7 +180,7 @@ def _measure(p: np.ndarray, h: float, psi: float, line: bool) -> tuple[float, fl
         loaded = (p > thr).astype(float)
 
         def cut(direction: float) -> np.ndarray:
-            # node coordinates (axis 0 = bridge x, axis 1 = bridge y) of the samples, one node apart
+            # node coordinates (axis 0 = grid x, axis 1 = grid y) of the samples, one node apart
             coords = [i0 + t * math.cos(direction), j0 + t * math.sin(direction)]
             inside = map_coordinates(loaded, coords, order=1, mode="constant", cval=0.0) >= 1.0 - 1e-12
             p2 = map_coordinates(p**2, coords, order=1, mode="constant", cval=0.0)

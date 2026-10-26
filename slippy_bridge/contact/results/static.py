@@ -36,7 +36,7 @@ class StaticResult:
     contact : Contact
         The contact solved.
     grid : Grid
-        The grid of the solve (bridge axes, rolling = array axis 0).
+        The grid of the solve (grid x = array axis 0, at ``grid.angle`` from bridge x).
     build : str
         How the surfaces were built: ``"two_profiles"``, each body its exact profile.
     z1, z2 : ndarray
@@ -47,7 +47,7 @@ class StaticResult:
     load_applied : float
         Load given to the step [N] (a line: load per unit length x period).
     period : float
-        Period of a line contact along bridge y [m]; ``nan`` for a point contact.
+        Period of a line contact along grid y = bridge y [m]; ``nan`` for a point contact.
     use_frequency_domain : bool
         How the SlipPY influence matrix is defined (``Elastic(use_frequency_domain=...)``): True in
         the frequency domain, False in space. Periodicity comes from ``periodic_axes`` of the step.
@@ -74,7 +74,7 @@ class StaticResult:
         Measured maximum pressure [Pa].
     a, b : float
         Measured semi-axes of the loaded region [m]: ``b`` along ``psi``, ``a`` across (``inf``
-        for a line); the edge is extrapolated below one node.
+        for a line), whatever the grid angle (intrinsic); the edge is extrapolated below one node.
     load : float
         Measured load [N]: SlipPY ``total_normal_load``, ``sum p h^2`` over the grid.
     apex_offset_nodes : float
@@ -156,9 +156,11 @@ class StaticResult:
           ``kappa_min_per_m``, ``psi_rad``, ``R_x_m = 1/kappa_max`` and ``R_y_m = 1/kappa_min``
           (principal relative radii along ``psi`` and across it; they are along bridge x and y
           only when ``psi = 0``; ``R_y_m = inf`` for a line), ``E_star_Pa``;
-        * grid: ``h_m``, ``n_x``, ``n_y``, ``x_min_m``, ``x_max_m``, ``y_min_m``, ``y_max_m``,
-          ``span_x`` and ``span_y`` (the shorter side of the domain in half-extents of the Hertz
-          ellipse on the bridge axes, as ``Grid.around``; ``span_y`` nan for a line);
+        * grid: ``h_m``, ``n_x``, ``n_y``, ``grid_angle_rad`` (gamma, grid x from bridge x),
+          ``x_min_m``, ``x_max_m``, ``y_min_m``, ``y_max_m`` (along the grid axes), ``span_x`` and
+          ``span_y`` (the shorter side of the domain in half-extents of the Hertz ellipse on the
+          grid axes, as ``Grid.around``; ``span_y`` nan for a line). ``psi_rad`` and the measured
+          ``a_m``, ``b_m`` do not depend on the grid angle;
         * profile ``build``; load: ``Q_N`` (the load of a point contact, nan for a line) and
           ``w_N_per_m`` (of a line contact, nan for a point), ``load_applied_N``, ``period_m``;
         * solver: ``use_frequency_domain``, ``method``, ``tolerance``, ``converged``,
@@ -184,7 +186,7 @@ class StaticResult:
                     "R_y_m": math.inf if c.kappa_min == 0 else 1.0 / c.kappa_min, "E_star_Pa": c.E_star}
         span_x, span_y = g.spans(hz)
         x, y = g.X[:, 0], g.Y[0, :]
-        grid = {"h_m": g.h, "n_x": g.X.shape[0], "n_y": g.X.shape[1],
+        grid = {"h_m": g.h, "n_x": g.X.shape[0], "n_y": g.X.shape[1], "grid_angle_rad": g.angle,
                 "x_min_m": float(x.min()), "x_max_m": float(x.max()),
                 "y_min_m": float(y.min()), "y_max_m": float(y.max()),
                 "span_x": span_x, "span_y": span_y}

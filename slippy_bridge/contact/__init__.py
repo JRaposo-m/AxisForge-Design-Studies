@@ -8,7 +8,8 @@
 
 A level imports only the levels before it. Each conversion is made in one place: mm -> m,
 MPa -> Pa and N/mm -> N/m in ``core.machine_elements`` (the AxisForge boundary); a line load
-N/m -> N on the period in ``mesh.grid.Grid.step_args``. Rolling direction = bridge x = array axis 0.
+N/m -> N on the period in ``mesh.grid.Grid.step_args``. Rolling direction = bridge x; array axis 0 =
+grid x, which is bridge x when ``Grid.angle = 0`` (the default).
 """
 from .core.contact import Body, Contact
 from .core.machine_elements.bearings import (BallRacewayContact, BearingContact, RollerRacewayContact,

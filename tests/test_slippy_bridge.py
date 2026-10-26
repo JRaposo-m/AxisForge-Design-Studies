@@ -1017,6 +1017,114 @@ def test_line_contact_refuses_the_spatial_kernel(roller_10):
         surface_pair(c, Grid.around(c, hertz(c)), name="line_spatial", use_frequency_domain=False)
 
 
+# ---- grid angle: a grid turned by gamma from the bridge axes (mesh/grid.py, C9) -------------------------------
+
+_R_CYL = 10 * MM                                   # [m] crossed cylinders, Johnson 1985 p. 86
+
+
+def _crossed(angle):
+    """Two equal steel cylinders R = 10 mm (axes along y), body 2 at ``angle``, 100 N: b/h = 14.8 on the default
+    grid, size_ratio 0.019."""
+    cyl = Body(r=(_R_CYL, math.inf), **STEEL)
+    return _Point(body1=cyl, body2=cyl, load=100.0, angle=angle, label="crossed")
+
+
+@pytest.mark.parametrize("use_frequency_domain", [True, False])
+def test_crossed_cylinders_at_45_deg_on_the_bridge_and_principal_grids(use_frequency_domain, tmp_path):
+    """Two equal cylinders crossed at 45 deg: kappa_max,min = (1 +- sqrt(2)/2)/R (Johnson 1985 p. 86: A, B =
+    (1 -+ 1/sqrt 2)/2R, kappa = 2A, 2B); psi = 22.5 deg, the bisector of the cylinder axes, derived from Eqs.
+    (4.1)-(4.3) with K = (1/R) [[3/2, 1/2], [1/2, 1/2]] (Mohr circle) and Fig. 4.1, p. 86.
+
+    Solved on the bridge grid (gamma = 0, measured on interpolated cuts at psi) and on the principal grid
+    (gamma = psi, measured on grid lines): p0, a, b and the load agree within 1 % between the two and each is
+    within 3 % of Hertz; psi (from bridge x) is recorded the same, only grid_angle_rad differs. The 1 % is a
+    discretisation bound at b/h 14.8 (b: 0.73 % frequency kernel, 0.44 % spatial, C9 review); with the frequency
+    kernel it also holds the images, whose lattice turns with the grid (R-509). A wrong rotation shows as tens of %.
+    The approach is global and insensitive to the edge: the same on both grids within 1e-3 on the spatial kernel."""
+    c = _crossed(math.pi / 4)
+    assert c.kappa_max == pytest.approx((1 + math.sqrt(2) / 2) / _R_CYL, rel=1e-12)
+    assert c.kappa_min == pytest.approx((1 - math.sqrt(2) / 2) / _R_CYL, rel=1e-12)
+    assert c.psi == pytest.approx(math.radians(22.5), rel=1e-12)
+    bridge, principal = (_bem(c, tmp_path / str(k), use_frequency_domain=use_frequency_domain, angle=angle)
+                         for k, angle in enumerate((0.0, "principal")))
+    assert (bridge.grid.angle, principal.grid.angle) == (0.0, c.psi)
+    assert bridge.hertz.b / bridge.grid.h >= 10 and principal.grid.h == bridge.grid.h
+    for key in ("p0", "a", "b", "load"):
+        assert getattr(principal, key) == pytest.approx(getattr(bridge, key), rel=0.01), key
+    if not use_frequency_domain:
+        assert principal.delta == pytest.approx(bridge.delta, rel=1e-3)
+    for res in (bridge, principal):
+        assert all(abs(err) <= 0.03 for err in (res.err_p0, res.err_a, res.err_b)) and _all_checks(res)
+    rec_b, rec_p = bridge.record(), principal.record()
+    assert rec_b["psi_rad"] == rec_p["psi_rad"] == c.psi
+    assert (rec_b["grid_angle_rad"], rec_p["grid_angle_rad"]) == (0.0, c.psi)
+
+
+def test_crossed_cylinders_at_minus_45_deg(tmp_path):
+    """Body 2 at -45 deg gives Kxy < 0, psi = -22.5 deg. The sign of psi is the bridge convention (positive from x
+    toward y, as Contact.angle); Johnson Eq. (4.5) holds only cos 2 alpha and does not fix it. The solve on the
+    principal grid at -22.5 deg checks that Contact.psi and Body.profile agree: a mismatch would put the cuts 45 deg
+    off the ellipse."""
+    c = _crossed(-math.pi / 4)
+    assert c.psi == pytest.approx(math.radians(-22.5), rel=1e-12)
+    res = _bem(c, tmp_path, use_frequency_domain=False, angle="principal")
+    assert res.grid.angle == c.psi
+    assert all(abs(err) <= 0.03 for err in (res.err_p0, res.err_a, res.err_b)) and _all_checks(res)
+
+
+def test_principal_grid_of_the_6210_inner_contact_is_the_bridge_grid(inner_6210, tmp_path):
+    """psi = 0 (bearing): angle="principal" gives gamma = 0, the same grid and the same solution (rel 1e-12: two
+    SlipPY solves, pyfftw may plan them differently)."""
+    bridge, principal = (_bem(inner_6210, tmp_path / str(k), angle=angle)
+                         for k, angle in enumerate((0.0, "principal")))
+    assert principal.grid.angle == 0.0
+    np.testing.assert_array_equal(principal.grid.X, bridge.grid.X)
+    np.testing.assert_allclose(principal.p, bridge.p, rtol=1e-12, atol=0.0)
+    for key in ("p0", "a", "b", "delta"):
+        assert getattr(principal, key) == pytest.approx(getattr(bridge, key), rel=1e-12, abs=0.0), key
+
+
+@pytest.mark.parametrize("gamma", [0.5, -1.2, math.pi / 2])
+def test_profiles_and_hertz_on_a_turned_grid(gamma):
+    """A node at grid coordinates (Xg, Yg) lies at bridge (Xg cos g - Yg sin g, Xg sin g + Yg cos g): there each
+    body's profile is Body.profile at its own angle on the bridge axes, and the Hertz pressure is the bridge one
+    (rel 1e-12)."""
+    c = _tori()
+    hz = hertz(c)
+    grid = Grid.around(c, hz, angle=gamma)
+    cg, sg = math.cos(gamma), math.sin(gamma)
+    X_b, Y_b = grid.X * cg - grid.Y * sg, grid.X * sg + grid.Y * cg
+    z1, z2 = c.profiles(grid)
+    np.testing.assert_allclose(z1, c.body1.profile(X_b, Y_b), rtol=1e-12, atol=1e-24)
+    np.testing.assert_allclose(z2, c.body2.profile(X_b, Y_b, c.angle), rtol=1e-12, atol=1e-24)
+    np.testing.assert_allclose(hz.pressure(grid.X, grid.Y, grid.angle), hz.pressure(X_b, Y_b), rtol=1e-12, atol=1e-6)
+
+
+def test_principal_grid_half_extents_are_the_semi_axes():
+    assert _hertz(1.0 * MM, 0.2 * MM, psi=0.4).half_extents(0.4) == (0.2 * MM, 1.0 * MM)
+
+
+def test_line_contact_on_a_turned_grid_is_refused(roller_10):
+    """The strip of a line contact is periodic along grid y: its line must lie there (gamma = psi = 0)."""
+    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    hz = hertz(c)
+    assert Grid.around(c, hz, angle="principal").angle == 0.0
+    with pytest.raises(ValueError, match="line along grid y"):
+        Grid.around(c, hz, angle=0.1).step_args(c)
+
+
+@pytest.mark.parametrize("angle", [-math.pi / 2, 2.0])
+def test_grid_angle_is_checked(angle):
+    g = Grid.around(_tori(), hertz(_tori()))
+    with pytest.raises(ValueError, match="angle must be in"):
+        Grid(X=g.X, Y=g.Y, h=g.h, angle=angle)
+
+
+def test_grid_around_refuses_an_unknown_angle_name():
+    with pytest.raises(ValueError, match="'principal'"):
+        Grid.around(_tori(), hertz(_tori()), angle="major")
+
+
 # ---- gears: AxisForge cylindrical pair -> ToothContact (core/machine_elements/gears.py) ------------------
 
 _TEST_STEEL = "test_steel_206GPa"     # an AxisForge material registered for the gear tests
