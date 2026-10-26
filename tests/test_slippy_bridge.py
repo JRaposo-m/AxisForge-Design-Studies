@@ -14,12 +14,16 @@ from axisforge.results import (BallBearingResult, BallLoadDistributionResult,  #
 from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.contact_solver import (  # noqa: E402
     ISO16281BallSolver)
 
+from references.contact.hertz import hertz_point  # noqa: E402
+
 from slippy_bridge.contact.core.contact import Body, Contact  # noqa: E402
 from slippy_bridge.contact.core.machine_elements.bearings import (BallRacewayContact, BearingContact,  # noqa: E402
                                                                   RollerRacewayContact, bearing_contacts)
 from slippy_bridge.contact.mesh.grid import SPAN_X_0, Grid  # noqa: E402
 from slippy_bridge.contact.results.hertz import HertzResult  # noqa: E402
 from slippy_bridge.contact.results.static import StaticResult  # noqa: E402
+from slippy_bridge.contact.solvers.hertz import hertz  # noqa: E402
+from slippy.contact import hertz_full  # noqa: E402
 
 STEEL = dict(E=210e9, nu=0.3)                      # [Pa], [-]
 MM = 1e-3                                          # [m/mm]
@@ -157,7 +161,8 @@ def test_two_tori_at_an_angle_match_johnson():
 
 
 _GAP_CASES = [((_T1, _T2), _ANGLE), ((_T1, _T2), -1.2), ((6.35 * MM, _INNER), 0.0),
-              (((10 * MM, math.inf), (10 * MM, math.inf)), math.pi / 4)]
+              (((10 * MM, math.inf), (10 * MM, math.inf)), math.pi / 4),
+              (((10 * MM, math.inf), (12 * MM, math.inf)), 0.3)]
 
 
 @pytest.mark.parametrize("radii, angle", _GAP_CASES)
@@ -175,17 +180,23 @@ def test_profiles_give_the_gap_curvatures(radii, angle):
 
 
 @pytest.mark.parametrize("radii, angle", _GAP_CASES)
-def test_curvatures_and_psi_agree_with_hertz_full(radii, angle):
-    """SlipPY hertz_full: kappa_max, kappa_min = 1/relative_radii[0], [1]; psi = alpha (mod pi, no pi/2 shift);
-    E* = e_star. Cases outside the SlipPY R-534 domain (both bodies more curved across than along)."""
-    hertz_full = pytest.importorskip("slippy.contact").hertz_full
+def test_contact_and_hertz_agree_with_hertz_full_on_the_raw_radii(radii, angle):
+    """SlipPY hertz_full on the per-body radii with its own angle: kappa_max, kappa_min = 1/relative_radii[0], [1];
+    psi = alpha (mod pi, no pi/2 shift); E* = e_star; and the bridge's hertz() (equivalent body at angle 0) gives
+    the same p0, sorted semi-axes and approach, so the psi rotation and SlipPY's angle agree. Needs SlipPY
+    local-fixes (the omega factor 2). Cases outside the SlipPY R-534 domain (both bodies more curved across than
+    along)."""
     c = _Point(body1=Body(r=radii[0], **STEEL), body2=Body(r=radii[1], **STEEL), load=100.0, angle=angle)
-    ref = hertz_full(r1=radii[0], r2=radii[1], moduli=(STEEL["E"],) * 2, v=(STEEL["nu"],) * 2, load=100.0,
+    sol = hertz_full(r1=radii[0], r2=radii[1], moduli=(STEEL["E"],) * 2, v=(STEEL["nu"],) * 2, load=100.0,
                      angle=angle)
-    assert c.kappa_max == pytest.approx(1 / ref["relative_radii"][0], rel=1e-12)
-    assert c.kappa_min == pytest.approx(1 / ref["relative_radii"][1], rel=1e-12)
-    assert abs(math.remainder(c.psi - ref["alpha"], math.pi)) < 1e-12
-    assert c.E_star == pytest.approx(ref["e_star"], rel=1e-14)
+    assert c.kappa_max == pytest.approx(1 / sol["relative_radii"][0], rel=1e-12)
+    assert c.kappa_min == pytest.approx(1 / sol["relative_radii"][1], rel=1e-12)
+    assert abs(math.remainder(c.psi - sol["alpha"], math.pi)) < 1e-12
+    assert c.E_star == pytest.approx(sol["e_star"], rel=1e-14)
+    hz = hertz(c)
+    assert hz.p0 == pytest.approx(sol["max_pressure"], rel=1e-6)
+    assert [hz.b, hz.a] == pytest.approx(sorted(sol["contact_radii"]), rel=1e-6)
+    assert hz.delta == pytest.approx(sol["total_deflection"], rel=1e-6)
 
 
 def test_line_contact_has_zero_kappa_min_along_y():
@@ -504,8 +515,9 @@ _FAMILY_GEOMETRY = {
 
 @pytest.mark.parametrize("name", sorted(available_families()))
 def test_every_axisforge_family_translates_or_raises_clearly(name):
-    """Each family in AxisForge ``available_families()`` either gives contacts or a NotImplementedError
-    that names it. A family AxisForge itself cannot assemble is skipped (an AxisForge bug, not the bridge)."""
+    """Each family in AxisForge ``available_families()`` either gives contacts with a solvable, valid Hertz
+    solution or a NotImplementedError that names it. A family AxisForge itself cannot assemble is skipped (an
+    AxisForge bug, not the bridge)."""
     geometry = _FAMILY_GEOMETRY[name]
     contact = "rows" not in geometry and "ThrustCylindrical" not in name     # these take no contact constants
     arrangement = "thrust" if "Thrust" in name else "non-locating" if "Cylindrical" in name else "locating"
@@ -519,6 +531,9 @@ def test_every_axisforge_family_translates_or_raises_clearly(name):
         assert name in str(exc)
     else:
         assert [c.race for c in cs] == ["inner", "outer"] and isinstance(cs[0], BearingContact)
+        for c in cs:
+            hz = hertz(c)
+            assert hz.p0 > 0 and 0 < hz.b <= hz.a and hz.valid
 
 
 def _thrust_ball(alpha_0_deg=90.0):
@@ -822,6 +837,54 @@ def test_static_record_of_a_line_contact(roller_10):
     assert rec["R_y_m"] == math.inf and math.isnan(rec["span_y"]) and rec["span_x"] >= SPAN_X_0
     assert rec["k"] is None and rec["x_mm"] is None and rec["contact"] == "RollerRacewayContact"
     assert rec["w_N_per_m"] == pytest.approx(1e5) and math.isnan(rec["Q_N"])
+
+
+# ---- solvers: Hertz from SlipPY hertz_full on the bridge axes (solvers/hertz.py) --------------------
+
+def test_hertz_of_the_6210_contacts(load_case):
+    """BR1 section 5, Q 1000 N, tolerances of the printed digits: inner / outer b 0.1666 / 0.2025 mm, a 1.5307 /
+    1.4877 mm, p0 1873 / 1585 MPa, delta 9.76 / 9.43 um; delta_i + delta_o = 19.20 um."""
+    inner, outer = (hertz(c) for c in bearing_contacts(load_case("iso16281_ball_contact").build_bearing(0.0),
+                                                       load=1000.0))
+    for hz, b, a, p0, delta in ((inner, 0.1666, 1.5307, 1873, 9.76), (outer, 0.2025, 1.4877, 1585, 9.43)):
+        assert hz.b / MM == pytest.approx(b, abs=0.00005) and hz.a / MM == pytest.approx(a, abs=0.00005)
+        assert hz.p0 / 1e6 == pytest.approx(p0, abs=0.5) and hz.delta / 1e-6 == pytest.approx(delta, abs=0.005)
+        assert hz.psi == 0.0 and not hz.line and hz.valid and hz.b_over_a == pytest.approx(b / a, abs=1e-4)
+    assert (inner.delta + outer.delta) / 1e-6 == pytest.approx(19.20, abs=0.005)
+
+
+def test_hertz_agrees_with_the_independent_judge(load_case):
+    """``references.contact.hertz.hertz_point`` (D-0021, no SlipPY, no bridge) on the 6210 contacts."""
+    for c in bearing_contacts(load_case("iso16281_ball_contact").build_bearing(0.0), load=1000.0):
+        hz, ref = hertz(c), hertz_point(c.body1.r, c.body2.r, (c.body1.E, c.body2.E), (c.body1.nu, c.body2.nu), c.load)
+        assert hz.p0 == pytest.approx(ref["p0_Pa"], rel=1e-6) and hz.delta == pytest.approx(ref["delta_m"], rel=1e-6)
+        assert (hz.b, hz.a) == (pytest.approx(ref["s_x_m"], rel=1e-6), pytest.approx(ref["s_y_m"], rel=1e-6))
+
+
+def test_hertz_of_a_roller_line_contact(roller_10):
+    """BR1 section 5: roller 10 x 10 on Dpw 70, Q 1000 N inner: b 0.0688 mm, p0 925.7 MPa; no approach."""
+    hz = hertz(bearing_contacts(roller_10, load=1000.0, races=("inner",))[0])
+    assert hz.b / MM == pytest.approx(0.0688, abs=0.00005) and hz.p0 / 1e6 == pytest.approx(925.7, abs=0.05)
+    assert hz.line and hz.a == math.inf and math.isnan(hz.delta) and hz.b_over_a == 0.0
+
+
+def test_hertz_of_the_fzg_h501_line_contact():
+    """BR2 section 6: FZG H501 at C, rho 14.20546 / 21.30819 mm, E 206 000 MPa, nu 0.3, w 75 697.52 N/m:
+    p0 565.67 MPa."""
+    steel = dict(E=206e9, nu=0.3)
+    c = _Line(body1=Body(r=(14.20546 * MM, math.inf), **steel), body2=Body(r=(21.30819 * MM, math.inf), **steel),
+              load=75697.52)
+    assert hertz(c).p0 / 1e6 == pytest.approx(565.67, abs=0.005)
+
+
+def test_hertz_of_the_6210_inner_integrates_to_Q(load_case):
+    """The Hertz pressure of the 6210 inner contact summed on a fine grid gives back Q = 1000 N."""
+    (c,) = bearing_contacts(load_case("iso16281_ball_contact").build_bearing(0.0), load=1000.0, races=("inner",))
+    hz = hertz(c)
+    h = hz.b / 100
+    X, Y = np.meshgrid(np.arange(-1.05 * hz.b, 1.05 * hz.b, h), np.arange(-1.05 * hz.a, 1.05 * hz.a, h),
+                       indexing="ij")
+    assert hz.pressure(X, Y).sum() * h**2 == pytest.approx(1000.0, rel=1e-3)
 
 
 # ---- FZG C40 checks that do not use the bridge (validation/gears/fzg_geometry_ph) -------------

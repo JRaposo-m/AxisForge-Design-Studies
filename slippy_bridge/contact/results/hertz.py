@@ -29,8 +29,8 @@ class HertzResult:
     and ``b`` its half-width (Johnson calls the half-width ``a``, section 4.2(c)).
 
     Filled by ``solvers.hertz`` from SlipPY ``hertz_full``: ``p0`` = ``max_pressure``, ``a``, ``b``
-    = ``contact_radii`` sorted (SlipPY's order, from Deeg, is not major/minor; a line gives
-    ``[inf, half-width]``), ``delta`` = ``total_deflection`` (absent for a line), ``E_star`` =
+    = ``contact_radii`` sorted (SlipPY gives ``[major, minor]`` for a point, ``[half-width, inf]``
+    for a line), ``delta`` = ``total_deflection`` (absent for a line), ``E_star`` =
     ``e_star`` (Johnson's E*, not E').
 
     Parameters
