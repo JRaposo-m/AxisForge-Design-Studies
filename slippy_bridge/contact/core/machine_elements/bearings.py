@@ -28,9 +28,10 @@ Conversions made here, once, at the AxisForge boundary:
 A new AxisForge family needs no change here as long as it provides the same descriptor and its
 point/line tag; a family that does not raises ``NotImplementedError`` naming what is missing.
 
-:class:`DeepGrooveBallContact` (D-0034 item 10) is the first contact class of one AxisForge family,
-with its bodies and its reading of the bearing inside it; its raceway is the true surface of
-revolution. The classes above give way to one class per family.
+:class:`DeepGrooveBallContact` and :class:`AngularContactBallContact` (D-0034 item 10) are contact
+classes of one AxisForge family each, with their bodies and their reading of the bearing inside
+them; their raceway is the true surface of revolution. The classes above give way to one class per
+family.
 
 References
 ----------
@@ -46,7 +47,7 @@ from typing import ClassVar
 import numpy as np
 from axisforge.core.machine_elements.bearings.families import available_families
 # the point/line predicates are not re-exported by axisforge.core
-from axisforge.core.machine_elements.bearings.families.family import (DeepGrooveBallFamily,
+from axisforge.core.machine_elements.bearings.families.family import (AngularContactFamily, DeepGrooveBallFamily,
                                                                        is_line_contact_family,
                                                                        is_point_contact_family)
 from axisforge.outputs.solvers.bearings.load_distribution.load_distribution_results import wrap_angle
@@ -54,8 +55,8 @@ from axisforge.outputs.solvers.bearings.load_distribution.load_distribution_resu
 from ..contact import DC, Body, Contact, SweptCircleBody
 from . import _MM, _MPA
 
-__all__ = ["BearingContact", "DeepGrooveBallContact", "BallRacewayContact", "RollerRacewayContact",
-           "bearing_contacts"]
+__all__ = ["BearingContact", "DeepGrooveBallContact", "AngularContactBallContact", "BallRacewayContact",
+           "RollerRacewayContact", "bearing_contacts"]
 
 # what bearing_contacts reads from an assembled AxisForge bearing: single-row geometry, then the
 # elastic constants AxisForge only stores with contact=ContactAnalysis.ISO16281
@@ -67,7 +68,8 @@ _MATERIAL = ("e1", "e2", "nu1", "nu2")
 class BearingContact(Contact):
     """Contact of one rolling element (body 1) with one raceway (body 2) of a rolling bearing.
 
-    Abstract like :class:`Contact`: each family class (:class:`DeepGrooveBallContact`; until they
+    Abstract like :class:`Contact`: each family class (:class:`DeepGrooveBallContact`,
+    :class:`AngularContactBallContact`; until they
     are removed, :class:`BallRacewayContact` and :class:`RollerRacewayContact`) sets ``line`` and
     ``family`` (its AxisForge family class). The bridge axes are the bearing's own: x along rolling (the circumferential
     direction of the raceway), y across it (along the roller axis or the groove), so the body
@@ -453,8 +455,9 @@ class DeepGrooveBallContact(BearingContact):
         TypeError
             If ``bearing`` is not of ``DeepGrooveBallFamily``.
         NotImplementedError
-            If the bearing has two rows (``i = 2``): AxisForge's ISO/TS 16281 solver takes ``Z``
-            per row and returns one row, so its ``Q_j`` would be the load of both rows.
+            If the bearing has two rows (``i = 2``): AxisForge ignores ``i`` in the ISO/TS 16281
+            solve (one row of ``Z`` balls at ``+alpha_0`` carries the whole load; only the rating
+            reads ``i``).
         ValueError
             As :meth:`BearingContact._loads`; if the bearing has no elastic constants; and every
             check of the bodies and the contact.
@@ -480,10 +483,149 @@ class DeepGrooveBallContact(BearingContact):
         cls._refuse_other_family(bearing)
         if bearing.i != 1:
             raise NotImplementedError(f"{cls.__name__}: a {bearing.i}-row bearing is not translated (AxisForge's "
-                                      "ISO/TS 16281 solver returns one row of Z balls for it)")
+                                      "ISO/TS 16281 solve ignores i: one row of Z balls carries the whole load)")
         E1, nu1, E2, nu2 = cls._materials(bearing)
         ball = cls.Ball(Dw=bearing.Dw * _MM, E=E1, nu=nu1)
         _, items = cls._loads(bearing, result, load=load, alpha=alpha, elements=elements, row=row)
+        out = []
+        for fields, Q in items:
+            alpha_el = fields["alpha_rad"]
+            for race in races:
+                sign = 1.0 if race == "inner" else -1.0
+                # OPEN SB-41: contact point with the ball centre on the pitch circle (AxisForge r_bx formula at alpha), not the groove fixed in the ring
+                R_P = (bearing.Dpw - sign * bearing.Dw * math.cos(alpha_el)) / 2               # [mm]
+                r_g = bearing.ri if race == "inner" else bearing.re                          # [mm]
+                raceway = cls.Raceway(race=race, R_P=R_P * _MM, r_g=r_g * _MM, alpha=alpha_el, E=E2, nu=nu2)
+                out.append(cls(body1=ball, body2=raceway, load=Q, label=cls._label(bearing, race, fields),
+                               race=race, **fields))
+        return out
+
+@dataclass(**DC)
+class AngularContactBallContact(BearingContact):
+    """Ball on a raceway groove of an AxisForge ``AngularContactFamily`` bearing: a point contact,
+    load ``Q`` [N].
+
+    The same bodies as :class:`DeepGrooveBallContact` (a ball in a groove of radius ``ri``/``re``,
+    the raceway the true surface of revolution; AxisForge builds both families from the same
+    ``BallBearingGeometry``); the family gives ``alpha_0`` (in (0, 45] deg) instead of the
+    clearance. Build the contacts of a bearing with :meth:`from_bearing`; the other fields as
+    :class:`BearingContact`.
+
+    AxisForge models the bearing as a symmetric full groove with clearance: an axial load against
+    the contact angle gives ``alpha_j <= 0`` (the ball on the other side of the groove, ``ok =
+    True``). A real single-row angular contact bearing has a relieved shoulder there and carries
+    no such load, so those contacts are refused. Neither AxisForge nor the bridge checks that the
+    contact ellipse stays inside the shoulders (at 25 deg under Fr = Fa = 5 kN the major axis
+    spans about 12 to 43 deg of the groove arc).
+
+    The grooves are conformal (``a / r_g`` 0.27 in that case): the exact sphere and groove differ
+    from the Hertz paraboloid by a y^4 term that stiffens the contact, so the BEM gives ``a`` about
+    2 to 3 % below Hertz (falling as ``a^2`` with the load), a physical difference near the 3 %
+    of ``rtol_reference``, not a numerical one (C10c slippy-expert).
+
+    Raises
+    ------
+    ValueError
+        If body 1 is not a :class:`Ball` or body 2 not a :class:`Raceway` of the same race and
+        angle as the contact; and every check of :class:`BearingContact`.
+    """
+
+    line = False
+    family = AngularContactFamily
+
+    # OPEN SB-44: the bodies of DeepGrooveBallContact are reused, not copied (same groove geometry, as AxisForge's BallBearingGeometry for both families)
+    Ball = DeepGrooveBallContact.Ball
+    Raceway = DeepGrooveBallContact.Raceway
+
+    # OPEN SB-43: only the family's own Ball and true Raceway are accepted as bodies (alternative: also a SweptCircleBody of equal r)
+    def __post_init__(self) -> None:
+        if not (isinstance(self.body1, self.Ball) and isinstance(self.body2, self.Raceway)
+                and (self.body2.race, self.body2.alpha) == (self.race, self.alpha_rad)):
+            raise ValueError(f"{type(self).__name__} {self.label!r}: body1 must be its Ball and body2 its Raceway "
+                             f"of race {self.race!r} at alpha {self.alpha_rad}")
+        super().__post_init__()
+
+    @classmethod
+    def from_bearing(cls, bearing, result=None, *, load: float | None = None, alpha: float | None = None,
+                     races=("inner", "outer"), elements="loaded", row: int = 0) -> list[AngularContactBallContact]:
+        """Contacts of one AxisForge single-row angular contact ball bearing.
+
+        Two ways to give the load:
+
+        * ``result``: the ISO/TS 16281 result (see :meth:`BearingContact._loads`). Each selected
+          element j gives its ``Q_j`` and operating angle ``alpha_j``.
+        * ``load`` (and optionally ``alpha``): one contact per race, no element index.
+
+        Inner and outer contacts of an element carry the same load and angle: AxisForge has no
+        centrifugal or gyroscopic term, so the ball is in equilibrium between two equal and
+        opposite normal forces.
+
+        Parameters
+        ----------
+        bearing : axisforge Bearing
+            Assembled single-row (``i = 1``) ``AngularContactFamily`` bearing with the ISO/TS 16281
+            contact constants.
+        result : BearingAnalysisResult, BearingResult or BallLoadDistributionResult, optional
+        load : float, optional
+            Element normal load ``Q`` [N] when no ``result`` is given.
+        alpha : float, optional
+            Contact angle [rad] with ``load``; default the family angle ``alpha_0``.
+        races : sequence of {"inner", "outer"}
+        elements : "loaded" | "max" | sequence of int
+            Which balls (with ``result``); unloaded balls in a list are skipped.
+        row : int
+            Row of the result (with ``result``; AxisForge gives one row).
+
+        Returns
+        -------
+        list of AngularContactBallContact
+            Element by element, races in the order given; labels ``"<bearing label or
+            designation>_<race>"``, plus ``_e<j>`` with a result.
+
+        Raises
+        ------
+        TypeError
+            If ``bearing`` is not of ``AngularContactFamily``.
+        NotImplementedError
+            If the bearing has two rows (``i = 2``): AxisForge ignores ``i`` in the ISO/TS 16281
+            solve (one row of ``Z`` balls at ``+alpha_0`` carries the whole load; only the rating
+            reads ``i``).
+        ValueError
+            As :meth:`BearingContact._loads`; if a selected contact angle is on the relieved side
+            (``alpha * alpha_0 <= 0``); if the bearing has no elastic constants; and every check of
+            the bodies and the contact.
+
+        Notes
+        -----
+        The raceway is built at the element's angle (``alpha_j``, ``alpha_0`` or the given one):
+        groove radius ``r_g = ri`` or ``re``; contact point at ``R_P = (Dpw -/+ Dw cos(alpha)) / 2``
+        from the bearing axis, the ball centre kept on the pitch circle, so that ``r_x`` is
+        AxisForge's ``BallBearingGeometry.r_bx_inner`` / ``r_bx_outer`` formula evaluated at
+        ``alpha`` (AxisForge itself evaluates it at ``alpha_0`` only). AxisForge's ISO/TS 16281
+        solver keeps instead the groove centres fixed in the rings (Eq. (13)-(15)): ``R_P = R_G -/+
+        r_g cos(alpha)`` with ``R_G = Dpw/2 +/- (r_g - Dw/2) cos(alpha_0)``; the two agree at
+        ``alpha = alpha_0`` and differ by ``(r_g - Dw/2)(cos(alpha) - cos(alpha_0))`` elsewhere
+        (inner; outer opposite sign): 4.9 um, 1.7e-4 (inner) / 1.2e-4 (outer) of ``R_P``, for the most loaded ball of a
+        25 deg bearing (Dw 12.7, Dpw 70 mm, Z 15) under Fr = Fa = 5 kN (``alpha_j`` 27.49 deg).
+
+        AxisForge's ``Q_j`` comes from its contact constant ``c_p`` at ``alpha_0`` (R-019), while
+        these bodies are at ``alpha_j``: for that ball the effective ``R_x`` of the inner contact
+        is 5.328 mm here against 5.306 mm at ``alpha_0`` (+0.4 %), so a bridge approach and
+        AxisForge's ``delta_j`` differ at that order.
+        """
+        cls._refuse_other_family(bearing)
+        if bearing.i != 1:
+            raise NotImplementedError(f"{cls.__name__}: a {bearing.i}-row bearing is not translated (AxisForge's "
+                                      "ISO/TS 16281 solve ignores i: one row of Z balls carries the whole load)")
+        E1, nu1, E2, nu2 = cls._materials(bearing)
+        ball = cls.Ball(Dw=bearing.Dw * _MM, E=E1, nu=nu1)
+        _, items = cls._loads(bearing, result, load=load, alpha=alpha, elements=elements, row=row)
+        # OPEN SB-45: alpha on the relieved side (alpha * alpha_0 <= 0) refused (alternative: build the mirrored raceway, documented)
+        wrong_side = [f.get("j") for f, _ in items if not f["alpha_rad"] * bearing.alpha_0 > 0]
+        if wrong_side:
+            raise ValueError(f"{cls.__name__}: contact angle on the relieved side (alpha * alpha_0 <= 0; element(s) "
+                             f"{wrong_side}): an axial load against the contact angle, which a single-row angular "
+                             "contact bearing does not carry (AxisForge solves a symmetric groove)")
         out = []
         for fields, Q in items:
             alpha_el = fields["alpha_rad"]

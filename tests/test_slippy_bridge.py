@@ -20,7 +20,8 @@ from axisforge.solvers.machine_elements.gears.contact import contact_inputs  # n
 from studies.r00_analytical_references.contact.hertz import hertz_point  # noqa: E402
 
 from slippy_bridge.contact.core.contact import Body, Contact, SweptCircleBody  # noqa: E402
-from slippy_bridge.contact.core.machine_elements.bearings import (BallRacewayContact, BearingContact,  # noqa: E402
+from slippy_bridge.contact.core.machine_elements.bearings import (AngularContactBallContact,  # noqa: E402
+                                                                  BallRacewayContact, BearingContact,
                                                                   DeepGrooveBallContact,
                                                                   RollerRacewayContact, bearing_contacts)
 from slippy_bridge.contact.core.machine_elements.gears import (ToothContact, gear_contacts,  # noqa: E402
@@ -793,11 +794,79 @@ def test_deep_groove_class_refuses_two_rows_and_bad_indices(ball, ball_result):
         DeepGrooveBallContact.from_bearing(ball, ball_result, elements=[-1])
 
 
-def test_deep_groove_contact_checks_its_bodies(ball):
-    (c,) = DeepGrooveBallContact.from_bearing(ball, load=100.0, races=("inner",))
+@pytest.mark.parametrize("cls", [DeepGrooveBallContact, AngularContactBallContact])
+def test_ball_contact_checks_its_bodies(ball, cls):
+    (c,) = cls.from_bearing(ball if cls is DeepGrooveBallContact else _angular(), load=100.0, races=("inner",))
     for kw in (dict(body1=SweptCircleBody(r=c.body1.r, **STEEL)), dict(race="outer"), dict(alpha_rad=0.1)):
         with pytest.raises(ValueError, match="body1 must be its Ball and body2 its Raceway"):
             replace(c, **kw)
+
+
+# ---- AngularContactBallContact (AxisForge AngularContactFamily) -------------------------------------
+
+def _angular(alpha_0_deg=25.0, **kw):
+    """Angular contact ball bearing Dw 12.7, Dpw 70 mm (grooves 0.52 Dw, as the true-raceway checks), Z 15."""
+    return _bearing(af_c.AngularContactFamily(), "locating", catalog=dict(d=50.0, D=90.0, b=20.0), Dw=12.7, Dpw=70.0,
+                    Z=15, alpha_0_deg=alpha_0_deg, **kw)
+
+
+@pytest.mark.parametrize("alpha_0_deg", [25.0, 40.0])
+def test_angular_contact_raceways_are_the_true_raceways(alpha_0_deg):
+    """from_bearing at alpha_0 builds the true raceways of the checks above (Dw 12.7, Dpw 70, 0.52 Dw): the same
+    profiles, so cowork's off-axis values hold through the angular contact class; r = AxisForge r_inner/r_outer
+    (outer negated) at alpha_0."""
+    bearing = _angular(alpha_0_deg)
+    for c in AngularContactBallContact.from_bearing(bearing, load=1000.0):
+        assert isinstance(c.body2, AngularContactBallContact.Raceway) and c.alpha_rad == bearing.alpha_0
+        np.testing.assert_allclose(c.body2.profile(_X / 10, _Y), _raceway(c.race, alpha_0_deg).profile(_X / 10, _Y),
+                                   rtol=1e-12, atol=1e-18)
+        stored, sign = (bearing.r_inner, 1.0) if c.race == "inner" else (bearing.r_outer, -1.0)
+        assert c.body2.r == pytest.approx((sign * stored[0] * MM, stored[1] * MM), rel=1e-12)
+        assert hertz(c).valid and c.psi == 0.0
+
+
+def test_angular_contacts_of_a_real_iso16281_solve():
+    """Fr = Fa = 5 kN on the 25 deg bearing: alpha_j of the most loaded ball 27.49 deg; curvature sum of ISO/TS
+    16281 4.2.1 Eq. (5)-(6), (1/Dw)(4 - 1/f +/- 2 g/(1 -/+ g)), with g = Dw cos(alpha_j)/Dpw evaluated at alpha_j
+    (R-019; the standard uses the initial angle), inner +, outer -."""
+    bearing = _angular()
+    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=5000.0, Fr_xy=0.0, Fa=5000.0, delta_r_init=0.0,
+                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    assert result.ok
+    inner, outer = AngularContactBallContact.from_bearing(bearing, result, elements="max")
+    assert math.degrees(inner.alpha_rad) == pytest.approx(27.489, abs=0.001) and inner.load == outer.load
+    g = bearing.Dw * math.cos(inner.alpha_rad) / bearing.Dpw
+    for sign, c in ((+1.0, inner), (-1.0, outer)):
+        iso = (4.0 - 1.0 / 0.52 + sign * 2.0 * g / (1.0 - sign * g)) / (bearing.Dw * MM)
+        assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-9) and c.label == f"b_{c.race}_e{c.j}"
+
+
+@pytest.mark.parametrize("cls, other", [(AngularContactBallContact, "DeepGrooveBallFamily"),
+                                        (DeepGrooveBallContact, "AngularContactFamily")])
+def test_ball_classes_refuse_each_other(ball, cls, other):
+    bearing = ball if other == "DeepGrooveBallFamily" else _angular()
+    with pytest.raises(TypeError, match=f"{cls.__name__} takes a {cls.family.__name__} bearing, got {other}"):
+        cls.from_bearing(bearing, load=100.0)
+
+
+@pytest.mark.parametrize("Fa", [0.0, -5000.0])
+def test_angular_contact_on_the_relieved_side_is_refused(Fa):
+    """AxisForge solves the symmetric groove: Fa = 0 gives alpha_j = 0, Fa = -5 kN the mirror alpha_j = -27.49 deg,
+    both ok = True (C10c reviews). A single-row angular contact bearing carries neither (OPEN SB-45); also a given
+    alpha of the other sign."""
+    bearing = _angular()
+    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=5000.0, Fr_xy=0.0, Fa=Fa, delta_r_init=0.0,
+                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    assert result.ok and np.all(result.rows[0].alpha_j[result.rows[0].Q_j > 0] <= 1e-12)
+    with pytest.raises(ValueError, match="relieved side"):
+        AngularContactBallContact.from_bearing(bearing, result)
+    with pytest.raises(ValueError, match="relieved side"):
+        AngularContactBallContact.from_bearing(bearing, load=100.0, alpha=-bearing.alpha_0)
+
+
+def test_angular_contact_class_refuses_two_rows():
+    with pytest.raises(NotImplementedError, match="2-row bearing"):
+        AngularContactBallContact.from_bearing(_angular(i=2), load=100.0)
 
 
 # ---- mesh: Grid around a contact and the step arguments (mesh/grid.py) ----------------------------
@@ -1124,6 +1193,18 @@ def test_bem_of_the_true_raceway_against_the_local_torus(load_case, tmp_path):
         assert getattr(res, key) == pytest.approx(getattr(ref, key), rel=1e-3)
     rec = res.record()
     assert (rec["body1_class"], rec["body2_class"]) == ("Ball", "Raceway")
+
+
+def test_bem_of_an_angular_contact(tmp_path):
+    """25 deg bearing, Fr = Fa = 5 kN, most loaded ball, inner (a/r_g 0.27): every check on the default grid; a is
+    about 2.2 % below Hertz, a physical conformity effect (the y^4 term of sphere and groove; slippy-expert C10c:
+    -2.18 %, falling as a^2 with the load), within the 3 % of rtol_reference."""
+    bearing = _angular()
+    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=5000.0, Fr_xy=0.0, Fa=5000.0, delta_r_init=0.0,
+                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    (c,) = AngularContactBallContact.from_bearing(bearing, result, elements="max", races=("inner",))
+    res = _bem(c, tmp_path)
+    assert _all_checks(res) and abs(res.err_p0) <= 0.01 and -0.03 <= res.err_a <= -0.015
 
 
 @pytest.mark.parametrize("make", ["inner_6210", "tori"])
@@ -1591,7 +1672,8 @@ def test_layer_order_of_the_contact_package():
 
 def test_public_names_import_from_the_package():
     import slippy_bridge.contact as pkg
-    for name in ("Body", "SweptCircleBody", "Contact", "Kinematics", "BearingContact", "BallRacewayContact",
+    for name in ("Body", "SweptCircleBody", "Contact", "Kinematics", "BearingContact", "DeepGrooveBallContact",
+                 "AngularContactBallContact", "BallRacewayContact",
                  "RollerRacewayContact",
                  "bearing_contacts", "GearContact", "ToothContact", "gear_contacts", "path_diameters", "Grid",
                  "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"):
