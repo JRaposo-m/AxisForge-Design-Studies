@@ -1,6 +1,7 @@
 """slippy_bridge.contact: bodies and contacts (core), then the FZG C40 checks that need no bridge."""
 import math
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -1241,6 +1242,78 @@ def test_hypothesis_R117_ph_at_A_half_load(fzg_c40):
     cc, pair = fzg_c40
     (p_A,) = _fzg_p_H_MPa(cc, pair, "K5", ["A"])
     assert p_A == pytest.approx(498.0, rel=0.01)
+
+
+# ---- package: exports, sub-model data and the layer order ---------------------------------------------
+
+_LEVELS = ("core", "mesh", "results", "solvers", "outputs")   # import order (D-0034 item 1; outputs later)
+
+
+def _imports(path: Path, module: str) -> set[str]:
+    """Absolute names of every module imported by the file ``path`` (module name ``module``), including
+    the imports under ``if TYPE_CHECKING:``."""
+    import ast
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    package = module.split(".") if path.name == "__init__.py" else module.split(".")[:-1]
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = package[:len(package) - node.level + 1] if node.level else []
+            target = ".".join(base + ([node.module] if node.module else []))
+            names.add(target)
+            if node.module is None:                     # "from . import x": x is a module
+                names.update(f"{target}.{alias.name}" for alias in node.names)
+    return names
+
+
+def test_layer_order_of_the_contact_package():
+    """core imports nothing of mesh/results/solvers and no SlipPY; mesh no results/solvers/SlipPY; results no
+    solvers/SlipPY. Imports under TYPE_CHECKING are held to the same rule (they name earlier levels only)."""
+    import slippy_bridge.contact as pkg
+    root = Path(pkg.__file__).parent
+    files = [p for p in sorted(root.rglob("*.py")) if len(p.relative_to(root).parts) > 1]
+    checked = 0
+    for path in files:                                   # contact/__init__.py (the exports) excluded
+        rel = path.relative_to(root)
+        level = rel.parts[0]
+        module = ".".join(("slippy_bridge", "contact", *rel.with_suffix("").parts))
+        later = _LEVELS[_LEVELS.index(level) + 1:]
+        forbidden = [f"slippy_bridge.contact.{name}" for name in later]
+        for name in _imports(path, module):
+            assert not any(name == f or name.startswith(f + ".") for f in forbidden), f"{module} imports {name}"
+            if level != "solvers":
+                assert name.split(".")[0] != "slippy", f"{module} imports SlipPY ({name})"
+        checked += 1
+    assert checked == len(files) >= 14
+
+
+def test_public_names_import_from_the_package():
+    import slippy_bridge.contact as pkg
+    for name in ("Body", "Contact", "Kinematics", "BearingContact", "BallRacewayContact", "RollerRacewayContact",
+                 "bearing_contacts", "GearContact", "ToothContact", "gear_contacts", "path_diameters", "Grid",
+                 "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"):
+        assert name in pkg.__all__ and getattr(pkg, name) is not None
+    assert pkg.solve is solve and pkg.ToothContact is ToothContact
+
+
+def test_kinematics_data():
+    """ue is the MEAN entrainment speed (u1 + u2)/2, vg = u1 - u2; data only, finite real numbers; with u1 and
+    u2 given, the sum given as ue is refused (R-075)."""
+    from slippy_bridge.contact import Kinematics
+    k = Kinematics(ue=(3.0 + 1.0) / 2, vg=3.0 - 1.0, u1=3.0, u2=1.0)
+    assert (k.ue, k.vg, k.u1, k.u2) == (2.0, 2.0, 3.0, 1.0)
+    assert Kinematics(ue=1.0, vg=0.0).u1 is None
+    assert Kinematics(ue=np.float32(1.5), vg=np.float64(0.0)).ue == 1.5
+    for bad in (dict(ue=math.nan, vg=0.0), dict(ue=1.0, vg=math.inf), dict(ue=1.0, vg=0.0, u1="1"),
+                dict(ue=True, vg=0.0)):
+        with pytest.raises(ValueError, match="finite real number"):
+            Kinematics(**bad)
+    with pytest.raises(ValueError, match="ue is the MEAN"):
+        Kinematics(ue=3.0 + 1.0, vg=2.0, u1=3.0, u2=1.0)              # the sum given as ue
+    with pytest.raises(ValueError, match="vg = u1 - u2"):
+        Kinematics(ue=2.0, vg=-2.0, u1=3.0, u2=1.0)
 
 
 # ---- FZG C40 checks that do not use the bridge (validation/gears/fzg_geometry_ph) -------------
