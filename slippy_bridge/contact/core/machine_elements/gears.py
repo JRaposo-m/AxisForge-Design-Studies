@@ -35,7 +35,7 @@ from axisforge.core.machine_elements.gears.cylindrical import CylindricalFamily
 from axisforge.core.materials import available_materials, get_material
 from axisforge.solvers.machine_elements.gears.contact import load_sharing
 
-from ..contact import DC, Body, Contact
+from ..contact import DC, Contact, SweptCircleBody
 from . import _MM, _MPA
 
 __all__ = ["GearContact", "ToothContact", "gear_contacts", "path_diameters"]
@@ -107,7 +107,7 @@ class ToothContact(GearContact):
     The radius checks guard hand-built contacts (D-0034 item 6). Through :func:`gear_contacts`
     they cannot fail: ``pair_values_at`` signs the radii by z, and a pair whose path passes a
     base-tangent point, where that sign would be wrong, is refused there (SB-20). A zero radius is
-    refused by :class:`Body` before these checks.
+    refused by :class:`SweptCircleBody` before these checks.
 
     Raises
     ------
@@ -196,7 +196,7 @@ def gear_contacts(pair, dy1, F_bn_N: float, *, driver: str, E=None, nu=None) -> 
     -------
     list of ToothContact
         One per diameter, in the order given; label ``f"{pair.label or 'gear'}_{point}"``.
-        ``body1 = Body(r=(rho1_n, inf))``, ``body2 = Body(r=(rho2_n, inf))`` with
+        ``body1 = SweptCircleBody(r=(rho1_n, inf))``, ``body2 = SweptCircleBody(r=(rho2_n, inf))`` with
         ``rho_n = L_y / cos(beta_b)`` [m] (signed: a ring is concave), ``load = w`` [N/m] with
         ``w = F_bn / l_sum`` (AxisForge ``load_sharing``: ``share F_bn / l`` written without
         ``l``, which is zero at the ends of a helical line).
@@ -253,8 +253,8 @@ def gear_contacts(pair, dy1, F_bn_N: float, *, driver: str, E=None, nu=None) -> 
         rho1_n_mm, rho2_n_mm = (float(values[g]["L_y"][i]) / cos_betab for g in ("gear1", "gear2"))
         out.append(ToothContact(
             # x = profile direction (rolling), y along the contact line; ring rho2 < 0
-            body1=Body(r=(rho1_n_mm * _MM, math.inf), E=E_MPa[0] * _MPA, nu=nu_gear[0]),
-            body2=Body(r=(rho2_n_mm * _MM, math.inf), E=E_MPa[1] * _MPA, nu=nu_gear[1]),
+            body1=SweptCircleBody(r=(rho1_n_mm * _MM, math.inf), E=E_MPa[0] * _MPA, nu=nu_gear[0]),
+            body2=SweptCircleBody(r=(rho2_n_mm * _MM, math.inf), E=E_MPa[1] * _MPA, nu=nu_gear[1]),
             load=F_bn_N / float(sharing["l_sum_mm"][i]) / _MM,              # [N/mm] -> [N/m]
             label=f"{tag}_{label}", point=label, dy1_mm=diameters[i], dy2_mm=float(values["dy2_mm"][i]),
             g_y_mm=float(g_y[i]), share=float(sharing["share"][i]), l_mm=float(sharing["l_mm"][i]),

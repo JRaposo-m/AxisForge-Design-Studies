@@ -19,7 +19,7 @@ from axisforge.solvers.machine_elements.gears.contact import contact_inputs  # n
 
 from studies.r00_analytical_references.contact.hertz import hertz_point  # noqa: E402
 
-from slippy_bridge.contact.core.contact import Body, Contact  # noqa: E402
+from slippy_bridge.contact.core.contact import Body, Contact, SweptCircleBody  # noqa: E402
 from slippy_bridge.contact.core.machine_elements.bearings import (BallRacewayContact, BearingContact,  # noqa: E402
                                                                   RollerRacewayContact, bearing_contacts)
 from slippy_bridge.contact.core.machine_elements.gears import (ToothContact, gear_contacts,  # noqa: E402
@@ -57,7 +57,7 @@ _INNER, _OUTER = (28.65 * MM, -6.604 * MM), (-41.35 * MM, -6.604 * MM)       # 6
     ((math.inf, 10 * MM), lambda x, y: -(10 * MM - np.sqrt((10 * MM)**2 - y**2))),           # cylinder along x
 ])
 def test_profile_matches_the_closed_form(r, expected):
-    body = Body(r=r, **STEEL)
+    body = SweptCircleBody(r=r, **STEEL)
     np.testing.assert_allclose(body.profile(_X, _Y), expected(_X, _Y), rtol=1e-12, atol=1e-18)
     assert body.profile(np.zeros((1, 1)), np.zeros((1, 1)))[0, 0] == 0.0                   # apex at 0
 
@@ -68,7 +68,7 @@ def test_torus_profile_lies_on_the_implicit_torus(r):
     signed distance to it s = sign(r_x) sqrt(x^2 + (w - r_x)^2) and y satisfy (s - (r_x - r_y))^2 + y^2 = r_y^2
     (generating circle of radius |r_y| centred at r_x - r_y from the axis)."""
     r_x, r_y = r
-    w = -Body(r=r, **STEEL).profile(_X, _Y)
+    w = -SweptCircleBody(r=r, **STEEL).profile(_X, _Y)
     s = math.copysign(1.0, r_x) * np.sqrt(_X**2 + (w - r_x)**2)
     np.testing.assert_allclose((s - (r_x - r_y))**2 + _Y**2, r_y**2, rtol=1e-12)
 
@@ -78,28 +78,29 @@ def test_torus_profile_is_the_hertz_paraboloid_near_the_apex(r):
     """Johnson 1985 Eq. (4.2a): -z -> x^2/(2 r_x) + y^2/(2 r_y); relative error O((x/r)^2) < 1e-4 at 0.05 mm."""
     r_x, r_y = r
     x, y = _X / 40, _Y / 30                                                     # |x|, |y| <= 0.05 mm
-    np.testing.assert_allclose(-Body(r=r, **STEEL).profile(x, y), x**2 / (2 * r_x) + y**2 / (2 * r_y),
+    np.testing.assert_allclose(-SweptCircleBody(r=r, **STEEL).profile(x, y), x**2 / (2 * r_x) + y**2 / (2 * r_y),
                                rtol=1e-3, atol=1e-20)
 
 
 def test_profile_signs_convex_and_concave():
     """Convex body falls away from the contact plane (-sag < 0), a concave one rises (> 0)."""
-    assert Body(r=5 * MM, **STEEL).profile(_X, _Y)[0, 0] < 0
-    assert Body(r=-50 * MM, **STEEL).profile(_X, _Y)[0, 0] > 0
-    assert Body(r=math.inf, **STEEL).profile(_X, _Y).tolist() == np.zeros_like(_X).tolist()
+    assert SweptCircleBody(r=5 * MM, **STEEL).profile(_X, _Y)[0, 0] < 0
+    assert SweptCircleBody(r=-50 * MM, **STEEL).profile(_X, _Y)[0, 0] > 0
+    assert SweptCircleBody(r=math.inf, **STEEL).profile(_X, _Y).tolist() == np.zeros_like(_X).tolist()
 
 
 @pytest.mark.parametrize("angle", [0.3, -1.1, math.pi / 2])
 def test_profile_rotation_is_the_body_frame(angle):
-    body = Body(r=_INNER, **STEEL)
+    body = SweptCircleBody(r=_INNER, **STEEL)
     x_b = _X * math.cos(angle) + _Y * math.sin(angle)
     y_b = -_X * math.sin(angle) + _Y * math.cos(angle)
     np.testing.assert_allclose(body.profile(_X, _Y, angle), body.profile(x_b, y_b), rtol=1e-12, atol=1e-18)
 
 
 def test_cylinder_turned_by_90_deg_lies_along_x():
-    turned = Body(r=(10 * MM, math.inf), **STEEL).profile(_X, _Y, math.pi / 2)
-    np.testing.assert_allclose(turned, Body(r=(math.inf, 10 * MM), **STEEL).profile(_X, _Y), rtol=1e-9, atol=1e-15)
+    turned = SweptCircleBody(r=(10 * MM, math.inf), **STEEL).profile(_X, _Y, math.pi / 2)
+    np.testing.assert_allclose(turned, SweptCircleBody(r=(math.inf, 10 * MM), **STEEL).profile(_X, _Y),
+                               rtol=1e-9, atol=1e-15)
 
 
 @pytest.mark.parametrize("r, x, y", [
@@ -111,7 +112,7 @@ def test_cylinder_turned_by_90_deg_lies_along_x():
 ])
 def test_grid_beyond_the_body_raises(r, x, y):
     with pytest.raises(ValueError, match="beyond the body"):
-        Body(r=r, **STEEL).profile(x, y)
+        SweptCircleBody(r=r, **STEEL).profile(x, y)
 
 
 # ---- relative curvatures, psi, E* (Johnson 1985 section 4.1) ----------------------------------
@@ -119,7 +120,7 @@ def test_grid_beyond_the_body_raises(r, x, y):
 def test_curvatures_of_the_6210_inner_contact():
     """Ball 12.7 mm in the inner groove of a 6210 (Dpw 70, f_i 0.52), alpha 0 (BR1 section 5, printed to 5 digits
     [1/mm]), and the unrounded hand sums 1/6.35 + 1/28.65, 1/6.35 - 1/6.604."""
-    c = _Point(body1=Body(r=6.35 * MM, **STEEL), body2=Body(r=_INNER, **STEEL), load=1000.0)
+    c = _Point(body1=SweptCircleBody(r=6.35 * MM, **STEEL), body2=SweptCircleBody(r=_INNER, **STEEL), load=1000.0)
     assert c.kappa_max == pytest.approx(0.19238 / MM, abs=0.000005 / MM)
     assert c.kappa_min == pytest.approx(0.00606 / MM, abs=0.000005 / MM)
     assert c.kappa_max == pytest.approx((1 / 6.35 + 1 / 28.65) / MM, rel=1e-12)
@@ -129,7 +130,7 @@ def test_curvatures_of_the_6210_inner_contact():
 
 def test_crossed_cylinders_at_90_deg_are_a_sphere():
     R = 10 * MM
-    cyl = Body(r=(R, math.inf), **STEEL)
+    cyl = SweptCircleBody(r=(R, math.inf), **STEEL)
     c = _Point(body1=cyl, body2=cyl, load=1.0, angle=math.pi / 2)
     assert c.kappa_max == pytest.approx(1 / R, rel=1e-12)
     assert c.kappa_min == pytest.approx(1 / R, rel=1e-12)
@@ -139,7 +140,7 @@ def test_crossed_cylinders_at_90_deg_are_a_sphere():
 def test_crossed_cylinders_at_45_deg(sign):
     """Johnson 1985 p. 86: A, B = (1 -+ 1/sqrt 2)/(2R), so kappa = 2A, 2B; kappa_max bisects the two axes."""
     R = 10 * MM
-    cyl = Body(r=(R, math.inf), **STEEL)
+    cyl = SweptCircleBody(r=(R, math.inf), **STEEL)
     c = _Point(body1=cyl, body2=cyl, load=1.0, angle=sign * math.pi / 4)
     assert c.kappa_max == pytest.approx((1 + math.sqrt(2) / 2) / R, rel=1e-12)
     assert c.kappa_min == pytest.approx((1 - math.sqrt(2) / 2) / R, rel=1e-12)
@@ -153,7 +154,7 @@ _T1, _T2, _ANGLE = (5 * MM, 20 * MM), (8 * MM, 30 * MM), 0.3
 def test_two_tori_at_an_angle_match_johnson():
     """Johnson 1985 Eqs. (4.4)-(4.5), p. 85: A + B and |B - A| from the body radii and alpha; kappa = 2A, 2B.
     psi: the eigenvector of the largest eigenvalue of K = sum R diag(1/r_x, 1/r_y) R^T (numpy eigh)."""
-    c = _Point(body1=Body(r=_T1, **STEEL), body2=Body(r=_T2, **STEEL), load=1.0, angle=_ANGLE)
+    c = _Point(body1=SweptCircleBody(r=_T1, **STEEL), body2=SweptCircleBody(r=_T2, **STEEL), load=1.0, angle=_ANGLE)
     (k1x, k1y), (k2x, k2y) = (1 / r for r in _T1), (1 / r for r in _T2)
     A_plus_B = 0.5 * (k1x + k1y + k2x + k2y)
     B_minus_A = 0.5 * math.sqrt((k1x - k1y)**2 + (k2x - k2y)**2
@@ -176,7 +177,8 @@ _GAP_CASES = [((_T1, _T2), _ANGLE), ((_T1, _T2), -1.2), ((6.35 * MM, _INNER), 0.
 def test_profiles_give_the_gap_curvatures(radii, angle):
     """The gap -(z1 + z2) of the exact profiles is kappa t^2 / 2 at a small distance t along psi (kappa_max) and
     across it (kappa_min): profiles() and the curvature tensor describe the same two bodies."""
-    c = _Point(body1=Body(r=radii[0], **STEEL), body2=Body(r=radii[1], **STEEL), load=1.0, angle=angle)
+    c = _Point(body1=SweptCircleBody(r=radii[0], **STEEL),
+               body2=SweptCircleBody(r=radii[1], **STEEL), load=1.0, angle=angle)
     t = 1e-5                                                                      # [m], (t / r)^2 <= 1e-5
     cp, sp = math.cos(c.psi), math.sin(c.psi)
     grid = SimpleNamespace(X=np.array([[t * cp, -t * sp]]), Y=np.array([[t * sp, t * cp]]))
@@ -193,7 +195,8 @@ def test_contact_and_hertz_agree_with_hertz_full_on_the_raw_radii(radii, angle):
     the same p0, sorted semi-axes and approach, so the psi rotation and SlipPY's angle agree. Needs SlipPY
     local-fixes (the omega factor 2). Cases outside the SlipPY R-534 domain (both bodies more curved across than
     along)."""
-    c = _Point(body1=Body(r=radii[0], **STEEL), body2=Body(r=radii[1], **STEEL), load=100.0, angle=angle)
+    c = _Point(body1=SweptCircleBody(r=radii[0], **STEEL),
+               body2=SweptCircleBody(r=radii[1], **STEEL), load=100.0, angle=angle)
     sol = hertz_full(r1=radii[0], r2=radii[1], moduli=(STEEL["E"],) * 2, v=(STEEL["nu"],) * 2, load=100.0,
                      angle=angle)
     assert c.kappa_max == pytest.approx(1 / sol["relative_radii"][0], rel=1e-12)
@@ -207,20 +210,23 @@ def test_contact_and_hertz_agree_with_hertz_full_on_the_raw_radii(radii, angle):
 
 
 def test_line_contact_has_zero_kappa_min_along_y():
-    c = _Line(body1=Body(r=(10 * MM, math.inf), **STEEL), body2=Body(r=math.inf, **STEEL), load=1e5)
+    c = _Line(body1=SweptCircleBody(r=(10 * MM, math.inf), **STEEL),
+              body2=SweptCircleBody(r=math.inf, **STEEL), load=1e5)
     assert (c.kappa_max, c.kappa_min, c.psi) == (pytest.approx(100.0), 0.0, 0.0)
 
 
 def test_parallel_cylinders_turned_by_90_deg_are_a_line_along_y():
     """Body 2 r = (inf, R) turned by pi/2 is the cylinder (R, inf): cos(pi/2) = 6e-17 must not tilt the line."""
     R = 10 * MM
-    c = _Line(body1=Body(r=(R, math.inf), **STEEL), body2=Body(r=(math.inf, R), **STEEL), load=1e5,
+    c = _Line(body1=SweptCircleBody(r=(R, math.inf), **STEEL),
+              body2=SweptCircleBody(r=(math.inf, R), **STEEL), load=1e5,
               angle=math.pi / 2)
     assert (c.kappa_max, c.kappa_min, c.psi) == (pytest.approx(2 / R, rel=1e-12), 0.0, 0.0)
 
 
 def test_E_star():
-    c = _Point(body1=Body(r=5 * MM, E=210e9, nu=0.3), body2=Body(r=math.inf, E=70e9, nu=0.33), load=1.0)
+    c = _Point(body1=SweptCircleBody(r=5 * MM, E=210e9, nu=0.3),
+               body2=SweptCircleBody(r=math.inf, E=70e9, nu=0.33), load=1.0)
     assert c.E_star == pytest.approx(1 / ((1 - 0.3**2) / 210e9 + (1 - 0.33**2) / 70e9), rel=1e-14)
 
 
@@ -234,10 +240,22 @@ _BALL, _FLAT = dict(r=5 * MM, **STEEL), dict(r=math.inf, **STEEL)
     dict(r=(math.nan, 5 * MM), **STEEL),
     dict(r=(5 * MM, -math.inf), **STEEL),
     dict(r=(1.0, 2.0, 3.0), **STEEL),
+    dict(**STEEL),                                                              # r missing
 ])
 def test_bad_radius_raises(body):
-    with pytest.raises(ValueError, match="Body: r"):
-        Body(**body)
+    with pytest.raises(ValueError, match="SweptCircleBody: r"):
+        SweptCircleBody(**body)
+
+
+def test_body_is_abstract():
+    """Body is the contract (E, nu, r, profile); only a subclass that gives r and profile is created."""
+    with pytest.raises(TypeError, match="abstract"):
+        Body(**STEEL)
+
+    class _NoProfile(Body):
+        r = (1.0, 1.0)
+    with pytest.raises(TypeError, match="abstract"):
+        _NoProfile(**STEEL)
 
 
 @pytest.mark.parametrize("E, nu, match", [
@@ -246,7 +264,7 @@ def test_bad_radius_raises(body):
 ])
 def test_bad_material_raises(E, nu, match):
     with pytest.raises(ValueError, match=match):
-        Body(r=5 * MM, E=E, nu=nu)
+        SweptCircleBody(r=5 * MM, E=E, nu=nu)
 
 
 @pytest.mark.parametrize("cls, body1, body2, kwargs, match", [
@@ -266,21 +284,21 @@ def test_bad_material_raises(E, nu, match):
 ])
 def test_bad_contact_raises(cls, body1, body2, kwargs, match):
     with pytest.raises(ValueError, match=match):
-        cls(body1=Body(**body1), body2=Body(**body2), label="c1", **kwargs)
+        cls(body1=SweptCircleBody(**body1), body2=SweptCircleBody(**body2), label="c1", **kwargs)
 
 
 def test_contact_names_its_label():
     with pytest.raises(ValueError, match="Contact 'ball_7': load"):
-        _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=-1.0, label="ball_7")
+        _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=-1.0, label="ball_7")
 
 
 def test_contact_is_abstract():
     with pytest.raises(TypeError, match="abstract"):
-        Contact(body1=Body(**_BALL), body2=Body(**_FLAT), load=1.0)
+        Contact(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
 
 
 def test_profiles_turn_body_2_only():
-    body1, body2 = Body(r=(10 * MM, math.inf), **STEEL), Body(r=(10 * MM, math.inf), **STEEL)
+    body1, body2 = SweptCircleBody(r=(10 * MM, math.inf), **STEEL), SweptCircleBody(r=(10 * MM, math.inf), **STEEL)
     grid = SimpleNamespace(X=_X, Y=_Y)
     z1, z2 = _Point(body1=body1, body2=body2, load=1.0, angle=0.4).profiles(grid)
     np.testing.assert_array_equal(z1, body1.profile(_X, _Y))
@@ -609,21 +627,24 @@ _THRUST = dict(r=(math.inf, -6.604 * MM), **STEEL)            # thrust raceway, 
 ])
 def test_bearing_contact_checks(race, kwargs, match):
     with pytest.raises(ValueError, match=match):
-        BallRacewayContact(body1=Body(r=6.35 * MM, **STEEL), body2=Body(**race), load=1.0, **kwargs)
+        BallRacewayContact(body1=SweptCircleBody(r=6.35 * MM, **STEEL),
+                           body2=SweptCircleBody(**race), load=1.0, **kwargs)
 
 
 @pytest.mark.parametrize("alpha", [math.pi / 2, math.pi / 2 + 4.7e-12, math.radians(98.7)])
 def test_thrust_raceway_accepts_any_angle(alpha):
     """A raceway flat along rolling does not depend on alpha; the solver gives a thrust ball alpha_j at and
     beyond 90 deg (pure axial: pi/2 + 4.7e-12; with some Fr up to 98.7 deg)."""
-    c = BallRacewayContact(body1=Body(r=6.35 * MM, **STEEL), body2=Body(**_THRUST), load=1.0, race="inner",
+    c = BallRacewayContact(body1=SweptCircleBody(r=6.35 * MM, **STEEL),
+                           body2=SweptCircleBody(**_THRUST), load=1.0, race="inner",
                            alpha_rad=alpha)
     assert c.psi == 0.0 and c.kappa_max == pytest.approx(1 / (6.35 * MM))
 
 
 def test_bearing_contact_is_abstract():
     with pytest.raises(TypeError, match="abstract"):
-        BearingContact(body1=Body(r=6.35 * MM, **STEEL), body2=Body(**_RACE), load=1.0, race="inner", alpha_rad=0.0)
+        BearingContact(body1=SweptCircleBody(r=6.35 * MM, **STEEL),
+                       body2=SweptCircleBody(**_RACE), load=1.0, race="inner", alpha_rad=0.0)
 
 
 # ---- mesh: Grid around a contact and the step arguments (mesh/grid.py) ----------------------------
@@ -670,7 +691,8 @@ def test_grid_of_a_roller_line_contact(roller_10):
 
 def test_grid_of_the_fzg_h501_line_contact():
     """BR2: FZG H501 at C, b 0.08519 mm -> h 2^-17, n_x 92, n_y 16; 75 697.52 N/m on 16 h = 9.24 N."""
-    c = _Line(body1=Body(r=(14.20546 * MM, math.inf), **STEEL), body2=Body(r=(21.30819 * MM, math.inf), **STEEL),
+    c = _Line(body1=SweptCircleBody(r=(14.20546 * MM, math.inf), **STEEL),
+              body2=SweptCircleBody(r=(21.30819 * MM, math.inf), **STEEL),
               load=75697.52)
     grid = Grid.around(c, _ellipse(math.inf, 0.08519))
     assert grid.h == 2.0**-17 and grid.X.shape == (92, 16)
@@ -680,7 +702,7 @@ def test_grid_of_the_fzg_h501_line_contact():
 def test_grid_covers_a_rotated_ellipse():
     """Two equal crossed cylinders at 0.8 rad: psi = 0.4 (the bisector). The domain covers the bounding box of
     the ellipse (b along psi, a across it), found here by sampling its boundary."""
-    cyl = Body(r=(10 * MM, math.inf), **STEEL)
+    cyl = SweptCircleBody(r=(10 * MM, math.inf), **STEEL)
     c = _Point(body1=cyl, body2=cyl, load=1.0, angle=0.8)
     assert c.psi == pytest.approx(0.4, rel=1e-12)
     a, b = 1.0 * MM, 0.2 * MM
@@ -694,7 +716,7 @@ def test_grid_covers_a_rotated_ellipse():
 
 
 def test_grid_spacing_is_dyadic_and_never_coarser():
-    c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=1.0)
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
     assert Grid.around(c, _ellipse(0.2, 0.1), h=3e-6).h == 2.0**-19          # 1.9 um <= 3 um
     assert Grid.around(c, _ellipse(0.2, 0.1), h=2.0**-19).h == 2.0**-19
 
@@ -707,7 +729,7 @@ def test_grid_spacing_is_dyadic_and_never_coarser():
     (_ellipse(math.inf, 0.1), None, "finite major semi-axis"),
 ])
 def test_grid_around_refuses(ellipse, h, match):
-    c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=1.0)
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
     with pytest.raises(ValueError, match=match):
         Grid.around(c, ellipse, h=h)
 
@@ -740,13 +762,13 @@ def test_step_args_refuses_a_non_periodic_line(roller_10, contrary):
 
 @pytest.mark.parametrize("key", ["normal_load", "interference", "mean_gap"])
 def test_step_args_refuses_another_load(key):
-    c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=1.0)
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
     with pytest.raises(ValueError, match=f"{key} not accepted"):
         Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, **{key: 1.0})
 
 
 def test_step_args_point_with_periodic_flags_keeps_the_full_load():
-    c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=7.0)
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=7.0)
     args = Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, periodic_geometry=True, periodic_axes=(True, True))
     assert args == {"normal_load": 7.0, "periodic_geometry": True, "periodic_axes": (True, True)}
 
@@ -879,7 +901,8 @@ def test_hertz_of_the_fzg_h501_line_contact():
     """BR2 section 6: FZG H501 at C, rho 14.20546 / 21.30819 mm, E 206 000 MPa, nu 0.3, w 75 697.52 N/m:
     p0 565.67 MPa."""
     steel = dict(E=206e9, nu=0.3)
-    c = _Line(body1=Body(r=(14.20546 * MM, math.inf), **steel), body2=Body(r=(21.30819 * MM, math.inf), **steel),
+    c = _Line(body1=SweptCircleBody(r=(14.20546 * MM, math.inf), **steel),
+              body2=SweptCircleBody(r=(21.30819 * MM, math.inf), **steel),
               load=75697.52)
     assert hertz(c).p0 / 1e6 == pytest.approx(565.67, abs=0.005)
 
@@ -917,7 +940,8 @@ def inner_6210(load_case):
 
 def _tori():
     """Two convex tori at 0.3 rad (psi = 0.113 rad), 100 N."""
-    return _Point(body1=Body(r=_T1, **STEEL), body2=Body(r=_T2, **STEEL), load=100.0, angle=_ANGLE, label="tori")
+    return _Point(body1=SweptCircleBody(r=_T1, **STEEL),
+                  body2=SweptCircleBody(r=_T2, **STEEL), load=100.0, angle=_ANGLE, label="tori")
 
 
 def test_bem_of_the_6210_inner_contact(inner_6210, tmp_path):
@@ -974,7 +998,7 @@ def test_bem_of_a_turned_point_contact(tmp_path):
 def test_measure_on_the_hertz_field_along_psi(angle):
     """Closed form: the measurement on the exact Hertz pressure of two tori turned by ``angle`` (psi != 0,
     b/h >= 10) gives p0, b along psi and a across it within 1 %."""
-    c = _Point(body1=Body(r=_T1, **STEEL), body2=Body(r=_T2, **STEEL), load=100.0, angle=angle)
+    c = _Point(body1=SweptCircleBody(r=_T1, **STEEL), body2=SweptCircleBody(r=_T2, **STEEL), load=100.0, angle=angle)
     hz = hertz(c)
     grid = Grid.around(c, hz)
     assert hz.b / grid.h >= 10 and c.psi != 0.0
@@ -1025,7 +1049,7 @@ _R_CYL = 10 * MM                                   # [m] crossed cylinders, John
 def _crossed(angle):
     """Two equal steel cylinders R = 10 mm (axes along y), body 2 at ``angle``, 100 N: b/h = 14.8 on the default
     grid, size_ratio 0.019."""
-    cyl = Body(r=(_R_CYL, math.inf), **STEEL)
+    cyl = SweptCircleBody(r=(_R_CYL, math.inf), **STEEL)
     return _Point(body1=cyl, body2=cyl, load=100.0, angle=angle, label="crossed")
 
 
@@ -1289,13 +1313,13 @@ def test_tooth_contact_checks():
     fields = dict(load=1e5, point="C", dy1_mm=40.0, dy2_mm=80.0, g_y_mm=0.0, share=1.0, l_mm=20.0, l_sum_mm=20.0,
                   n_pairs=1,
                   driver="gear1", material1="given", material2="given")
-    convex, concave = Body(r=(10 * MM, math.inf), **flank), Body(r=(-60 * MM, math.inf), **flank)
+    convex, concave = SweptCircleBody(r=(10 * MM, math.inf), **flank), SweptCircleBody(r=(-60 * MM, math.inf), **flank)
     with pytest.raises(ValueError, match="has not the sign of z2"):
         ToothContact(body1=convex, body2=convex, z2=-60, **fields)
     with pytest.raises(ValueError, match="rho1_n must be > 0"):
         ToothContact(body1=concave, body2=convex, z2=40, **fields)
     with pytest.raises(ValueError, match="straight along the face width"):
-        ToothContact(body1=Body(r=10 * MM, **flank), body2=convex, z2=40, **fields)
+        ToothContact(body1=SweptCircleBody(r=10 * MM, **flank), body2=convex, z2=40, **fields)
     assert ToothContact(body1=convex, body2=concave, z2=-60, **fields).kappa_max > 0
 
 
@@ -1399,7 +1423,8 @@ def test_layer_order_of_the_contact_package():
 
 def test_public_names_import_from_the_package():
     import slippy_bridge.contact as pkg
-    for name in ("Body", "Contact", "Kinematics", "BearingContact", "BallRacewayContact", "RollerRacewayContact",
+    for name in ("Body", "SweptCircleBody", "Contact", "Kinematics", "BearingContact", "BallRacewayContact",
+                 "RollerRacewayContact",
                  "bearing_contacts", "GearContact", "ToothContact", "gear_contacts", "path_diameters", "Grid",
                  "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"):
         assert name in pkg.__all__ and getattr(pkg, name) is not None

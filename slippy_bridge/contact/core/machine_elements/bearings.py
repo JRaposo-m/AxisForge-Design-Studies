@@ -45,7 +45,7 @@ from axisforge.core.machine_elements.bearings.families.family import (is_line_co
                                                                        is_point_contact_family)
 from axisforge.outputs.solvers.bearings.load_distribution.load_distribution_results import wrap_angle
 
-from ..contact import DC, Body, Contact
+from ..contact import DC, Contact, SweptCircleBody
 from . import _MM, _MPA
 
 __all__ = ["BearingContact", "BallRacewayContact", "RollerRacewayContact", "bearing_contacts"]
@@ -188,7 +188,7 @@ def _is_line_contact(bearing) -> bool:
     return line
 
 
-def _bodies(bearing, race: str, alpha: float | None) -> tuple[Body, Body]:
+def _bodies(bearing, race: str, alpha: float | None) -> tuple[SweptCircleBody, SweptCircleBody]:
     """Rolling element (body 1) and raceway (body 2) in SI, outer rolling radius signed.
 
     ``alpha`` None keeps the radii as AxisForge stores them (at ``alpha_0``); otherwise the rolling
@@ -202,8 +202,8 @@ def _bodies(bearing, race: str, alpha: float | None) -> tuple[Body, Body]:
         r2[0] = (bearing.Dpw + sign * D_el * math.cos(alpha)) / (2.0 * math.cos(alpha))
     if race == "outer" and math.isfinite(r2[0]):
         r2[0] = -abs(r2[0])                                  # concave along rolling
-    return (Body(r=tuple(r * _MM for r in r1), E=bearing.e1 * _MPA, nu=bearing.nu1),
-            Body(r=tuple(r * _MM for r in r2), E=bearing.e2 * _MPA, nu=bearing.nu2))
+    return (SweptCircleBody(r=tuple(r * _MM for r in r1), E=bearing.e1 * _MPA, nu=bearing.nu1),
+            SweptCircleBody(r=tuple(r * _MM for r in r2), E=bearing.e2 * _MPA, nu=bearing.nu2))
 
 
 def _row_of(result, row: int):
