@@ -17,7 +17,7 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.con
     ISO16281BallSolver)
 from axisforge.solvers.machine_elements.gears.contact import contact_inputs  # noqa: E402
 
-from references.contact.hertz import hertz_point  # noqa: E402
+from studies.r00_analytical_references.contact.hertz import hertz_point  # noqa: E402
 
 from slippy_bridge.contact.core.contact import Body, Contact  # noqa: E402
 from slippy_bridge.contact.core.machine_elements.bearings import (BallRacewayContact, BearingContact,  # noqa: E402
