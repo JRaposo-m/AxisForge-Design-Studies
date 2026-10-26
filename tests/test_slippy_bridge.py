@@ -18,6 +18,8 @@ from slippy_bridge.contact.core.contact import Body, Contact  # noqa: E402
 from slippy_bridge.contact.core.machine_elements.bearings import (BallRacewayContact, BearingContact,  # noqa: E402
                                                                   RollerRacewayContact, bearing_contacts)
 from slippy_bridge.contact.mesh.grid import SPAN_X_0, Grid  # noqa: E402
+from slippy_bridge.contact.results.hertz import HertzResult  # noqa: E402
+from slippy_bridge.contact.results.static import StaticResult  # noqa: E402
 
 STEEL = dict(E=210e9, nu=0.3)                      # [Pa], [-]
 MM = 1e-3                                          # [m/mm]
@@ -604,9 +606,12 @@ def test_bearing_contact_is_abstract():
 
 # ---- mesh: Grid around a contact and the step arguments (mesh/grid.py) ----------------------------
 
-def _ellipse(a_mm, b_mm):
-    """Stand-in for the HertzResult semi-axes that size the grid (mm -> m; a = inf for a line)."""
-    return SimpleNamespace(a=a_mm * MM, b=b_mm * MM)
+def _ellipse(a_mm, b_mm, psi=0.0):
+    """A HertzResult with only the ellipse that sizes the grid set (mm -> m; a = inf for a line); the other
+    values are placeholders, Grid.around does not read them."""
+    line = math.isinf(a_mm)
+    return HertzResult(p0=1.0, a=a_mm * MM, b=b_mm * MM, psi=psi, delta=math.nan, b_over_a=0.0 if line else b_mm / a_mm,
+                       E_star=1.0, size_ratio=0.0, valid=True, line=line)
 
 
 @pytest.mark.parametrize("race, a_mm, b_mm, n_x, n_y", [("inner", 1.5307, 0.1666, 90, 264),
@@ -660,7 +665,7 @@ def test_grid_covers_a_rotated_ellipse():
     t = np.linspace(0.0, 2 * math.pi, 100001)
     x = b * np.cos(t) * math.cos(c.psi) - a * np.sin(t) * math.sin(c.psi)
     y = b * np.cos(t) * math.sin(c.psi) + a * np.sin(t) * math.cos(c.psi)
-    grid = Grid.around(c, SimpleNamespace(a=a, b=b))
+    grid = Grid.around(c, _ellipse(a / MM, b / MM, psi=c.psi))
     for coord, extent, span in ((grid.X, x.max(), SPAN_X_0), (grid.Y, y.max(), 1.3)):
         assert coord.max() >= span * extent and coord.max() - grid.h < span * extent + 1e-12   # tight on +side
     assert grid.X.max() > 2 * SPAN_X_0 * b                                    # wider than the unrotated b
@@ -722,6 +727,101 @@ def test_step_args_point_with_periodic_flags_keeps_the_full_load():
     c = _Point(body1=Body(**_BALL), body2=Body(**_FLAT), load=7.0)
     args = Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, periodic_geometry=True, periodic_axes=(True, True))
     assert args == {"normal_load": 7.0, "periodic_geometry": True, "periodic_axes": (True, True)}
+
+
+# ---- results: HertzResult and StaticResult, data only (results/) ---------------------------------
+
+def _hertz(a, b, psi=0.0, line=False, p0=1e9):
+    return HertzResult(p0=p0, a=a, b=b, psi=psi, delta=math.nan if line else 1e-6, b_over_a=0.0 if line else b / a,
+                       E_star=115e9, size_ratio=0.05, valid=True, line=line)
+
+
+def test_hertz_pressure_on_a_rotated_ellipse():
+    """Johnson 1985 p. 95 (elliptical pressure, from Eq. (3.58)): p0 at the centre, 0 at b along psi and at a across it, p0 sqrt(3)/2 at b/2."""
+    a, b, psi = 1.0 * MM, 0.2 * MM, 0.4
+    hz = _hertz(a, b, psi)
+    along, across = np.array([math.cos(psi), math.sin(psi)]), np.array([-math.sin(psi), math.cos(psi)])
+    pts = np.array([[0.0, 0.0], b * along, -b * along, a * across, 0.5 * b * along, 1.01 * b * along])
+    p = hz.pressure(pts[:, 0], pts[:, 1])
+    assert p[0] == hz.p0
+    assert p[1:4] == pytest.approx(0.0, abs=1e-6 * hz.p0)
+    assert p[4] == pytest.approx(hz.p0 * math.sqrt(0.75), rel=1e-12) and p[5] == 0.0
+
+
+def test_hertz_pressure_of_a_line_is_a_strip():
+    """Johnson 1985 Eq. (4.44): p0 sqrt(1 - (x/b)^2), independent of y (a = inf)."""
+    hz = _hertz(math.inf, 0.1 * MM, line=True)
+    X, Y = np.meshgrid(np.linspace(-0.15, 0.15, 7) * MM, np.linspace(-5.0, 5.0, 4) * MM, indexing="ij")
+    p = hz.pressure(X, Y)
+    np.testing.assert_array_equal(p, p[:, :1] * np.ones_like(p))
+    np.testing.assert_allclose(p[:, 0], hz.p0 * np.sqrt(np.clip(1 - (X[:, 0] / (0.1 * MM))**2, 0, None)), rtol=1e-12)
+
+
+def test_hertz_pressure_integrates_to_the_load():
+    """Johnson 1985 Eq. (4.27): P = (2/3) p0 pi a b, summed on a fine grid over an ellipse turned by 0.4 rad."""
+    hz = _hertz(1.0 * MM, 0.2 * MM, psi=0.4)
+    h = 2e-6
+    x = np.arange(-1.1 * MM, 1.1 * MM, h)
+    X, Y = np.meshgrid(x, x, indexing="ij")
+    assert hz.pressure(X, Y).sum() * h**2 == pytest.approx(2 / 3 * hz.p0 * math.pi * hz.a * hz.b, rel=1e-3)
+
+
+def test_hertz_half_extents():
+    hz = _hertz(1.0 * MM, 0.2 * MM, psi=0.4)
+    assert hz.half_extents() == (math.hypot(0.2 * MM * math.cos(0.4), 1.0 * MM * math.sin(0.4)),
+                                 math.hypot(0.2 * MM * math.sin(0.4), 1.0 * MM * math.cos(0.4)))
+    assert _hertz(math.inf, 0.1 * MM, line=True).half_extents() == (0.1 * MM, math.inf)
+
+
+def test_hertz_record_keys():
+    assert list(_hertz(1.0 * MM, 0.2 * MM).record()) == ["p0_Pa", "a_m", "b_m", "psi_rad", "delta_m", "b_over_a",
+                                                        "E_star_Pa", "size_ratio", "valid", "line"]
+    assert list(_hertz(1.0 * MM, 0.2 * MM).record("_ref"))[:5] == ["p0_ref_Pa", "a_ref_m", "b_ref_m", "psi_ref_rad",
+                                                                   "delta_ref_m"]
+
+
+def _static_result(contact, grid, hz):
+    """A StaticResult filled by hand (the solver fills it in C6): Hertz pressure as the 'solution'."""
+    z1, z2 = contact.profiles(grid)
+    p = hz.pressure(grid.X, grid.Y)
+    return StaticResult(contact=contact, grid=grid, z1=z1, z2=z2, gap0=-(z1 + z2), load_applied=contact.load,
+                        period=math.nan, use_frequency_domain=True, method="pk", tolerance=1e-9, converged=True,
+                        solve_time=0.1, p=p, delta=hz.delta, p0=float(p.max()), a=hz.a, b=hz.b,
+                        load=float(p.sum() * grid.h**2), apex_offset_nodes=0.0, hertz=hz, err_p0=0.0, err_a=0.0,
+                        err_b=0.0, err_delta=0.0, err_load=0.0, load_ok=True, edge_clear=True, margin_ok=True,
+                        resolution_ok=True, within_reference=True,
+                        commits={"axisforge": "abc", "slippy": "def"})
+
+
+def test_static_record_of_a_6210_contact(load_case):
+    """record(): every scalar, no arrays; identification from the contact's own fields; R_x = 1/kappa_max =
+    5.198 mm (BR1 section 5), R_y 165.1 mm; the Hertz values with _ref; missing commits 'unknown'."""
+    (c,) = bearing_contacts(load_case("iso16281_ball_contact").build_bearing(0.0), load=1000.0, races=("inner",))
+    hz = _hertz(1.5307 * MM, 0.1666 * MM, p0=1.88e9)
+    rec = _static_result(c, Grid.around(c, hz), hz).record()
+    assert all(v is None or isinstance(v, (bool, int, float, str)) for v in rec.values())
+    assert (rec["contact"], rec["label"], rec["line"], rec["race"], rec["alpha_rad"], rec["j"]) == (
+        "BallRacewayContact", "6210_inner", False, "inner", 0.0, None)
+    assert rec["R_x_m"] / MM == pytest.approx(5.198, abs=0.0005) and rec["R_y_m"] / MM == pytest.approx(165.1, abs=0.05)
+    assert rec["r2_x_m"] == pytest.approx(28.65 * MM) and rec["r2_y_m"] == pytest.approx(-6.604 * MM)
+    assert rec["E1_Pa"] == 210e9 and rec["Q_N"] == 1000.0 and math.isnan(rec["w_N_per_m"])
+    assert math.isnan(rec["period_m"]) and rec["hertz_valid"] is True
+    assert (rec["n_x"], rec["n_y"], rec["h_m"]) == (90, 264, 2.0**-16)
+    assert rec["span_x"] >= SPAN_X_0 and rec["span_y"] >= 1.3
+    assert rec["p0_ref_Pa"] == 1.88e9 and rec["b_ref_m"] == 0.1666 * MM and rec["p0_Pa"] == pytest.approx(1.88e9)
+    assert (rec["commit_axisforge"], rec["commit_slippy"], rec["commit_design_studies"]) == ("abc", "def", "unknown")
+    for key in ("body1", "body2", "kappa_max", "p", "z1", "grid", "hertz", "psi_ref_rad", "E_star_ref_Pa",
+                "line_ref", "valid_ref", "load_contact"):
+        assert key not in rec
+
+
+def test_static_record_of_a_line_contact(roller_10):
+    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    hz = _hertz(math.inf, 0.0688 * MM, line=True)
+    rec = _static_result(c, Grid.around(c, hz), hz).record()
+    assert rec["R_y_m"] == math.inf and math.isnan(rec["span_y"]) and rec["span_x"] >= SPAN_X_0
+    assert rec["k"] is None and rec["x_mm"] is None and rec["contact"] == "RollerRacewayContact"
+    assert rec["w_N_per_m"] == pytest.approx(1e5) and math.isnan(rec["Q_N"])
 
 
 # ---- FZG C40 checks that do not use the bridge (validation/gears/fzg_geometry_ph) -------------

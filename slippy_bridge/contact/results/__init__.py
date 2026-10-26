@@ -1,2 +1,3 @@
-"""Third level, data only: the results of the Hertz and static BEM solvers. Imports ``core`` and
-``mesh``, never ``solvers``."""
+"""Third level, data only: ``hertz.HertzResult`` (the Hertz ellipse and pressure of a contact) and
+``static.StaticResult`` (one static BEM solve: fields, measured values, errors, checks, provenance).
+Imports ``core`` (and ``mesh`` for type hints), never ``solvers`` or SlipPY; the solvers fill them."""

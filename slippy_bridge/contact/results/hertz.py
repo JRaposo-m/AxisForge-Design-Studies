@@ -1,0 +1,117 @@
+"""Hertz solution of one contact, on the bridge axes: data only (filled by ``solvers.hertz``).
+
+References
+----------
+Johnson, K. L. (1985). *Contact Mechanics*. Cambridge University Press. Section 4.2(b),
+p. 95 (elliptical pressure, the unnumbered line after Eq. (3.58)), Eqs. (4.27)-(4.28), p. 95; section 4.2(c), Eqs. (4.43)-(4.45), p. 101 (line
+contact; the approach is not defined locally, text after Eq. (4.37), p. 100); section 4.2, list
+(i)-(iv), p. 91-92 (assumptions).
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+import numpy as np
+
+from ..core.contact import DC
+
+__all__ = ["HertzResult"]
+
+
+@dataclass(**DC)
+class HertzResult:
+    """Hertz pressure and contact ellipse of one contact, oriented on the bridge axes.
+
+    The contact ellipse has its minor semi-axis ``b`` along ``psi`` (the direction of the larger
+    relative curvature ``kappa_max``) and its major semi-axis ``a`` across it (Johnson 1985 p. 98:
+    ``a > b``, ``a`` along the smaller curvature). A line contact along bridge y has ``a = inf``
+    and ``b`` its half-width (Johnson calls the half-width ``a``, section 4.2(c)).
+
+    Filled by ``solvers.hertz`` from SlipPY ``hertz_full``: ``p0`` = ``max_pressure``, ``a``, ``b``
+    = ``contact_radii`` sorted (SlipPY's order, from Deeg, is not major/minor; a line gives
+    ``[inf, half-width]``), ``delta`` = ``total_deflection`` (absent for a line), ``E_star`` =
+    ``e_star`` (Johnson's E*, not E').
+
+    Parameters
+    ----------
+    p0 : float
+        Maximum (central) pressure [Pa].
+    a : float
+        Major semi-axis, across ``psi`` [m]; ``inf`` for a line.
+    b : float
+        Minor semi-axis, along ``psi`` [m]; the half-width of a line.
+    psi : float
+        Direction of the minor semi-axis from bridge x [rad], positive toward y (``Contact.psi``).
+    delta : float
+        Total approach of distant points of the two bodies [m]; ``nan`` for a line, where it
+        depends on the size of the bodies and is not defined by the local solution.
+    b_over_a : float
+        Ellipse aspect ratio ``b/a`` [-]; 0 for a line.
+    E_star : float
+        Contact modulus [Pa].
+    size_ratio : float
+        Size of the contact against the relative radii, ``max(b kappa_max, a kappa_min)`` [-]
+        (``a kappa_min = 0`` for a line): Hertz assumes it small, a << R (Johnson 4.2 (i)-(ii)).
+        Only this relative-radius criterion; the per-body condition a << R1, R2 (iii) is not
+        checked (OPEN SB-07; e.g. 6210 a/|r_groove| = 0.23).
+    valid : bool
+        Whether ``size_ratio`` is within the limit the solver applies (Hertz validity).
+    line : bool
+        True for a line contact (load per unit length).
+    """
+
+    p0: float
+    a: float
+    b: float
+    psi: float
+    delta: float
+    b_over_a: float
+    E_star: float
+    size_ratio: float
+    valid: bool
+    line: bool
+
+    def pressure(self, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+        """Hertz pressure on bridge coordinates [Pa], zero outside the contact.
+
+        ``p0 sqrt(1 - (xi/b)^2 - (eta/a)^2)`` with ``xi`` along ``psi`` and ``eta`` across it
+        (Johnson 1985 p. 95, the unnumbered line from Eq. (3.58)); a line has ``a = inf``, so the strip
+        ``p0 sqrt(1 - (x/b)^2)`` (Eq. (4.44), p. 101).
+
+        Parameters
+        ----------
+        X, Y : ndarray
+            Bridge coordinates [m] (x rolling, y across), same shape.
+
+        Returns
+        -------
+        ndarray
+            Pressure [Pa], same shape as ``X``.
+        """
+        c, s = math.cos(self.psi), math.sin(self.psi)
+        xi = X * c + Y * s                                   # along psi: minor semi-axis b
+        eta = -X * s + Y * c                                 # across psi: major semi-axis a (inf: 0)
+        return self.p0 * np.sqrt(np.clip(1.0 - (xi / self.b) ** 2 - (eta / self.a) ** 2, 0.0, None))
+
+    def half_extents(self) -> tuple[float, float]:
+        """Half-extents of the contact ellipse on the bridge axes, ``(X_half, Y_half)`` [m].
+
+        The bounding box of the ellipse turned by ``psi``: ``X_half = hypot(b cos psi, a sin psi)``,
+        ``Y_half = hypot(b sin psi, a cos psi)`` (``b``, ``a`` when ``psi = 0``). A line along y:
+        ``(b, inf)`` (the formula would give ``inf * 0``).
+        """
+        if self.line:
+            return self.b, math.inf
+        c, s = math.cos(self.psi), math.sin(self.psi)
+        return math.hypot(self.b * c, self.a * s), math.hypot(self.b * s, self.a * c)
+
+    # OPEN SB-10: record keys carry the unit (p0_Pa, a_m), attributes do not
+    def record(self, tag: str = "") -> dict:
+        """Flat record of the scalars, the unit in the key and ``tag`` before the unit:
+        ``p0{tag}_Pa``, ``a{tag}_m``, ``b{tag}_m``, ``psi{tag}_rad``, ``delta{tag}_m``,
+        ``b_over_a{tag}``, ``E_star{tag}_Pa``, ``size_ratio{tag}``, ``valid{tag}``, ``line{tag}``
+        (``tag="_ref"`` gives ``p0_ref_Pa``, the name a study reads)."""
+        return {f"p0{tag}_Pa": self.p0, f"a{tag}_m": self.a, f"b{tag}_m": self.b, f"psi{tag}_rad": self.psi,
+                f"delta{tag}_m": self.delta, f"b_over_a{tag}": self.b_over_a, f"E_star{tag}_Pa": self.E_star,
+                f"size_ratio{tag}": self.size_ratio, f"valid{tag}": self.valid, f"line{tag}": self.line}

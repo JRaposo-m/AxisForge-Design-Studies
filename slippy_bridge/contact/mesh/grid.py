@@ -94,19 +94,18 @@ class Grid:
                span_y: float = 1.3, n_y_line: int = 16) -> Grid:
         """Grid around the contact centre, sized on the Hertz contact ellipse.
 
-        The ellipse has its minor semi-axis ``b`` along ``contact.psi`` and its major semi-axis
-        ``a`` across it; the domain covers its bounding box on the bridge axes, with half-extents
-        ``X_half = hypot(b cos psi, a sin psi)`` and ``Y_half = hypot(b sin psi, a cos psi)``
-        (``b`` along x and ``a`` along y when ``psi = 0``, the bearing case). A line contact (its
-        line along y, ``psi = 0``) has ``X_half = b`` and ``n_y_line`` nodes along its periodic axis.
+        The domain covers the bounding box of the Hertz ellipse on the bridge axes, half-extents
+        ``(X_half, Y_half) = hertz.half_extents()`` (``b`` along x and ``a`` along y when
+        ``psi = 0``, the bearing case). A line contact (its line along y) has ``X_half = b`` and
+        ``n_y_line`` nodes along its periodic axis.
 
         Parameters
         ----------
         contact : Contact
-            Read for ``line`` and ``psi``.
-        hertz : object with ``a``, ``b``
-            The Hertz ellipse of ``contact`` (``solvers.hertz(contact)``, a ``HertzResult``):
-            semi-axes ``a >= b`` [m], ``a = inf`` for a line.
+            Read for ``line``.
+        hertz : object with ``b`` and ``half_extents()``
+            The Hertz ellipse of ``contact`` (``solvers.hertz(contact)``, a ``HertzResult``, whose
+            ``psi`` is ``contact.psi`` by construction): minor semi-axis ``b`` [m].
         h : float, optional
             Grid spacing [m]; rounded down to a power of two (never coarser). Default ``b / 10``.
         span_x : float
@@ -128,18 +127,14 @@ class Grid:
         ValueError
             If ``b`` or a given ``h`` is not positive and finite, or a point contact has ``a = inf``.
         """
-        a, b, psi = hertz.a, hertz.b, contact.psi
+        b = hertz.b
         if not (b > 0 and math.isfinite(b)):
             raise ValueError(f"Grid.around: the minor semi-axis b must be positive and finite, got {b}")
         if h is not None and not (h > 0 and math.isfinite(h)):
             raise ValueError(f"Grid.around: h must be positive and finite, got {h}")
-        if contact.line:
-            X_half = b                                    # psi = 0 (Contact); a = inf would give inf * 0
-        else:
-            if not math.isfinite(a):
-                raise ValueError(f"Grid.around: a point contact needs a finite major semi-axis a, got {a}")
-            X_half = math.hypot(b * math.cos(psi), a * math.sin(psi))
-            Y_half = math.hypot(b * math.sin(psi), a * math.cos(psi))
+        X_half, Y_half = hertz.half_extents()
+        if not contact.line and not math.isfinite(Y_half):
+            raise ValueError(f"Grid.around: a point contact needs a finite major semi-axis a, got {hertz.a}")
         h = 2.0 ** math.floor(math.log2(b / 10.0 if h is None else h))   # dyadic, never coarser than asked
 
         # Node count: the contact centre is the origin and sits on node n//2, because
