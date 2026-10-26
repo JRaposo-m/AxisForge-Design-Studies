@@ -78,7 +78,9 @@ class StaticResult:
     load : float
         Measured load [N]: SlipPY ``total_normal_load``, ``sum p h^2`` over the grid.
     apex_offset_nodes : float
-        Distance of the pressure maximum from the grid centre node [nodes].
+        Distance of the pressure maximum from the grid centre node [nodes]: a node-level
+        indicator (on a flat top the maximum may fall one node off, e.g. on a true raceway whose
+        pressure centre moves a fraction of a node), not a measured shift.
     hertz : HertzResult
         Hertz reference of the contact.
     err_p0, err_a, err_b, err_delta, err_load : float
@@ -151,8 +153,9 @@ class StaticResult:
 
         * identification: ``contact`` (class name), ``label``, ``line`` and the contact's own scalar
           fields under their names (bearing: ``race``, ``alpha_rad``, ``j``, ``phi_rad``, ...);
-        * geometry: ``r1_x_m``, ``r1_y_m``, ``r2_x_m``, ``r2_y_m`` (signed body radii in the body
-          frames), ``E1_Pa``, ``E2_Pa``, ``nu1``, ``nu2``, ``angle_rad``, ``kappa_max_per_m``,
+        * geometry: ``body1_class``, ``body2_class`` (the Body subclasses: a local torus and a
+          true raceway have the same radii), ``r1_x_m``, ``r1_y_m``, ``r2_x_m``, ``r2_y_m`` (signed
+          body radii in the body frames), ``E1_Pa``, ``E2_Pa``, ``nu1``, ``nu2``, ``angle_rad``, ``kappa_max_per_m``,
           ``kappa_min_per_m``, ``psi_rad``, ``R_x_m = 1/kappa_max`` and ``R_y_m = 1/kappa_min``
           (principal relative radii along ``psi`` and across it; they are along bridge x and y
           only when ``psi = 0``; ``R_y_m = inf`` for a line), ``E_star_Pa``;
@@ -179,7 +182,8 @@ class StaticResult:
             if f.name not in _CONTACT_GROUPED and (value is None or isinstance(value, (bool, int, float, str))):
                 ident[f.name] = value
         (r1x, r1y), (r2x, r2y) = c.body1.r, c.body2.r
-        geometry = {"r1_x_m": r1x, "r1_y_m": r1y, "r2_x_m": r2x, "r2_y_m": r2y,
+        geometry = {"body1_class": type(c.body1).__name__, "body2_class": type(c.body2).__name__,
+                    "r1_x_m": r1x, "r1_y_m": r1y, "r2_x_m": r2x, "r2_y_m": r2y,
                     "E1_Pa": c.body1.E, "E2_Pa": c.body2.E, "nu1": c.body1.nu, "nu2": c.body2.nu,
                     "angle_rad": c.angle, "kappa_max_per_m": c.kappa_max, "kappa_min_per_m": c.kappa_min,
                     "psi_rad": c.psi, "R_x_m": 1.0 / c.kappa_max,

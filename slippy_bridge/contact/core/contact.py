@@ -129,6 +129,16 @@ class Body(ABC):
             If a node lies beyond the body (the grid is too large for it).
         """
 
+    @staticmethod
+    def _body_frame(X: np.ndarray, Y: np.ndarray, angle: float) -> tuple[np.ndarray, np.ndarray]:
+        """Node coordinates (x_b, y_b) [m] on the body axes, x_b at ``angle`` from the frame x axis.
+
+        The rotation every :meth:`profile` applies first (projections on the body axes).
+        """
+        X, Y = np.asarray(X, dtype=float), np.asarray(Y, dtype=float)
+        c, s = math.cos(angle), math.sin(angle)
+        return X * c + Y * s, -X * s + Y * c
+
 
 @dataclass(**DC)
 class SweptCircleBody(Body):
@@ -189,11 +199,7 @@ class SweptCircleBody(Body):
             outside the swept circle (``|x_b| >= |rho|``), or past the axis of revolution (the
             local rolling radius ``rho`` changes sign). The grid is too large for the body.
         """
-        X, Y = np.asarray(X, dtype=float), np.asarray(Y, dtype=float)
-        c, s = math.cos(angle), math.sin(angle)
-        # bridge -> body frame: projections on the body axes (x_b at `angle` from bridge x)
-        x = X * c + Y * s
-        y = -X * s + Y * c
+        x, y = self._body_frame(X, Y, angle)
         r_x, r_y = self.r
         with np.errstate(invalid="ignore"):                  # NaN beyond the body, caught below
             # sag of the generating circle across rolling; copysign keeps the concave branch for r_y < 0
