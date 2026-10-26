@@ -182,13 +182,12 @@ class StaticResult:
                     "angle_rad": c.angle, "kappa_max_per_m": c.kappa_max, "kappa_min_per_m": c.kappa_min,
                     "psi_rad": c.psi, "R_x_m": 1.0 / c.kappa_max,
                     "R_y_m": math.inf if c.kappa_min == 0 else 1.0 / c.kappa_min, "E_star_Pa": c.E_star}
-        X_half, Y_half = hz.half_extents()                  # as Grid.around sizes the domain
+        span_x, span_y = g.spans(hz)
         x, y = g.X[:, 0], g.Y[0, :]
         grid = {"h_m": g.h, "n_x": g.X.shape[0], "n_y": g.X.shape[1],
                 "x_min_m": float(x.min()), "x_max_m": float(x.max()),
                 "y_min_m": float(y.min()), "y_max_m": float(y.max()),
-                "span_x": min(-x.min(), x.max()) / X_half,
-                "span_y": math.nan if c.line else min(-y.min(), y.max()) / Y_half}
+                "span_x": span_x, "span_y": span_y}
         ref = {k: v for k, v in hz.record("_ref").items()
                if k not in ("psi_ref_rad", "E_star_ref_Pa", "line_ref", "valid_ref")}
         return {**ident, **geometry, **grid, "build": self.build,

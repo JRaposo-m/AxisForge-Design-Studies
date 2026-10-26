@@ -150,6 +150,17 @@ class Grid:
         X, Y = np.meshgrid(x, y, indexing="ij")
         return cls(X=X, Y=Y, h=h)
 
+    def spans(self, hertz) -> tuple[float, float]:
+        """Shorter side of the domain from the contact centre, in half-extents of the Hertz ellipse
+        on the bridge axes (``hertz.half_extents()``), ``(span_x, span_y)`` [-]: the ``span_x``,
+        ``span_y`` that :meth:`around` was given (at least). ``span_y`` is nan for a line
+        (``hertz.line``; y is periodic).
+        """
+        X_half, Y_half = hertz.half_extents()
+        x, y = self.X[:, 0], self.Y[0, :]
+        span_x = min(-x.min(), x.max()) / X_half
+        return span_x, math.nan if hertz.line else min(-y.min(), y.max()) / Y_half
+
     @property
     def length_y_m(self) -> float:
         """Length of the domain across rolling, ``n_y h`` [m]: the period of a line contact."""
@@ -180,7 +191,8 @@ class Grid:
         Raises
         ------
         ValueError
-            If ``step_kwargs`` sets the load (``normal_load``, ``interference``, ``mean_gap``);
+            If ``step_kwargs`` sets the load (``normal_load``, ``interference``, ``mean_gap``) or an
+            offset of the surfaces (``off_set_x``, ``off_set_y``: the apex stays on the centre node);
             for a line contact given ``periodic_geometry`` other than True or ``periodic_axes``
             other than ``(False, True)``: the load would still be that of one period of an
             infinite cylinder while the solve is not periodic.
@@ -188,6 +200,10 @@ class Grid:
         load_keys = sorted({"normal_load", "interference", "mean_gap"} & step_kwargs.keys())
         if load_keys:
             raise ValueError(f"step_args: {', '.join(load_keys)} not accepted; the load is contact.load")
+        # the measurement of a solve assumes the apex on the grid centre node
+        offsets = sorted({"off_set_x", "off_set_y"} & step_kwargs.keys())
+        if offsets:
+            raise ValueError(f"step_args: {', '.join(offsets)} not accepted; the apex stays on the centre node")
         if contact.line:
             geometry = step_kwargs.setdefault("periodic_geometry", True)
             if geometry is not True:

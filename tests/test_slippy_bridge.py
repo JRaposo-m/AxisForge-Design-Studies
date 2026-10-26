@@ -23,6 +23,8 @@ from slippy_bridge.contact.mesh.grid import SPAN_X_0, Grid  # noqa: E402
 from slippy_bridge.contact.results.hertz import HertzResult  # noqa: E402
 from slippy_bridge.contact.results.static import StaticResult  # noqa: E402
 from slippy_bridge.contact.solvers.hertz import hertz  # noqa: E402
+from slippy_bridge.contact.solvers.static import _measure, solve  # noqa: E402
+from slippy_bridge.contact.solvers.surfaces import surface_pair  # noqa: E402
 from slippy.contact import hertz_full  # noqa: E402
 
 STEEL = dict(E=210e9, nu=0.3)                      # [Pa], [-]
@@ -885,6 +887,133 @@ def test_hertz_of_the_6210_inner_integrates_to_Q(load_case):
     X, Y = np.meshgrid(np.arange(-1.05 * hz.b, 1.05 * hz.b, h), np.arange(-1.05 * hz.a, 1.05 * hz.a, h),
                        indexing="ij")
     assert hz.pressure(X, Y).sum() * h**2 == pytest.approx(1000.0, rel=1e-3)
+
+
+# ---- solvers: surfaces and the static BEM solve (solvers/surfaces.py, solvers/static.py) ---------------
+
+def _bem(contact, tmp_path, *, use_frequency_domain=True, solve_kwargs=None, **around):
+    """Hertz once, the grid around it, and the static BEM solve with that Hertz (SlipPY files to tmp_path)."""
+    pytest.importorskip("pyfftw", reason="SlipPY plan_convolve needs pyfftw (R-128)")
+    hz = hertz(contact)
+    return solve(contact, Grid.around(contact, hz, **around), tmp_path, hertz_result=hz,
+                 use_frequency_domain=use_frequency_domain, **(solve_kwargs or {}))
+
+
+def _all_checks(res):
+    return all((res.converged, res.load_ok, res.edge_clear, res.margin_ok, res.resolution_ok, res.within_reference,
+                res.hertz_valid))
+
+
+@pytest.fixture
+def inner_6210(load_case):
+    """Ball on the 6210 inner raceway, Q 1000 N (BR1 section 5)."""
+    return bearing_contacts(load_case("iso16281_ball_contact").build_bearing(0.0), load=1000.0, races=("inner",))[0]
+
+
+def _tori():
+    """Two convex tori at 0.3 rad (psi = 0.113 rad), 100 N."""
+    return _Point(body1=Body(r=_T1, **STEEL), body2=Body(r=_T2, **STEEL), load=100.0, angle=_ANGLE, label="tori")
+
+
+def test_bem_of_the_6210_inner_contact(inner_6210, tmp_path):
+    """End to end on the default (frequency-domain) kernel: p0 within 1 %, b, a and the approach within 3 % of
+    Hertz; every check passes; the record carries the commits. The approach holds at the default span_y 1.3
+    only: the image error of the frequency kernel is not monotonic in the domain (R-046, R-509; span_y 2.0
+    gives +4.7 %)."""
+    res = _bem(inner_6210, tmp_path)
+    assert abs(res.err_p0) <= 0.01
+    for err in (res.err_b, res.err_a, res.err_delta):
+        assert abs(err) <= 0.03
+    assert _all_checks(res) and res.total_displacement_z.shape == res.grid.X.shape
+    rec = res.record()
+    assert all(isinstance(rec[f"commit_{k}"], str) for k in ("axisforge", "slippy", "design_studies"))
+
+
+@pytest.mark.parametrize("make", ["inner_6210", "tori"])
+def test_bem_of_a_point_contact_on_the_spatial_kernel(make, inner_6210, tmp_path):
+    """The spatial (Boussinesq) kernel has no images, so the approach does not depend on the domain: p0 within
+    1 %, b, a and the approach within 3 % of Hertz."""
+    c = inner_6210 if make == "inner_6210" else _tori()
+    res = _bem(c, tmp_path, use_frequency_domain=False)
+    assert abs(res.err_p0) <= 0.01
+    for err in (res.err_b, res.err_a, res.err_delta):
+        assert abs(err) <= 0.03
+    assert _all_checks(res) and not res.use_frequency_domain
+
+
+def test_bem_of_a_roller_line_contact(roller_10, tmp_path):
+    """Roller 10 x 10 on Dpw 70, Q 1000 N inner (periodic strip): p0 within 1 %, b within 3 % of Hertz."""
+    res = _bem(bearing_contacts(roller_10, load=1000.0, races=("inner",))[0], tmp_path)
+    assert abs(res.err_p0) <= 0.01 and abs(res.err_b) <= 0.03 and _all_checks(res)
+    assert math.isnan(res.delta) and res.a == math.inf and res.period == res.grid.length_y_m
+    assert res.load_applied == pytest.approx(1e5 * res.period, rel=1e-12)
+
+
+def test_bem_of_the_fzg_h501_line_contact(tmp_path):
+    """FZG H501 at C as a hand-built line contact (the test's _Line): rho 14.20546 / 21.30819 mm, E 206 GPa,
+    w 75 697.52 N/m: p0 within 1 %, b within 3 % of Hertz."""
+    steel = dict(E=206e9, nu=0.3)
+    c = _Line(body1=Body(r=(14.20546 * MM, math.inf), **steel), body2=Body(r=(21.30819 * MM, math.inf), **steel),
+              load=75697.52, label="h501_C")
+    res = _bem(c, tmp_path)
+    assert abs(res.err_p0) <= 0.01 and abs(res.err_b) <= 0.03 and _all_checks(res)
+
+
+def test_bem_of_a_turned_point_contact(tmp_path):
+    """Two tori at 0.3 rad: the measured b along psi and a across it, p0 and the approach against Hertz (default
+    kernel and span_y; see the 6210 test for the approach)."""
+    res = _bem(_tori(), tmp_path)
+    assert abs(res.err_p0) <= 0.01
+    for err in (res.err_b, res.err_a, res.err_delta):
+        assert abs(err) <= 0.03
+    assert _all_checks(res)
+
+
+@pytest.mark.parametrize("angle", [0.3, -1.2, 0.8])
+def test_measure_on_the_hertz_field_along_psi(angle):
+    """Closed form: the measurement on the exact Hertz pressure of two tori turned by ``angle`` (psi != 0,
+    b/h >= 10) gives p0, b along psi and a across it within 1 %."""
+    c = _Point(body1=Body(r=_T1, **STEEL), body2=Body(r=_T2, **STEEL), load=100.0, angle=angle)
+    hz = hertz(c)
+    grid = Grid.around(c, hz)
+    assert hz.b / grid.h >= 10 and c.psi != 0.0
+    p0, b, a, _ = _measure(hz.pressure(grid.X, grid.Y), grid.h, c.psi, False)
+    assert p0 == pytest.approx(hz.p0, rel=0.01) and b == pytest.approx(hz.b, rel=0.01)
+    assert a == pytest.approx(hz.a, rel=0.01)
+
+
+def test_short_domain_is_flagged(inner_6210, tmp_path):
+    """span_x = 2 (half the default): margin_ok is False."""
+    assert not _bem(inner_6210, tmp_path, span_x=2.0).margin_ok
+
+
+def test_narrow_domain_is_flagged(inner_6210, tmp_path):
+    """span_y = 0.8: the contact is cut across rolling, pressure on the boundary: edge_clear is False."""
+    assert not _bem(inner_6210, tmp_path, span_y=0.8).edge_clear
+
+
+def test_tight_reference_tolerance_is_flagged(inner_6210, tmp_path):
+    assert not _bem(inner_6210, tmp_path, solve_kwargs={"rtol_reference": 1e-6}).within_reference
+
+
+def test_offset_of_the_surfaces_is_refused(inner_6210):
+    grid = Grid.around(inner_6210, hertz(inner_6210))
+    with pytest.raises(ValueError, match="off_set_x not accepted"):
+        grid.step_args(inner_6210, off_set_x=1e-6)
+
+
+@pytest.mark.parametrize("flag", [True, False])
+def test_kernel_flag_reaches_both_materials(inner_6210, flag):
+    s1, s2 = surface_pair(inner_6210, Grid.around(inner_6210, hertz(inner_6210)), name=f"kernel_{flag}",
+                          use_frequency_domain=flag)
+    assert s1.material.use_frequency is flag and s2.material.use_frequency is flag
+    assert s1.profile.shape == s2.profile.shape and s1.grid_spacing == 2.0**-16
+
+
+def test_line_contact_refuses_the_spatial_kernel(roller_10):
+    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    with pytest.raises(ValueError, match="finite strip"):
+        surface_pair(c, Grid.around(c, hertz(c)), name="line_spatial", use_frequency_domain=False)
 
 
 # ---- FZG C40 checks that do not use the bridge (validation/gears/fzg_geometry_ph) -------------
