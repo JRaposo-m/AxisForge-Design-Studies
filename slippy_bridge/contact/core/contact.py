@@ -3,8 +3,8 @@
 * :class:`Body` - the abstract contract of one body near its point of first contact: elastic
   constants, signed principal radii at the contact point, and its exact surface profile.
 * :class:`SweptCircleBody` - the body of one circle swept about an axis (sphere, cylinder, flat,
-  local torus), given by its two radii: validation cases, gear teeth and (until the bearing
-  family classes of D-0034 item 10) the bearing bodies.
+  local torus), given by its two radii: validation cases and gear teeth. The bearing contact
+  classes have their own bodies (``machine_elements.bearings``).
 * :class:`Contact` - the abstract base of every contact: two bodies, the load, the angle between
   them; it checks its inputs at creation and computes once what every solver needs, the
   principal relative curvatures of the gap, their orientation ``psi`` and the contact modulus
@@ -150,12 +150,11 @@ class SweptCircleBody(Body):
     (``r_x = inf``). Near the contact point the sag is ``x_b^2/(2 r_x) + y_b^2/(2 r_y)``, the
     paraboloid of Hertz (Johnson 1985, Eq. (4.2a)). Its profile is even in x_b and y_b.
 
-    How exact the shape is depends on the body it stands for: exact for a sphere, a straight
-    cylinder, a flat and a bearing raceway at contact angle alpha = 0. At alpha != 0 it is the
-    local torus with the raceway's curvatures (rolling radius re-evaluated at alpha), exact to
-    second order only: the true raceway is swept about the bearing axis, not about an axis at
-    ``r_x``. A cylinder for a gear tooth approximates the involute by its radius of curvature at
-    the contact point.
+    Exact for a sphere, a straight cylinder, a flat and a bearing raceway at contact angle alpha =
+    0. With a raceway's radii at alpha != 0 it is the local torus, exact to second order only (the
+    true raceway, swept about the bearing axis, is the bearing classes' ``Raceway``; the torus is
+    kept to compare with it). A cylinder for a gear tooth approximates the involute by its radius
+    of curvature at the contact point.
 
     Parameters
     ----------

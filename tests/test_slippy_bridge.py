@@ -21,9 +21,8 @@ from studies.r00_analytical_references.contact.hertz import hertz_point  # noqa:
 
 from slippy_bridge.contact.core.contact import Body, Contact, SweptCircleBody  # noqa: E402
 from slippy_bridge.contact.core.machine_elements.bearings import (AngularContactBallContact,  # noqa: E402
-                                                                  BallRacewayContact, BearingContact,
-                                                                  DeepGrooveBallContact,
-                                                                  RollerRacewayContact, bearing_contacts)
+                                                                  BearingContact, CylindricalRollerContact,
+                                                                  DeepGrooveBallContact)
 from slippy_bridge.contact.core.machine_elements.gears import (ToothContact, gear_contacts,  # noqa: E402
                                                                path_diameters)
 from slippy_bridge.contact.mesh.grid import SPAN_X_0, Grid  # noqa: E402
@@ -401,8 +400,8 @@ def test_6210_hand_check(load_case):
 def test_roller_hand_check(roller_10):
     """Cylindrical roller 10 x 10 mm on Dpw 70 mm, Q 1000 N, inner race: line load Q/Lwe = 1000 N / 0.010 m =
     100 000 N/m; R = 1/(1/5 + 1/30) = 4.2857 mm (raceway (Dpw - Dwe)/2 = 30 mm)."""
-    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
-    assert isinstance(c, RollerRacewayContact) and c.line and (c.k, c.x_mm) == (None, None)
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    assert isinstance(c, CylindricalRollerContact) and c.line and (c.k, c.x_mm) == (None, None)
     assert c.load == pytest.approx(1e5, rel=1e-12)
     assert 1 / c.kappa_max / MM == pytest.approx(4.2857, abs=0.00005)
     assert (c.kappa_min, c.psi) == (0.0, 0.0)
@@ -484,9 +483,9 @@ def test_phi_is_wrapped_as_the_axisforge_element_record(ball, ball_result):
 
 
 def test_roller_laminae_from_result(roller, roller_row):
-    whole = bearing_contacts(roller, roller_row, races=("inner",))
+    whole = CylindricalRollerContact.from_bearing(roller, roller_row, races=("inner",))
     assert [c.load for c in whole] == pytest.approx([500.0 / 5e-3, 200.0 / 5e-3])          # Q_j / Lwe
-    lam = bearing_contacts(roller, roller_row, races=("inner",), laminae=True, elements=[1])
+    lam = CylindricalRollerContact.from_bearing(roller, roller_row, races=("inner",), laminae=True, elements=[1])
     assert len(lam) == 50 and lam[0].load == pytest.approx(4.0 / 0.1e-3)                    # q_jk / (Lwe/n_s)
     assert lam[3].k == 3 and lam[0].line and lam[3].label == "b_inner_e1_l3"
     assert lam[3].x_mm == pytest.approx(roller_row.x_k[3])
@@ -519,7 +518,6 @@ def test_analysis_result_of_the_solver_is_accepted(ball, ball_result):
     (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, res, alpha=0.1), "alpha applies to load= only"),
     (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, res, load=1.0), "either result"),
     (lambda ball, res: DeepGrooveBallContact.from_bearing(ball), "either result"),
-    (lambda ball, res: bearing_contacts(ball, res, laminae=True), "laminae applies"),
     (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, load=1.0, row=1), "row applies to result= only"),
     (lambda ball, res: DeepGrooveBallContact.from_bearing(
         ball, replace(res, rows=(replace(res.rows[0], Q_j=0.0 * res.rows[0].Q_j),)),
@@ -527,7 +525,7 @@ def test_analysis_result_of_the_solver_is_accepted(ball, ball_result):
     (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, replace(res.rows[0], Q_j=0.0 * res.rows[0].Q_j)),
      "no loaded element"),
 ])
-def test_bearing_contacts_refuses(ball, ball_result, call, match):
+def test_from_bearing_refuses(ball, ball_result, call, match):
     with pytest.raises(ValueError, match=match):
         call(ball, ball_result)
 
@@ -546,13 +544,15 @@ _FAMILY_GEOMETRY = {
     "RollerThrustMultiRowFamily": dict(rows=[dict(Dwe=8.0, Lwe=8.0, Dpw=72.5, Z=18, s=0.01, n_s=40,
                                                   alpha_0_deg=90.0)] * 2),
 }
+_CLASSES = (DeepGrooveBallContact, AngularContactBallContact, CylindricalRollerContact)
 
 
 @pytest.mark.parametrize("name", sorted(available_families()))
-def test_every_axisforge_family_translates_or_raises_clearly(name):
-    """Each family in AxisForge ``available_families()`` either gives contacts with a solvable, valid Hertz
-    solution or a NotImplementedError that names it. A family AxisForge itself cannot assemble is skipped (an
-    AxisForge bug, not the bridge)."""
+def test_every_axisforge_family_has_one_class_or_none(name):
+    """Each family in AxisForge ``available_families()``: the one bridge class of that family gives contacts with a
+    valid Hertz solution, and every other class refuses the bearing with a TypeError naming both families; a family
+    without a class (thrust, self-aligning, multi-row: not now) is refused by all three. A family AxisForge itself
+    cannot assemble is skipped (an AxisForge bug, not the bridge)."""
     geometry = _FAMILY_GEOMETRY[name]
     contact = "rows" not in geometry and "ThrustCylindrical" not in name     # these take no contact constants
     arrangement = "thrust" if "Thrust" in name else "non-locating" if "Cylindrical" in name else "locating"
@@ -560,55 +560,60 @@ def test_every_axisforge_family_translates_or_raises_clearly(name):
         bearing = _bearing(available_families()[name](), arrangement, contact=contact, **geometry)
     except Exception as exc:                                              # noqa: BLE001
         pytest.skip(f"AxisForge cannot assemble {name}: {type(exc).__name__}: {exc}")
-    try:
-        cs = bearing_contacts(bearing, load=100.0)
-    except NotImplementedError as exc:
-        assert name in str(exc)
-    else:
-        assert [c.race for c in cs] == ["inner", "outer"] and isinstance(cs[0], BearingContact)
-        for c in cs:
-            hz = hertz(c)
-            assert hz.p0 > 0 and 0 < hz.b <= hz.a and hz.valid
+    owners = [cls for cls in _CLASSES if cls.family.__name__ == name]
+    assert len(owners) == (1 if name in ("DeepGrooveBallFamily", "AngularContactFamily",
+                                         "CylindricalRollerFamily") else 0)
+    for cls in _CLASSES:
+        if cls in owners:
+            cs = cls.from_bearing(bearing, load=100.0)
+            assert [c.race for c in cs] == ["inner", "outer"] and all(type(c) is cls for c in cs)
+            for c in cs:
+                hz = hertz(c)
+                assert hz.p0 > 0 and hz.b > 0 and hz.valid and (hz.line or hz.b <= hz.a)
+        else:
+            with pytest.raises(TypeError, match=f"{cls.__name__} takes a {cls.family.__name__} bearing, got {name}"):
+                cls.from_bearing(bearing, load=100.0)
 
 
-def _thrust_ball(alpha_0_deg=90.0):
-    return _bearing(af_c.ThrustBallSingleRowFamily(), "thrust", Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=alpha_0_deg)
-
-
-@pytest.mark.parametrize("Fr", [0.0, 200.0])
-def test_contacts_of_a_solved_thrust_ball(Fr):
-    """ISO16281BallSolver on a thrust ball at 90 deg, Fa 2 kN (+ Fr): alpha_j at or past 90 deg is accepted
-    and the flat raceways stay flat."""
-    bearing = _thrust_ball()
-    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=Fr, Fr_xy=0.0, Fa=2000.0, delta_r_init=0.0,
-                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
-    assert result.ok
-    cs = bearing_contacts(bearing, result)
-    assert len(cs) == 2 * np.count_nonzero(result.rows[0].Q_j > 0.0)
-    assert all(math.isinf(c.body2.r[0]) and c.psi == 0.0 for c in cs)
-
-
-def test_thrust_ball_away_from_90_deg_is_refused():
-    with pytest.raises(NotImplementedError, match="ThrustBallSingleRowFamily at alpha_0 = 60"):
-        bearing_contacts(_thrust_ball(60.0), load=100.0)
-
-
-def test_alpha_is_refused_where_it_changes_nothing(roller):
-    for bearing in (roller, _thrust_ball()):
-        with pytest.raises(ValueError, match="alpha has no effect"):
-            bearing_contacts(bearing, load=100.0, alpha=0.1)
+def test_roller_refuses_alpha_laminae_without_result_and_two_rows(roller):
+    with pytest.raises(ValueError, match="alpha has no effect"):
+        CylindricalRollerContact.from_bearing(roller, load=100.0, alpha=0.1)
+    with pytest.raises(ValueError, match="laminae applies to result= only"):
+        CylindricalRollerContact.from_bearing(roller, load=100.0, laminae=True)
+    two_rows = _bearing(af_c.CylindricalRollerFamily(), "non-locating", Dwe=5.0, Lwe=5.0, Dpw=31.0, Z=14, n_s=50,
+                        s=0.010, i=2)
+    with pytest.raises(NotImplementedError, match="2-row bearing"):
+        CylindricalRollerContact.from_bearing(two_rows, load=100.0)
 
 
 def test_roller_raceway_is_not_re_evaluated_at_alpha_j(roller, roller_row):
-    """(Dpw -/+ Dwe)/2 has no angle: a roller row with alpha_j != 0 leaves the raceway radii as stored."""
+    """(Dpw -/+ Dwe)/2 has no angle: a roller row with alpha_j != 0 (0.3 rad, which AxisForge never gives: an
+    invariance check) leaves the raceway radii as stored."""
     tilted = replace(roller_row, alpha_j=np.full_like(roller_row.alpha_j, 0.3))
-    c = bearing_contacts(roller, tilted, races=("inner",), elements="max")[0]
+    c = CylindricalRollerContact.from_bearing(roller, tilted, races=("inner",), elements="max")[0]
     assert c.body2.r[0] == pytest.approx(roller.r_inner[0] * MM, rel=1e-15) and c.alpha_rad == 0.3
 
 
-def test_load_mode_refuses_laminae(roller):
-    with pytest.raises(ValueError, match="laminae and row apply to result= only"):
-        bearing_contacts(roller, load=100.0, laminae=True)
+@pytest.mark.parametrize("race, sign", [("inner", +1.0), ("outer", -1.0)])
+def test_roller_bodies_are_the_cylinders(roller_10, race, sign):
+    """Roller (5, inf) mm and raceway (+/-(Dpw -/+ Dwe)/2, inf) = (30, inf) / (-40, inf) mm; profiles exact: the circle
+    along rolling, straight across; equal to the SweptCircleBody of the same radii, also on a turned frame."""
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=(race,))
+    assert c.body1.r == (5.0 * MM, math.inf)
+    assert c.body2.r == pytest.approx((sign * (70.0 - sign * 10.0) / 2 * MM, math.inf), rel=1e-15)
+    x = _X / 2
+    for body in (c.body1, c.body2):
+        for angle in (0.0, 0.4):
+            torus = SweptCircleBody(r=body.r, **STEEL)
+            np.testing.assert_allclose(body.profile(x, _Y, angle), torus.profile(x, _Y, angle), rtol=1e-12, atol=1e-18)
+    assert c.body2.profile(x, _Y)[0, 0] * sign < 0                    # convex inner falls away, concave outer rises
+
+
+def test_roller_contact_checks_its_bodies(roller_10):
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    for kw in (dict(body1=SweptCircleBody(r=c.body1.r, **STEEL)), dict(race="outer")):
+        with pytest.raises(ValueError, match="body1 must be its Roller and body2 its Raceway"):
+            replace(c, **kw)
 
 
 def test_row_of_the_other_kind_is_refused(ball, roller_row):
@@ -624,31 +629,24 @@ def test_bearing_without_elastic_constants_names_them():
 
 # ---- BearingContact checks -----------------------------------------------------------------------
 
-_RACE = dict(r=(28.65 * MM, -6.604 * MM), **STEEL)            # 6210 inner raceway, curved along rolling
-_THRUST = dict(r=(math.inf, -6.604 * MM), **STEEL)            # thrust raceway, flat along rolling
+_RACE = dict(r=(28.65 * MM, -6.604 * MM), **STEEL)            # 6210 inner raceway at alpha 0 (local torus)
+
+
+class _BallOnRace(BearingContact):
+    """A bearing contact with any two bodies: the checks of BearingContact alone."""
+    line = False
 
 
 @pytest.mark.parametrize("race, kwargs, match", [
     (_RACE, dict(race="middle", alpha_rad=0.0), "race must be"),
-    (_RACE, dict(race="inner", alpha_rad=math.pi / 2), r"\|alpha_rad\| must be"),              # finite r_x
+    (_RACE, dict(race="inner", alpha_rad=math.pi / 2), r"\|alpha_rad\| must be"),
     (_RACE, dict(race="inner", alpha_rad=-1.6), r"\|alpha_rad\| must be"),
     (_RACE, dict(race="inner", alpha_rad=0.0, angle=0.1), "angle must be 0"),
     (dict(r=(-50 * MM, 20 * MM), **STEEL), dict(race="inner", alpha_rad=0.0), "psi = 0 expected"),
 ])
 def test_bearing_contact_checks(race, kwargs, match):
     with pytest.raises(ValueError, match=match):
-        BallRacewayContact(body1=SweptCircleBody(r=6.35 * MM, **STEEL),
-                           body2=SweptCircleBody(**race), load=1.0, **kwargs)
-
-
-@pytest.mark.parametrize("alpha", [math.pi / 2, math.pi / 2 + 4.7e-12, math.radians(98.7)])
-def test_thrust_raceway_accepts_any_angle(alpha):
-    """A raceway flat along rolling does not depend on alpha; the solver gives a thrust ball alpha_j at and
-    beyond 90 deg (pure axial: pi/2 + 4.7e-12; with some Fr up to 98.7 deg)."""
-    c = BallRacewayContact(body1=SweptCircleBody(r=6.35 * MM, **STEEL),
-                           body2=SweptCircleBody(**_THRUST), load=1.0, race="inner",
-                           alpha_rad=alpha)
-    assert c.psi == 0.0 and c.kappa_max == pytest.approx(1 / (6.35 * MM))
+        _BallOnRace(body1=SweptCircleBody(r=6.35 * MM, **STEEL), body2=SweptCircleBody(**race), load=1.0, **kwargs)
 
 
 def test_bearing_contact_is_abstract():
@@ -747,9 +745,9 @@ def test_true_raceway_mirror_in_alpha(race, alpha_deg):
 @pytest.mark.parametrize("race", ["inner", "outer"])
 @pytest.mark.parametrize("which", ["alpha_0", "alpha_j"])
 def test_raceway_radii_equal_the_old_bodies(ball_6210, race, which):
-    """The principal radii of the true raceway equal the bodies of C9 (the formula of bearings._bodies): r_x =
-    +/-(Dpw -/+ Dw cos a) / (2 cos a) [mm -> m], outer negated; r_y = -ri or -re; at alpha_0 (also AxisForge
-    r_inner/r_outer as stored) and at an alpha_j (0.3 rad), rel 1e-12."""
+    """The principal radii of the true raceway equal the C9 bodies: r_x = +/-(Dpw -/+ Dw cos a) / (2 cos a)
+    [mm -> m], outer negated; r_y = -ri or -re; at alpha_0 (also AxisForge r_inner/r_outer as stored) and at an
+    alpha_j (0.3 rad), rel 1e-12."""
     a = ball_6210.alpha_0 if which == "alpha_0" else 0.3
     (c,) = DeepGrooveBallContact.from_bearing(ball_6210, load=100.0, alpha=a, races=(race,))
     s = 1.0 if race == "inner" else -1.0
@@ -768,18 +766,6 @@ def test_contact_point_with_the_ball_centre_on_the_pitch_circle(ball_6210, race,
     alpha = math.radians(20.0)
     (c,) = DeepGrooveBallContact.from_bearing(ball_6210, load=100.0, alpha=alpha, races=(race,))
     assert c.body2.R_P == pytest.approx((ball_6210.Dpw - sign * ball_6210.Dw * math.cos(alpha)) / 2 * MM, rel=1e-15)
-
-
-@pytest.mark.parametrize("family, geometry", [
-    (af_c.AngularContactFamily, dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=25.0)),
-    (af_c.CylindricalRollerFamily, dict(Dwe=5.0, Lwe=5.0, Dpw=31.0, Z=14, n_s=50, s=0.010)),
-])
-def test_deep_groove_class_refuses_another_family(family, geometry):
-    arrangement = "non-locating" if family is af_c.CylindricalRollerFamily else "locating"
-    bearing = _bearing(family(), arrangement, **geometry)
-    with pytest.raises(TypeError, match=f"DeepGrooveBallContact takes a DeepGrooveBallFamily bearing, got "
-                                        f"{family.__name__}"):
-        DeepGrooveBallContact.from_bearing(bearing, load=100.0)
 
 
 def test_deep_groove_class_refuses_two_rows_and_bad_indices(ball, ball_result):
@@ -841,14 +827,6 @@ def test_angular_contacts_of_a_real_iso16281_solve():
         assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-9) and c.label == f"b_{c.race}_e{c.j}"
 
 
-@pytest.mark.parametrize("cls, other", [(AngularContactBallContact, "DeepGrooveBallFamily"),
-                                        (DeepGrooveBallContact, "AngularContactFamily")])
-def test_ball_classes_refuse_each_other(ball, cls, other):
-    bearing = ball if other == "DeepGrooveBallFamily" else _angular()
-    with pytest.raises(TypeError, match=f"{cls.__name__} takes a {cls.family.__name__} bearing, got {other}"):
-        cls.from_bearing(bearing, load=100.0)
-
-
 @pytest.mark.parametrize("Fa", [0.0, -5000.0])
 def test_angular_contact_on_the_relieved_side_is_refused(Fa):
     """AxisForge solves the symmetric groove: Fa = 0 gives alpha_j = 0, Fa = -5 kN the mirror alpha_j = -27.49 deg,
@@ -901,7 +879,7 @@ def test_grid_origin_on_the_centre_node(load_case):
 def test_grid_of_a_roller_line_contact(roller_10):
     """BR3 section 5: roller line contact b 0.0688 mm -> h 2^-18 m, n_x 148, n_y 16; period 16 h = 61.04 um;
     load on the strip 100 000 N/m x period = 6.10 N."""
-    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
     grid = Grid.around(c, _ellipse(math.inf, 0.0688))
     assert grid.h == 2.0**-18 and grid.X.shape == (148, 16)
     assert grid.length_y_m == 16 * 2.0**-18
@@ -975,7 +953,7 @@ def test_hand_built_grid_is_checked(X, Y, h, match):
 @pytest.mark.parametrize("contrary", [{"periodic_geometry": False}, {"periodic_axes": (False, False)},
                                       {"periodic_axes": True}])
 def test_step_args_refuses_a_non_periodic_line(roller_10, contrary):
-    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
     grid = Grid.around(c, _ellipse(math.inf, 0.0688))
     with pytest.raises(ValueError, match="a line contact needs"):
         grid.step_args(c, **contrary)
@@ -1081,11 +1059,11 @@ def test_static_record_of_a_6210_contact(load_case):
 
 
 def test_static_record_of_a_line_contact(roller_10):
-    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
     hz = _hertz(math.inf, 0.0688 * MM, line=True)
     rec = _static_result(c, Grid.around(c, hz), hz).record()
     assert rec["R_y_m"] == math.inf and math.isnan(rec["span_y"]) and rec["span_x"] >= SPAN_X_0
-    assert rec["k"] is None and rec["x_mm"] is None and rec["contact"] == "RollerRacewayContact"
+    assert rec["k"] is None and rec["x_mm"] is None and rec["contact"] == "CylindricalRollerContact"
     assert rec["w_N_per_m"] == pytest.approx(1e5) and math.isnan(rec["Q_N"])
 
 
@@ -1112,7 +1090,7 @@ def test_hertz_agrees_with_the_independent_judge(load_case):
 
 def test_hertz_of_a_roller_line_contact(roller_10):
     """BR1 section 5: roller 10 x 10 on Dpw 70, Q 1000 N inner: b 0.0688 mm, p0 925.7 MPa; no approach."""
-    hz = hertz(bearing_contacts(roller_10, load=1000.0, races=("inner",))[0])
+    hz = hertz(CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))[0])
     assert hz.b / MM == pytest.approx(0.0688, abs=0.00005) and hz.p0 / 1e6 == pytest.approx(925.7, abs=0.05)
     assert hz.line and hz.a == math.inf and math.isnan(hz.delta) and hz.b_over_a == 0.0
 
@@ -1221,7 +1199,7 @@ def test_bem_of_a_point_contact_on_the_spatial_kernel(make, inner_6210, tmp_path
 
 def test_bem_of_a_roller_line_contact(roller_10, tmp_path):
     """Roller 10 x 10 on Dpw 70, Q 1000 N inner (periodic strip): p0 within 1 %, b within 3 % of Hertz."""
-    res = _bem(bearing_contacts(roller_10, load=1000.0, races=("inner",))[0], tmp_path)
+    res = _bem(CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))[0], tmp_path)
     assert abs(res.err_p0) <= 0.01 and abs(res.err_b) <= 0.03 and _all_checks(res)
     assert math.isnan(res.delta) and res.a == math.inf and res.period == res.grid.length_y_m
     assert res.load_applied == pytest.approx(1e5 * res.period, rel=1e-12)
@@ -1285,7 +1263,7 @@ def test_kernel_flag_reaches_both_materials(inner_6210, flag):
 
 
 def test_line_contact_refuses_the_spatial_kernel(roller_10):
-    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
     with pytest.raises(ValueError, match="finite strip"):
         surface_pair(c, Grid.around(c, hertz(c)), name="line_spatial", use_frequency_domain=False)
 
@@ -1379,7 +1357,7 @@ def test_principal_grid_half_extents_are_the_semi_axes():
 
 def test_line_contact_on_a_turned_grid_is_refused(roller_10):
     """The strip of a line contact is periodic along grid y: its line must lie there (gamma = psi = 0)."""
-    (c,) = bearing_contacts(roller_10, load=1000.0, races=("inner",))
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
     hz = hertz(c)
     assert Grid.around(c, hz, angle="principal").angle == 0.0
     with pytest.raises(ValueError, match="line along grid y"):
@@ -1673,9 +1651,8 @@ def test_layer_order_of_the_contact_package():
 def test_public_names_import_from_the_package():
     import slippy_bridge.contact as pkg
     for name in ("Body", "SweptCircleBody", "Contact", "Kinematics", "BearingContact", "DeepGrooveBallContact",
-                 "AngularContactBallContact", "BallRacewayContact",
-                 "RollerRacewayContact",
-                 "bearing_contacts", "GearContact", "ToothContact", "gear_contacts", "path_diameters", "Grid",
+                 "AngularContactBallContact", "CylindricalRollerContact", "GearContact", "ToothContact",
+                 "gear_contacts", "path_diameters", "Grid",
                  "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"):
         assert name in pkg.__all__ and getattr(pkg, name) is not None
     assert pkg.solve is solve and pkg.ToothContact is ToothContact

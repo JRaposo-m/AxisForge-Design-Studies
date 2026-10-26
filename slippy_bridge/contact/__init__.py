@@ -12,8 +12,8 @@ N/m -> N on the period in ``mesh.grid.Grid.step_args``. Rolling direction = brid
 grid x, which is bridge x when ``Grid.angle = 0`` (the default).
 """
 from .core.contact import Body, Contact, SweptCircleBody
-from .core.machine_elements.bearings import (AngularContactBallContact, BallRacewayContact, BearingContact,
-                                             DeepGrooveBallContact, RollerRacewayContact, bearing_contacts)
+from .core.machine_elements.bearings import (AngularContactBallContact, BearingContact, CylindricalRollerContact,
+                                             DeepGrooveBallContact)
 from .core.machine_elements.gears import GearContact, ToothContact, gear_contacts, path_diameters
 from .core.submodels import Kinematics
 from .mesh.grid import SPAN_X_0, Grid
@@ -24,7 +24,6 @@ from .solvers.static import solve
 from .solvers.surfaces import surface_pair
 
 __all__ = ["Body", "SweptCircleBody", "Contact", "Kinematics",
-           "BearingContact", "DeepGrooveBallContact", "AngularContactBallContact", "BallRacewayContact",
-           "RollerRacewayContact", "bearing_contacts",
+           "BearingContact", "DeepGrooveBallContact", "AngularContactBallContact", "CylindricalRollerContact",
            "GearContact", "ToothContact", "gear_contacts", "path_diameters",
            "Grid", "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"]
