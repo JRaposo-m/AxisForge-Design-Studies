@@ -31,9 +31,9 @@ Conversions made here, once, at the AxisForge boundary:
   ``CylindricalRollerBearingGeometry.r_bx_outer``); the raceway bodies here carry the sign of the
   concave outer raceway. AxisForge is not changed (D-0019);
 * contact angle: a ball raceway is built at the element's angle (``alpha_j`` of the ISO/TS 16281
-  result, else ``alpha_0`` or a given angle). AxisForge's own contact constant ``c_p`` stays at
-  ``alpha_0`` (R-019, ruled), so the bridge radii and AxisForge's stiffness differ slightly at
-  ``alpha_j != alpha_0``. A roller raceway does not depend on the angle;
+  result, else ``alpha_0`` or a given angle), its groove fixed in the ring. AxisForge's own contact
+  constant ``c_p`` stays at ``alpha_0`` (R-019, ruled), so the bridge radii and AxisForge's
+  stiffness differ slightly at ``alpha_j != alpha_0``. A roller raceway does not depend on the angle;
 * load: element load ``Q`` [N] for a ball; for a roller the mean load per unit length over the
   effective roller length ``Lwe`` [N/m], or per lamina with ``laminae=True`` (``q_jk`` over
   ``Lwe / n_s``, ISO/TS 16281 5.2.2).
@@ -432,20 +432,33 @@ class DeepGrooveBallContact(BearingContact):
 
         Notes
         -----
-        The raceway is built at the element's angle (``alpha_j``, ``alpha_0`` or the given one):
-        groove radius ``r_g = ri`` or ``re``; contact point at ``R_P = (Dpw -/+ Dw cos(alpha)) / 2``
-        from the bearing axis, the ball centre kept on the pitch circle, so that ``r_x`` is
-        AxisForge's ``BallBearingGeometry.r_bx_inner`` / ``r_bx_outer`` formula evaluated at
-        ``alpha`` (AxisForge itself evaluates it at ``alpha_0`` only). AxisForge's ISO/TS 16281
-        solver keeps instead the groove centres fixed in the rings (Eq. (13)-(15)): ``R_P = R_G -/+
-        r_g cos(alpha)`` with ``R_G = Dpw/2 +/- (r_g - Dw/2) cos(alpha_0)``; the two agree at
-        ``alpha = alpha_0`` and differ by ``(r_g - Dw/2)(cos(alpha) - cos(alpha_0))`` elsewhere
-        (inner; outer opposite sign): 8.6 um, 3e-4 of ``R_P``, for the most loaded ball of the
-        6210 case under its combined load (``alpha_j`` 17.95 deg).
+        The raceway is built at the element's angle (``alpha_j``, ``alpha_0`` or the given one),
+        with the groove fixed in the ring, as AxisForge's ISO/TS 16281 solver has it (4.2.2,
+        Eq. (13)-(15)): the groove centres stay in their rings, ``A = ri + re - Dw`` apart, and
+        ``alpha_j`` is the inclination of the line joining them. Groove radius ``r_g = ri`` or
+        ``re``; groove centre at ``R_G = Dpw/2 + sign (r_g - Dw/2) cos(alpha_0)`` from the axis of
+        its own ring (inner: AxisForge's ``Ri``, Eq. (14); outer: ``Ri - A cos(alpha_0)``, from
+        Eq. (13)-(14) and Figure 1 at zero displacement, not printed); contact point ``r_g`` from it
+        along the normal, also from the axis of its own ring::
+
+            R_P = R_G - sign r_g cos(alpha),    sign = +1 inner, -1 outer
+
+        ``Dw``, ``Dpw``, ``ri``, ``re`` and ``alpha_0`` are the bearing's own attributes, from which
+        the family assembles the solver's ``A`` and ``Ri`` (deep groove: ``alpha_0 = arccos(1 -
+        s/(2A))``). The angle is exact for an untilted result (``psi = 0``): the solver's
+        ``alpha_j`` is the inclination of the groove-centre line in the outer-ring frame, and a tilt
+        turns the inner ring by about ``psi cos(phi_j)`` (inner ``R_P`` off by about ``ri sin(alpha)
+        psi``, 2 um at 1 mrad on the 6210).
+
+        At ``alpha = alpha_0``, ``R_P = (Dpw -/+ Dw cos(alpha_0)) / 2``, the pitch-circle
+        formula, so ``r_x`` is AxisForge's ``r_bx_inner`` / ``r_bx_outer``; at another ``alpha``
+        ``R_P`` exceeds the pitch-circle formula evaluated at ``alpha`` by ``(r_g - Dw/2)(cos(alpha_0)
+        - cos(alpha))`` (inner; outer opposite sign): 8.6 um, 3.0e-4 (inner) / 2.1e-4 (outer) of
+        ``R_P``, for the most loaded ball of the 6210 case under its combined load (``alpha_j`` 17.95 deg).
 
         AxisForge's ``Q_j`` comes from its contact constant ``c_p`` at ``alpha_0`` (R-019), while
         these bodies are at ``alpha_j``: for that ball the effective ``R_x`` of the inner contact
-        is 5.254 mm here against 5.198 mm at ``alpha_0`` (+1.1 %), so a bridge approach and
+        is 5.2543 mm here against 5.2149 mm at ``alpha_0`` (+0.75 %), so a bridge approach and
         AxisForge's ``delta_j`` differ at that order.
         """
         cls._refuse_other_family(bearing)
@@ -460,9 +473,11 @@ class DeepGrooveBallContact(BearingContact):
             alpha_el = fields["alpha_rad"]
             for race in races:
                 sign = 1.0 if race == "inner" else -1.0
-                # OPEN SB-41: contact point with the ball centre on the pitch circle (AxisForge r_bx formula at alpha), not the groove fixed in the ring
-                R_P = (bearing.Dpw - sign * bearing.Dw * math.cos(alpha_el)) / 2               # [mm]
                 r_g = bearing.ri if race == "inner" else bearing.re                          # [mm]
+                # groove centre fixed in the ring (ISO/TS 16281 Eq. (14)); contact point r_g from it along the normal
+                R_G = bearing.Dpw / 2 + sign * (r_g - bearing.Dw / 2) * math.cos(bearing.alpha_0)   # [mm]
+                # OPEN SB-53: alpha_j taken as the inner ring's own angle also under tilt (psi != 0; documented, not refused)
+                R_P = R_G - sign * r_g * math.cos(alpha_el)                                  # [mm]
                 raceway = cls.Raceway(race=race, R_P=R_P * _MM, r_g=r_g * _MM, alpha=alpha_el, E=E2, nu=nu2)
                 out.append(cls(body1=ball, body2=raceway, load=Q, label=cls._label(bearing, race, fields),
                                race=race, **fields))
@@ -566,20 +581,34 @@ class AngularContactBallContact(BearingContact):
 
         Notes
         -----
-        The raceway is built at the element's angle (``alpha_j``, ``alpha_0`` or the given one):
-        groove radius ``r_g = ri`` or ``re``; contact point at ``R_P = (Dpw -/+ Dw cos(alpha)) / 2``
-        from the bearing axis, the ball centre kept on the pitch circle, so that ``r_x`` is
-        AxisForge's ``BallBearingGeometry.r_bx_inner`` / ``r_bx_outer`` formula evaluated at
-        ``alpha`` (AxisForge itself evaluates it at ``alpha_0`` only). AxisForge's ISO/TS 16281
-        solver keeps instead the groove centres fixed in the rings (Eq. (13)-(15)): ``R_P = R_G -/+
-        r_g cos(alpha)`` with ``R_G = Dpw/2 +/- (r_g - Dw/2) cos(alpha_0)``; the two agree at
-        ``alpha = alpha_0`` and differ by ``(r_g - Dw/2)(cos(alpha) - cos(alpha_0))`` elsewhere
-        (inner; outer opposite sign): 4.9 um, 1.7e-4 (inner) / 1.2e-4 (outer) of ``R_P``, for the most loaded ball of a
-        25 deg bearing (Dw 12.7, Dpw 70 mm, Z 15) under Fr = Fa = 5 kN (``alpha_j`` 27.49 deg).
+        The raceway is built at the element's angle (``alpha_j``, ``alpha_0`` or the given one),
+        with the groove fixed in the ring, as AxisForge's ISO/TS 16281 solver has it (4.2.2,
+        Eq. (13)-(15)): the groove centres stay in their rings, ``A = ri + re - Dw`` apart, and
+        ``alpha_j`` is the inclination of the line joining them. Groove radius ``r_g = ri`` or
+        ``re``; groove centre at ``R_G = Dpw/2 + sign (r_g - Dw/2) cos(alpha_0)`` from the axis of
+        its own ring (inner: AxisForge's ``Ri``, Eq. (14); outer: ``Ri - A cos(alpha_0)``, from
+        Eq. (13)-(14) and Figure 1 at zero displacement, not printed); contact point ``r_g`` from it
+        along the normal, also from the axis of its own ring::
+
+            R_P = R_G - sign r_g cos(alpha),    sign = +1 inner, -1 outer
+
+        ``Dw``, ``Dpw``, ``ri``, ``re`` and ``alpha_0`` are the bearing's own attributes, from which
+        the family assembles the solver's ``A`` and ``Ri`` (deep groove: ``alpha_0 = arccos(1 -
+        s/(2A))``). The angle is exact for an untilted result (``psi = 0``): the solver's
+        ``alpha_j`` is the inclination of the groove-centre line in the outer-ring frame, and a tilt
+        turns the inner ring by about ``psi cos(phi_j)`` (inner ``R_P`` off by about ``ri sin(alpha)
+        psi``, 2 um at 1 mrad on the 6210).
+
+        At ``alpha = alpha_0``, ``R_P = (Dpw -/+ Dw cos(alpha_0)) / 2``, the pitch-circle
+        formula, so ``r_x`` is AxisForge's ``r_bx_inner`` / ``r_bx_outer``; at another ``alpha``
+        ``R_P`` exceeds the pitch-circle formula evaluated at ``alpha`` by ``(r_g - Dw/2)(cos(alpha_0)
+        - cos(alpha))`` (inner; outer opposite sign): 4.9 um, 1.7e-4 (inner) / 1.2e-4 (outer) of
+        ``R_P``, for the most loaded ball of a 25 deg bearing (Dw 12.7, Dpw 70 mm, Z 15) under
+        Fr = Fa = 5 kN (``alpha_j`` 27.49 deg).
 
         AxisForge's ``Q_j`` comes from its contact constant ``c_p`` at ``alpha_0`` (R-019), while
         these bodies are at ``alpha_j``: for that ball the effective ``R_x`` of the inner contact
-        is 5.328 mm here against 5.306 mm at ``alpha_0`` (+0.4 %), so a bridge approach and
+        is 5.3281 mm here against 5.306 mm at ``alpha_0`` (+0.4 %), so a bridge approach and
         AxisForge's ``delta_j`` differ at that order.
         """
         cls._refuse_other_family(bearing)
@@ -600,9 +629,11 @@ class AngularContactBallContact(BearingContact):
             alpha_el = fields["alpha_rad"]
             for race in races:
                 sign = 1.0 if race == "inner" else -1.0
-                # OPEN SB-41: contact point with the ball centre on the pitch circle (AxisForge r_bx formula at alpha), not the groove fixed in the ring
-                R_P = (bearing.Dpw - sign * bearing.Dw * math.cos(alpha_el)) / 2               # [mm]
                 r_g = bearing.ri if race == "inner" else bearing.re                          # [mm]
+                # groove centre fixed in the ring (ISO/TS 16281 Eq. (14)); contact point r_g from it along the normal
+                R_G = bearing.Dpw / 2 + sign * (r_g - bearing.Dw / 2) * math.cos(bearing.alpha_0)   # [mm]
+                # OPEN SB-53: alpha_j taken as the inner ring's own angle also under tilt (psi != 0; documented, not refused)
+                R_P = R_G - sign * r_g * math.cos(alpha_el)                                  # [mm]
                 raceway = cls.Raceway(race=race, R_P=R_P * _MM, r_g=r_g * _MM, alpha=alpha_el, E=E2, nu=nu2)
                 out.append(cls(body1=ball, body2=raceway, load=Q, label=cls._label(bearing, race, fields),
                                race=race, **fields))

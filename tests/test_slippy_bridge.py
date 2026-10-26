@@ -429,7 +429,7 @@ def test_alpha_changes_only_the_rolling_radius(ball):
     (a0,), (aj,) = (DeepGrooveBallContact.from_bearing(ball, load=100.0, races=("inner",), **kw)
                     for kw in ({}, {"alpha": 0.4}))
     assert aj.body1.r == a0.body1.r and aj.body2.r[1] == a0.body2.r[1] and aj.alpha_rad == 0.4
-    assert aj.body2.r[0] == pytest.approx((ball.Dpw - ball.Dw * math.cos(0.4)) / (2 * math.cos(0.4)) * MM)
+    assert aj.body2.r[0] == pytest.approx((ball.Ri - ball.ri * math.cos(0.4)) / math.cos(0.4) * MM, rel=1e-12)
 
 
 def test_ball_contacts_from_result(ball, ball_row):
@@ -464,12 +464,13 @@ def test_contacts_of_a_real_iso16281_solve(ball_6210, load_case):
         for race, c in (("inner", inner), ("outer", outer)):
             assert (c.race, c.j) == (race, j)
             assert c.load == row.Q_j[j] and c.alpha_rad == row.alpha_j[j]
-        # ISO/TS 16281 curvature sum at the operating angle: (1/Dw)(4 - 1/f +/- 2 g_j/(1 -/+ g_j)), inner +, outer -
-        g_j = ball_6210.Dw * math.cos(row.alpha_j[j]) / ball_6210.Dpw
+        # curvature sum at the operating angle, Eq. (5)-(6) form: (1/Dw)(4 - 1/f) + sign cos(alpha_j)/R_P, inner +,
+        # outer -, R_P from the solver's groove centres (SB-41); it reduces to Eq. (5)-(6) at alpha_0, where
+        # 2 g/(Dw (1 -/+ g)) = cos(alpha)/R_P with the ball centre on the pitch circle
         for sign, c in ((+1.0, inner), (-1.0, outer)):
-            f = 0.52
-            iso = (4.0 - 1.0 / f + sign * 2.0 * g_j / (1.0 - sign * g_j)) / (ball_6210.Dw * MM)   # [1/m]
-            assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-9)
+            R_P = _solver_contact_point(ball_6210, c.race, row.alpha_j[j])                          # [mm]
+            iso = (4.0 - 1.0 / 0.52) / (ball_6210.Dw * MM) + sign * math.cos(row.alpha_j[j]) / (R_P * MM)   # [1/m]
+            assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-12)
 
 
 def test_phi_is_wrapped_as_the_axisforge_element_record(ball, ball_result):
@@ -743,29 +744,92 @@ def test_true_raceway_mirror_in_alpha(race, alpha_deg):
 
 
 @pytest.mark.parametrize("race", ["inner", "outer"])
-@pytest.mark.parametrize("which", ["alpha_0", "alpha_j"])
-def test_raceway_radii_equal_the_old_bodies(ball_6210, race, which):
-    """The principal radii of the true raceway equal the C9 bodies: r_x = +/-(Dpw -/+ Dw cos a) / (2 cos a)
-    [mm -> m], outer negated; r_y = -ri or -re; at alpha_0 (also AxisForge r_inner/r_outer as stored) and at an
-    alpha_j (0.3 rad), rel 1e-12."""
-    a = ball_6210.alpha_0 if which == "alpha_0" else 0.3
+def test_raceway_radii_equal_the_old_bodies(ball_6210, race):
+    """At alpha_0 the principal radii of the true raceway equal the C9 bodies: r_x = +/-(Dpw -/+ Dw cos a_0) /
+    (2 cos a_0) [mm -> m], outer negated, also AxisForge r_inner/r_outer as stored; r_y = -ri or -re; rel 1e-12.
+    At another angle they differ (groove fixed in the ring, SB-41): see the contact point tests below."""
+    a = ball_6210.alpha_0
     (c,) = DeepGrooveBallContact.from_bearing(ball_6210, load=100.0, alpha=a, races=(race,))
     s = 1.0 if race == "inner" else -1.0
     r_g = ball_6210.ri if race == "inner" else ball_6210.re
     old = (s * (ball_6210.Dpw - s * ball_6210.Dw * math.cos(a)) / (2 * math.cos(a)) * MM, -r_g * MM)
     assert c.body2.r == pytest.approx(old, rel=1e-12) and c.body1.r == (ball_6210.Dw / 2 * MM,) * 2
-    if which == "alpha_0":
-        stored = (ball_6210.r_inner if race == "inner" else ball_6210.r_outer)
-        assert c.body2.r == pytest.approx((s * stored[0] * MM, stored[1] * MM), rel=1e-12)
+    stored = (ball_6210.r_inner if race == "inner" else ball_6210.r_outer)
+    assert c.body2.r == pytest.approx((s * stored[0] * MM, stored[1] * MM), rel=1e-12)
+
+
+def _solver_contact_point(bearing, race, alpha):
+    """Contact-point radius [mm] rebuilt from the solver's stored ``Ri`` and ``A`` at the operating angle ``alpha``
+    (the solver itself computes no contact point): the inner groove centre at ``Ri`` (ISO/TS 16281 4.2.2 Eq. (14)),
+    the outer one ``A cos(alpha_0)`` closer to the axis (the radial part of the centre distance A, Eq. (13), at zero
+    displacement: U_j of Eq. (15)), each fixed in its ring and measured from that ring's axis; the contact point
+    ri / re from the centre along the normal at ``alpha``. Untilted results only (psi = 0, SB-53)."""
+    if race == "inner":
+        return bearing.Ri - bearing.ri * math.cos(alpha)
+    return bearing.Ri - bearing.A * math.cos(bearing.alpha_0) + bearing.re * math.cos(alpha)
 
 
 @pytest.mark.parametrize("race, sign", [("inner", +1.0), ("outer", -1.0)])
-def test_contact_point_with_the_ball_centre_on_the_pitch_circle(ball_6210, race, sign):
-    """OPEN SB-41, option (i): R_P = (Dpw -/+ Dw cos a)/2. Option (ii), the groove fixed in the ring (ISO/TS 16281
-    Eq. (13)-(15)), differs by (r_g - Dw/2)(cos a - cos a_0): numbers in the vault note, not here."""
-    alpha = math.radians(20.0)
-    (c,) = DeepGrooveBallContact.from_bearing(ball_6210, load=100.0, alpha=alpha, races=(race,))
-    assert c.body2.R_P == pytest.approx((ball_6210.Dpw - sign * ball_6210.Dw * math.cos(alpha)) / 2 * MM, rel=1e-15)
+def test_contact_point_at_alpha_0_is_the_pitch_circle_formula(ball_6210, race, sign):
+    """Groove fixed in the ring (SB-41): at alpha_0 the contact point is R_P = (Dpw -/+ Dw cos(alpha_0)) / 2, the
+    ball centre on the pitch circle (AxisForge BallBearingGeometry r_bx at alpha_0), rel 1e-12; both ball families,
+    the 6210 at s = 0 and 0.015 mm (alpha_0 0 and 9.86 deg) and the 25 deg angular contact bearing."""
+    for cls, bearing in ((DeepGrooveBallContact, ball_6210), (AngularContactBallContact, _angular())):
+        (c,) = cls.from_bearing(bearing, load=100.0, races=(race,))
+        pitch = (bearing.Dpw - sign * bearing.Dw * math.cos(bearing.alpha_0)) / 2               # [mm]
+        assert c.alpha_rad == bearing.alpha_0 and c.body2.R_P == pytest.approx(pitch * MM, rel=1e-12)
+
+
+def _solved(case, load_case):
+    """(contact class, bearing, result) of the SB-41 table of the C10 summary: the 6210 at s = 0.015 mm under the
+    combined load of the iso16281_ball_contact case, or the 25 deg angular contact bearing under Fr = Fa = 5 kN."""
+    if case == "6210":
+        bearing = load_case("iso16281_ball_contact").build_bearing(0.015)
+        load = load_case("iso16281_ball_contact").LOADS["combined"]
+        cls, Fr, Fa = DeepGrooveBallContact, load["Fr"], load["Fa"]
+    else:
+        bearing, cls, Fr, Fa = _angular(), AngularContactBallContact, 5000.0, 5000.0
+    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=Fr, Fr_xy=0.0, Fa=Fa, delta_r_init=0.0,
+                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    assert result.ok
+    return cls, bearing, result
+
+
+@pytest.mark.parametrize("case, race, alpha_j_deg, R_P_mm", [
+    ("6210", "inner", 17.954, 28.967820), ("6210", "outer", 17.954, 41.032180),
+    ("angular", "inner", 27.489, 29.371795), ("angular", "outer", 27.489, 40.628205)])
+def test_contact_point_of_the_sb41_table(load_case, case, race, alpha_j_deg, R_P_mm):
+    """The four rows of the (i)/(ii) table of the C10 summary (80_Inbox/2026-10-26/slippy_bridge_bearing_families,
+    SB-41), most loaded ball j 0: R_P is column (ii), R_G - sign r_g cos(alpha_j) with R_G = Dpw/2 + sign (r_g -
+    Dw/2) cos(alpha_0) (ISO/TS 16281 4.2.2 Eq. (13)-(15)), here rebuilt from the solver's Ri and A, abs 1e-9 mm. The
+    regression check is the printed value: the table prints 6 decimals, so it is met to its rounding, 5e-7 mm (OPEN
+    SB-52). No published value exists for the groove-fixed R_P at alpha_j. Rolling radius r_x = sign R_P /
+    cos(alpha_j), rel 1e-12 (Meusnier, outer negated): a sign regression of Raceway.r."""
+    cls, bearing, result = _solved(case, load_case)
+    (c,) = cls.from_bearing(bearing, result, elements="max", races=(race,))
+    sign, r_g = (1.0, bearing.ri) if race == "inner" else (-1.0, bearing.re)
+    assert c.j == 0 and math.degrees(c.alpha_rad) == pytest.approx(alpha_j_deg, abs=5e-4)
+    assert c.body2.R_P / MM == pytest.approx(_solver_contact_point(bearing, race, c.alpha_rad), abs=1e-9)
+    assert c.body2.R_P / MM == pytest.approx(R_P_mm, abs=5e-7)
+    assert c.body2.r[0] == pytest.approx(sign * c.body2.R_P / math.cos(c.alpha_rad), rel=1e-12)
+
+
+@pytest.mark.parametrize("case", ["6210", "angular"])
+def test_contact_point_is_the_solvers(load_case, case):
+    """Every loaded ball: R_P of the bridge equals the contact-point radius rebuilt from the solver's stored Ri and A
+    (groove centres fixed in the rings, see _solver_contact_point), rel 1e-12. The operating angle recomputed from
+    the solver's displacements by Eq. (15), alpha_j = arctan2(A sin(alpha_0) + delta_a, A cos(alpha_0) + delta_r
+    cos(phi_j)) (psi = 0), equals the result's alpha_j: the centre-line direction is the solver's; the radial
+    positions of the centres are Eq. (14) (Ri) and Eq. (13) (A)."""
+    cls, bearing, result = _solved(case, load_case)
+    row = result.rows[0]
+    alpha = np.arctan2(bearing.A * np.sin(bearing.alpha_0) + result.delta_a,
+                       bearing.A * np.cos(bearing.alpha_0) + result.delta_r * np.cos(row.phi_j))
+    np.testing.assert_allclose(alpha, row.alpha_j, rtol=0, atol=1e-12)
+    cs = cls.from_bearing(bearing, result)
+    assert len(cs) == 2 * np.count_nonzero(row.Q_j > 0)
+    for c in cs:
+        assert c.body2.R_P / MM == pytest.approx(_solver_contact_point(bearing, c.race, alpha[c.j]), rel=1e-12)
 
 
 def test_deep_groove_class_refuses_two_rows_and_bad_indices(ball, ball_result):
@@ -813,18 +877,19 @@ def test_angular_contact_raceways_are_the_true_raceways(alpha_0_deg):
 
 def test_angular_contacts_of_a_real_iso16281_solve():
     """Fr = Fa = 5 kN on the 25 deg bearing: alpha_j of the most loaded ball 27.49 deg; curvature sum of ISO/TS
-    16281 4.2.1 Eq. (5)-(6), (1/Dw)(4 - 1/f +/- 2 g/(1 -/+ g)), with g = Dw cos(alpha_j)/Dpw evaluated at alpha_j
-    (R-019; the standard uses the initial angle), inner +, outer -."""
+    16281 4.2.1 Eq. (5)-(6) form, (1/Dw)(4 - 1/f) + sign cos(alpha_j)/R_P, at alpha_j (R-019; the standard uses the
+    nominal angle), inner +, outer -, R_P from the solver's groove centres (SB-41); it reduces to Eq. (5)-(6) at
+    alpha_0, where 2 g/(Dw (1 -/+ g)) of the standard is cos(alpha)/R_P with the ball centre on the pitch circle."""
     bearing = _angular()
     result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=5000.0, Fr_xy=0.0, Fa=5000.0, delta_r_init=0.0,
                                                 delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
     assert result.ok
     inner, outer = AngularContactBallContact.from_bearing(bearing, result, elements="max")
     assert math.degrees(inner.alpha_rad) == pytest.approx(27.489, abs=0.001) and inner.load == outer.load
-    g = bearing.Dw * math.cos(inner.alpha_rad) / bearing.Dpw
     for sign, c in ((+1.0, inner), (-1.0, outer)):
-        iso = (4.0 - 1.0 / 0.52 + sign * 2.0 * g / (1.0 - sign * g)) / (bearing.Dw * MM)
-        assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-9) and c.label == f"b_{c.race}_e{c.j}"
+        R_P = _solver_contact_point(bearing, c.race, c.alpha_rad)                                  # [mm]
+        iso = (4.0 - 1.0 / 0.52) / (bearing.Dw * MM) + sign * math.cos(c.alpha_rad) / (R_P * MM)    # [1/m]
+        assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-12) and c.label == f"b_{c.race}_e{c.j}"
 
 
 @pytest.mark.parametrize("Fa", [0.0, -5000.0])
