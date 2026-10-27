@@ -1,28 +1,33 @@
-"""Cylindrical gears: AxisForge pair + the diameter of the contact point on gear 1 -> tooth contacts.
+"""Cylindrical gears: AxisForge cylindrical pair -> contacts of two involute flanks along the path.
 
-A tooth contact is the contact of two flanks at one point of the path of contact. Near that point
-each involute flank is replaced by a cylinder of its radius of curvature in the plane normal to
-the contact line (the local equivalent cylinders), so the contact is a line contact of two
-parallel cylinders: the line lies along the face width (bridge y), the profile direction is the
-rolling direction (bridge x). It is quasi-steady (each point solved as if it lasted for ever), the
-load sharing between the tooth pairs in contact is AxisForge's rigid model (one load per unit
-length on all contact lines), and a helical pair is represented by its transverse section at mid
-face width.
+A gear contact is the contact of two flanks at one point of the path of contact. As for the
+bearings (D-0034 item 10) each AxisForge gear family has its own contact class with its own
+bodies, and the caller picks the class; no dispatcher:
+
+* :class:`CylindricalGearContact` <- AxisForge ``CylindricalFamily``, external and internal,
+  spur and helical; bodies: two :class:`InvoluteFlank`, the true flanks with their ends.
+
+The contact is a line contact: the line lies along the contact line (bridge y), the profile
+direction is the rolling direction (bridge x, toward the tip of gear 1). It is quasi-steady (each
+point solved as if it lasted for ever), the load sharing between the tooth pairs in contact is
+AxisForge's rigid model (one load per unit length on all contact lines), and a helical contact is
+a slice (see :class:`InvoluteFlank`). The equivalent cylinders (``SweptCircleBody``) are kept for
+comparison only, through a plain ``Contact`` subclass.
 
 The input of a contact is the diameter ``dy1`` of the flank of gear 1 at the contact point
 (D-0034 item 9). At a given ``dy1`` the radii, the position on the path, the load share and the
-load per unit length do not depend on which gear drives; the driver only says which diameters
-are the named points A..E (:func:`path_diameters`). AxisForge is read here only: the geometry
-from ``CylindricalFamily.pair_values_at``, the load from ``load_sharing``. Units are converted
-here, once: mm -> m (``_MM``), N/mm -> N/m, MPa -> Pa (``_MPA``).
+load per unit length do not depend on which gear drives; the driver says which diameters are the
+named points A..E and the sense of the entrainment. AxisForge is read here only: every value at a
+point from one call of ``CylindricalFamily.pair_values_at``, the load from ``load_sharing``. Units
+are converted here, once: mm -> m (``_MM``), N/mm -> N/m, MPa -> Pa (``_MPA``).
 
 References
 ----------
-ISO 21771:2007, 4.3.8 Eq. (17) (radius of curvature of the involute at a diameter), 5.4.5.3
-Eq. (87) (the two radii add up to T1T2), through AxisForge ``CylindricalFamily.pair_values_at``,
-``path_points`` and ``curvature_radii``; AxisForge
-``axisforge.solvers.machine_elements.gears.contact.load_sharing``. Johnson (1985), section 4.2(c)
-(line contact of two cylinders).
+ISO 21771:2007, 4.3 (involute helicoids), 4.3.8 Eq. (17) (radius of curvature of the involute at
+a diameter), 5.4.5.3 Eq. (87) (the two radii add up to T1T2), 5.6 (sliding), through AxisForge
+``CylindricalFamily.pair_values_at``, ``path_points``, ``curvature_radii`` and ``surface_speeds``;
+AxisForge ``axisforge.solvers.machine_elements.gears.contact.load_sharing``. Johnson (1985),
+section 4.2(c) (line contact).
 """
 from __future__ import annotations
 
@@ -36,14 +41,18 @@ from axisforge.core.machine_elements.gears.cylindrical import CylindricalFamily
 from axisforge.core.materials import available_materials, get_material
 from axisforge.solvers.machine_elements.gears.contact import load_sharing
 
-from ..contact import DC, Body, Contact, SweptCircleBody
+from ..contact import DC, Body, Contact
+from ..submodels import Kinematics
 from . import _MM, _MPA
 
-__all__ = ["InvoluteFlank", "GearContact", "ToothContact", "gear_contacts", "path_diameters"]
+__all__ = ["InvoluteFlank", "GearContact", "CylindricalGearContact"]
+
+# the flank-end distances of a gear contact: (field name, body, attribute of the body)
+_ENDS = (("d_end_tip_1_m", "body1", "d_end_tip_m"), ("d_end_root_1_m", "body1", "d_end_root_m"),
+         ("d_end_tip_2_m", "body2", "d_end_tip_m"), ("d_end_root_2_m", "body2", "d_end_root_m"))
 
 # OPEN R-024: rho2_n of a ring gear is concave < 0 (probe at C); José may close it.
 # OPEN R-027: helical pairs are mid-face slices only; EHL on beta != 0 to be refused.
-# OPEN R-032: local equivalent cylinders, not the involute flank surfaces.
 # OPEN R-118: E, nu of the FZG gears (20MnCr5): no held source; the case gives them explicitly.
 
 
@@ -274,8 +283,9 @@ class InvoluteFlank(Body):
 class GearContact(Contact):
     """Contact of the flanks of gear 1 (body 1) and gear 2 (body 2) at one point of the path.
 
-    Abstract like :class:`Contact` (:class:`ToothContact` sets ``line``). Field names and units as
-    AxisForge (``pair_values_at``, ``path_points``, ``load_sharing``).
+    Abstract like :class:`Contact`: each family class (:class:`CylindricalGearContact`) sets
+    ``line`` and ``family``. Field names and units as AxisForge (``pair_values_at``,
+    ``path_points``, ``load_sharing``).
 
     Parameters
     ----------
@@ -287,26 +297,35 @@ class GearContact(Contact):
     g_y_mm : float
         Position on the path from the pitch point C, positive toward the tip of gear 1 [mm].
     share : float
-        Share of the normal force carried by this tooth pair [-].
+        Share of the normal force carried by this tooth pair [-]; nan when the load is given.
     l_mm : float
-        Length of the contact line of this tooth pair [mm].
+        Length of the contact line of this tooth pair [mm]; nan when the load is given.
     l_sum_mm : float
-        Total length of the contact lines of all tooth pairs in contact [mm]; ``load = F_bn / l_sum``.
-    n_pairs : int
-        Number of tooth pairs in contact [-].
+        Total length of the contact lines of all tooth pairs in contact [mm]; ``load = F_bn /
+        l_sum``; nan when the load is given.
+    n_pairs : int or float
+        Number of tooth pairs in contact [-]; nan when the load is given.
     driver : {"gear1", "gear2"}
-        The driving gear (fixes which diameters are A..E; not the geometry at ``dy1``).
+        The driving gear (fixes which diameters are A..E and the sense of the entrainment; not the
+        geometry at ``dy1``).
     z2 : int
         Tooth number of gear 2, signed (ISO 21771: negative for an internal ring), for the sign of
         the flank of gear 2.
     material1, material2 : str
         Source of E and nu of gear 1 and gear 2: the AxisForge ``material_id``, or ``"given"`` /
-        ``"given:<material_id>"`` for values given to :func:`gear_contacts`.
+        ``"given:<material_id>"`` for values given to ``from_pair``.
 
     Other fields as :class:`Contact`. Bridge y lies along the contact line: the face width for a
     spur pair, inclined at beta_b in the plane of action for a helical one; ``load`` is the load
     per unit length of that line [N/m].
+
+    Raises
+    ------
+    ValueError
+        If ``driver`` is not "gear1"/"gear2"; and every check of :class:`Contact`.
     """
+
+    family: ClassVar[type]        # declared, not set: each family class sets its AxisForge family
 
     point: str
     dy1_mm: float
@@ -315,177 +334,258 @@ class GearContact(Contact):
     share: float
     l_mm: float
     l_sum_mm: float
-    n_pairs: int
+    n_pairs: int | float
     driver: str
     z2: int                       # OPEN SB-11: z2 stored on the contact for the sign check of rho2
     material1: str                # OPEN SB-12: E, nu source recorded on the contact
     material2: str
 
-
-@dataclass(**DC)
-class ToothContact(GearContact):
-    """Line contact of two involute flanks, replaced by their equivalent cylinders (see
-    :class:`GearContact`). Body radii ``(rho_n, inf)``: the normal radius of curvature along the
-    profile (bridge x), straight along the contact line (bridge y).
-
-    The radius checks guard hand-built contacts (D-0034 item 6). Through :func:`gear_contacts`
-    they cannot fail: ``pair_values_at`` gives ``rho_y1 = L_y1 >= 0`` from ``dy1`` and
-    ``rho_y2 = T1T2 - rho_y1`` from the line of action, of the sign of z2 wherever the flanks are
-    involutes (beyond T2 of an external pair ``rho_y2`` changes sign; for a ring T2 is not
-    reachable), and a pair whose path passes a base-tangent point is refused by
-    :func:`gear_contacts` (SB-20). A zero radius is refused by :class:`SweptCircleBody` before
-    these checks.
-
-    Raises
-    ------
-    ValueError
-        If ``driver`` is not "gear1"/"gear2"; if a body is not straight along y (``r_y != inf``);
-        if ``body1.r[0] <= 0`` (the flank of gear 1 is convex on the involute between the
-        base-tangent points, R-030); if the sign of ``body2.r[0]`` is not that of ``z2`` (gear 2
-        is convex on an external pair, z2 > 0, and concave on an internal ring, z2 < 0); and
-        every check of :class:`Contact`.
-    """
-
-    line = True
-
     def __post_init__(self) -> None:
-        name = f"ToothContact {self.label!r}"
         if self.driver not in ("gear1", "gear2"):
-            raise ValueError(f"{name}: driver must be 'gear1' or 'gear2', got {self.driver!r}")
-        if not all(math.isinf(body.r[1]) for body in (self.body1, self.body2)):
-            raise ValueError(f"{name}: the flanks are straight along the face width (r_y = inf), got "
-                             f"{self.body1.r[1]}, {self.body2.r[1]}")
-        if not self.body1.r[0] > 0:
-            raise ValueError(f"{name}: rho1_n must be > 0, got {self.body1.r[0]} m (pair assembled with check=False?)")
-        if np.sign(self.body2.r[0]) != np.sign(self.z2):
-            raise ValueError(f"{name}: rho2_n = {self.body2.r[0]} m has not the sign of z2 = {self.z2} "
-                             "(convex external gear 2, concave internal ring; check=False pair? R-030)")
+            raise ValueError(f"{type(self).__name__} {self.label!r}: driver must be 'gear1' or 'gear2', "
+                             f"got {self.driver!r}")
         super().__post_init__()
 
 
-# OPEN SB-21: path_diameters gives A..E only; one-sided B-/B+/D-/D+ left to the caller
-def path_diameters(pair, driver: str) -> dict[str, float]:
-    """Diameters of the flank of gear 1 at the points A..E of the path, for a driving gear [mm].
+@dataclass(**DC)
+class CylindricalGearContact(GearContact):
+    """Line contact of two involute flanks of an AxisForge ``CylindricalFamily`` pair at one point of the path.
 
-    From AxisForge ``CylindricalFamily.path_points(pair, driver)`` (positions ``g_y``):
-    ``dy1 = 2 sqrt((T1C + g_y)^2 + rb1^2)``, ISO 21771 Eq. (17) inverted (the radius of curvature
-    ``T1C + g_y`` and the base radius ``rb1`` are the legs of a right triangle whose hypotenuse is
-    the radius at the point), as ``pair_values_at`` does for ``dy2``. With gear 1 driving, A is at
-    the active root ``2 rA1`` and E at the tip ``da1``; gear 2 driving swaps A <-> E and B <-> D.
-
-    B and D are the limits of single tooth contact; evaluated exactly there, ``load_sharing``
-    gives the double-contact share (R-305). A one-sided point (B+, D-, ...) is the caller's: shift
-    along the path by a small distance. The labels follow the path from A to E, but C need not lie
-    between B and D (e.g. an internal 24/-60 pair).
+    External and internal pairs (the ring's sign in its radii, as AxisForge), spur and helical (a
+    helical contact is a slice: see :class:`InvoluteFlank`). Body 1 is the :class:`InvoluteFlank`
+    of gear 1 (+x_b toward its tip), body 2 that of gear 2 (+x_b toward its root): bridge +x points
+    toward the tip of gear 1, the side of g_y > 0; bridge y lies along the contact line; ``load`` is
+    the load per unit length of that line [N/m]. Build the contacts of a pair with
+    :meth:`from_pair`. The equivalent cylinders (``SweptCircleBody``) are not accepted as bodies
+    here: compare with them through a plain :class:`Contact` subclass.
 
     Parameters
     ----------
-    pair : GearPair
-        AxisForge pair of the cylindrical family.
-    driver : {"gear1", "gear2"}
+    zeta1, zeta2 : float
+        Specific sliding of flank 1 and flank 2 [-] (AxisForge ``pair_values_at``, ISO 21771:2007
+        5.6.3 Eq. (114)-(115)).
+    Kg : float
+        Sliding factor [-] (``pair_values_at``, 5.6.2 Eq. (111)).
+    kinematics : Kinematics or None, optional
+        Surface speeds at the point with the meanings and signs of AxisForge ``surface_speeds``
+        (``u1``, ``u2`` > 0 the rolling speeds across the contact line, ``vg = u1 - u2``,
+        ``ue = (u1 + u2)/2``), when a speed is given to :meth:`from_pair`; None otherwise.
 
-    Returns
-    -------
-    dict
-        ``{"A", "B", "C", "D", "E": dy1}`` [mm], to give to :func:`gear_contacts`.
-    """
-    points = CylindricalFamily.path_points(pair, driver)
-    rb1 = pair.gear1.rb
-    return {k: float(2.0 * math.hypot(pair.T1C + g_y, rb1)) for k, g_y in points.items()}
+    Other fields as :class:`GearContact`.
 
-
-def gear_contacts(pair, dy1, F_bn_N: float, *, driver: str, E=None, nu=None) -> list[ToothContact]:
-    """Tooth contacts of an AxisForge cylindrical pair at diameters ``dy1`` of gear 1 (SI units).
-
-    Each contact is the two flanks at the point of the path where the flank of gear 1 has
-    diameter ``dy1``: two parallel cylinders of the normal radii of curvature, pressed by the load
-    per unit length the tooth pair carries there.
-
-    Parameters
+    Attributes
     ----------
-    pair : GearPair
-        AxisForge pair of the cylindrical family. E and nu of each gear come from its
-        ``material_id`` registered in ``axisforge.core.materials``, unless given below.
-    dy1 : float, sequence of float, or mapping of str to float
-        Diameter(s) of the contact point on gear 1 [mm], on the path ``2 rA1 <= dy1 <= da1``
-        (the active root diameter d_Nf1 to the tip; the same segment for either driver). A
-        mapping gives the point labels (e.g. :func:`path_diameters`); otherwise each label is
-        ``f"dy1={dy1:.6g}"``.
-    F_bn_N : float
-        Total normal force of the mesh [N] (AxisForge ``MeshForces.F_bn_N``), > 0.
-    driver : {"gear1", "gear2"}
-        The driving gear, recorded on each contact.
-    E, nu : (value or None, value or None), optional
-        Young's modulus [MPa] and Poisson's ratio [-] of gear 1 and gear 2, given only for a gear
-        without a registered AxisForge material; None for a gear that has one.
-
-    Returns
-    -------
-    list of ToothContact
-        One per diameter, in the order given; label ``f"{pair.label or 'gear'}_{point}"``.
-        ``body1 = SweptCircleBody(r=(rho1_n, inf))``, ``body2 = SweptCircleBody(r=(rho2_n, inf))`` with
-        ``rho1_n``, ``rho2_n`` the normal-plane radii of ``pair_values_at`` (``curvature_radii``,
-        ``rho_t / cos(beta_b)``) [m] (signed: a ring is concave), ``load = w`` [N/m] with
-        ``w = F_bn / l_sum`` (AxisForge ``load_sharing``: ``share F_bn / l`` written without
-        ``l``, which is zero at the ends of a helical line).
+    beta_b_rad : float
+        Base helix angle of the two flanks [rad] (AxisForge ``gear1.betab``).
+    d_end_tip_1_m, d_end_root_1_m, d_end_tip_2_m, d_end_root_2_m : float
+        Distances along bridge x from the point to the ends of the two flanks [m] (the bodies'
+        ``d_end_tip_m``, ``d_end_root_m``): the tip of gear 1 and the root end of gear 2 lie at
+        +x, the root end of gear 1 and the tip of gear 2 at -x. Divided by the Hertz half-width
+        they are in the Hertz reference (``d_end_*_over_b``); below 1 that reference is not valid
+        (``valid`` False, the reason recorded) and a solve still runs. The contact then reaches a
+        sharp flank end: the half-space BEM sees a punch-like edge (Johnson 1985, 2.8, Eq. (2.61);
+        a real tooth corner is a wedge, more compliant, and tip relief and tooth deflection are not
+        modelled), so its p0, b, approach and ``err_*`` are numbers of the mesh, not of the gear (C40
+        at K9, 0.30 b from the tip of gear 2: p0 3.08 / 4.16 / 5.87 GPa at h, h/2, h/4); b is half
+        the truncated loaded segment. Read them only when ``hertz_valid`` is True.
+    entrainment_sign_x : int
+        Sense of the entrainment along bridge x, from the driver: -1 when gear 1 drives (the
+        contact point moves along the line of action; over flank 1 it moves toward its tip and over
+        flank 2 toward its root, both +x, so both surfaces move toward -x relative to it), +1 when
+        gear 2 drives, at every point of the path, external or internal. In bridge x the speeds of
+        ``kinematics`` are ``entrainment_sign_x`` times AxisForge's (``ue`` and ``vg`` alike).
+        SlipPY's Reynolds solver needs the entrainment along +x (inlet at array index 0) and a
+        positive speed: with gear 1 driving the arrays would have to be flipped along axis 0 (the
+        contact cannot be mirrored: body 1 points toward its tip); no Reynolds step reads it yet.
 
     Raises
     ------
     ValueError
-        If ``F_bn_N`` is not positive; if the path of the pair passes a base-tangent point
-        (``T1A < 0`` or ``sign(z2) T2E < 0``, a pair assembled with ``check=False``); if a ``dy1``
-        is off the path; if a label contains ``:``;
-        if a gear has no AxisForge material and no ``E``, ``nu`` given for it, or has one and
-        ``E`` or ``nu`` given; if ``E`` or ``nu`` is not a 2-sequence; and every check of
-        :class:`ToothContact`.
+        If a body is not an :class:`InvoluteFlank`, body 1 not toward its tip or body 2 not
+        toward its root; if the two flanks have different ``beta_b``; if ``body1.rho_t <= 0``; if
+        the sign of ``body2.rho_t`` is not that of ``z2`` (convex external gear 2, concave ring;
+        beyond the base-tangent point T2 of an external pair there is no involute, SB-59); and
+        every check of :class:`GearContact`.
     """
-    tag = pair.label or "gear"
-    # kept here: Contact would report the load per unit length, not the force given
-    if not (F_bn_N > 0 and math.isfinite(F_bn_N)):
-        raise ValueError(f"{tag}: F_bn_N must be positive and finite, got {F_bn_N}")
-    if isinstance(dy1, Mapping):
-        labels, diameters = list(dy1), [float(v) for v in dy1.values()]
-    else:
-        diameters = [float(v) for v in np.atleast_1d(dy1)]
-        labels = [f"dy1={d:.6g}" for d in diameters]
-    bad = [label for label in labels if ":" in label]
-    if bad:
-        raise ValueError(f"{tag}: point labels go into file names, no ':' (NTFS stream): {bad}")
-    # Beyond a base-tangent point there is no involute (curvature_radii: the values there are not radii
-    # of a flank). The Q39 test of AxisForge validate_pair on the stored segments.
-    # OPEN SB-20: pairs whose path passes a base-tangent point are refused whole
-    # OPEN SB-59: since AxisForge 54e71dd rho_y2 is signed from the line of action, so the T2E < 0 branch could be left
-    # to ToothContact; T1A < 0 cannot: the dy1 input folds a point beyond T1 onto its mirror (rho_y1 = L_y1 >= 0)
-    if pair.T1A < 0.0 or np.sign(pair.gear2.z) * pair.T2E < 0.0:
-        raise ValueError(f"{tag}: the path passes a base-tangent point (T1A = {pair.T1A:.6g} mm, "
-                         f"sign(z2) T2E = {np.sign(pair.gear2.z) * pair.T2E:.6g} mm; both must be >= 0): "
-                         "a pair assembled with check=False is not translated")
-    E_MPa, nu_gear, source = _materials(pair, tag, E, nu)
 
-    values = CylindricalFamily.pair_values_at(pair, np.asarray(diameters))
-    g_y = values["g_y_mm"]                     # signed position on the path, + toward the tip of gear 1
-    # on the path: distance from the stored A within [0, AE], with the end tolerance of load_sharing
-    # (1e-9 p_bt) so that both agree at A and E; a dy1 below the base circle gives nan and fails too
-    s, tol = g_y + pair.AC, 1e-9 * pair.gear1.pbt
-    for label, d, s_i in zip(labels, diameters, s):
-        if not -tol <= s_i <= pair.AE + tol:
-            raise ValueError(f"{tag}_{label}: dy1 = {d} mm is off the path [{2.0 * pair.rA1:.6g}, "
-                             f"{pair.gear1.da:.6g}] mm (2 rA1 to da1)")
-    sharing = load_sharing(pair, g_y)
-    z2 = int(pair.gear2.z)
-    out = []
-    for i, label in enumerate(labels):
-        # normal-plane radii (Meusnier, rho_t / cos(beta_b)), AxisForge curvature_radii at g_y
-        rho1_n_mm, rho2_n_mm = (float(values[k][i]) for k in ("rho1_n_mm", "rho2_n_mm"))
-        out.append(ToothContact(
-            # x = profile direction (rolling), y along the contact line; ring rho2 < 0
-            body1=SweptCircleBody(r=(rho1_n_mm * _MM, math.inf), E=E_MPa[0] * _MPA, nu=nu_gear[0]),
-            body2=SweptCircleBody(r=(rho2_n_mm * _MM, math.inf), E=E_MPa[1] * _MPA, nu=nu_gear[1]),
-            load=F_bn_N / float(sharing["l_sum_mm"][i]) / _MM,              # [N/mm] -> [N/m]
-            label=f"{tag}_{label}", point=label, dy1_mm=diameters[i], dy2_mm=float(values["dy2_mm"][i]),
-            g_y_mm=float(g_y[i]), share=float(sharing["share"][i]), l_mm=float(sharing["l_mm"][i]),
-            l_sum_mm=float(sharing["l_sum_mm"][i]), n_pairs=int(sharing["n_pairs"][i]), driver=driver, z2=z2, material1=source[0], material2=source[1]))
-    return out
+    line = True
+    family = CylindricalFamily
+
+    zeta1: float
+    zeta2: float
+    Kg: float
+    kinematics: Kinematics | None = None
+    beta_b_rad: float = field(init=False)
+    d_end_tip_1_m: float = field(init=False)
+    d_end_root_1_m: float = field(init=False)
+    d_end_tip_2_m: float = field(init=False)
+    d_end_root_2_m: float = field(init=False)
+    # OPEN SB-68: bridge +x toward the tip of gear 1 is against the entrainment when gear 1 drives (entrainment_sign_x -1)
+    entrainment_sign_x: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        name = f"{type(self).__name__} {self.label!r}"
+        b1, b2 = self.body1, self.body2
+        if not (isinstance(b1, InvoluteFlank) and isinstance(b2, InvoluteFlank) and b1.toward_tip
+                and not b2.toward_tip):
+            raise ValueError(f"{name}: body1 must be the InvoluteFlank of gear 1 toward its tip and body2 that of "
+                             "gear 2 toward its root")
+        if b1.beta_b != b2.beta_b:
+            raise ValueError(f"{name}: the two flanks need the same beta_b, got {b1.beta_b}, {b2.beta_b}")
+        if not b1.rho_t > 0:
+            raise ValueError(f"{name}: rho1_t must be > 0, got {b1.rho_t} m")
+        if np.sign(b2.rho_t) != np.sign(self.z2):
+            raise ValueError(f"{name}: rho2_t = {b2.rho_t} m has not the sign of z2 = {self.z2} (convex external "
+                             "gear 2, concave ring; beyond T2 of an external pair there is no involute, SB-59)")
+        super().__post_init__()
+        for key, value in (("beta_b_rad", b1.beta_b), *self.end_distances().items(),
+                           ("entrainment_sign_x", -1 if self.driver == "gear1" else 1)):
+            object.__setattr__(self, key, value)
+
+    def end_distances(self) -> dict[str, float]:
+        """The four flank-end distances [m] (see the attributes), by their field names, from the bodies."""
+        return {key: getattr(getattr(self, body), attr) for key, body, attr in _ENDS}
+
+    @classmethod
+    def from_pair(cls, pair, *, points="path", driver: str, F_bn_N: float | None = None, load: float | None = None,
+                  n1_rpm: float | None = None, E=None, nu=None, label: str | None = None
+                  ) -> list[CylindricalGearContact]:
+        """Contacts of an AxisForge cylindrical pair at points of the path of contact (SI units).
+
+        Each contact is the two flanks at the point of the path where the flank of gear 1 has
+        diameter ``dy1``: two :class:`InvoluteFlank` bodies with the values of that point, pressed
+        by a load per unit length.
+
+        Parameters
+        ----------
+        pair : GearPair
+            AxisForge pair of ``CylindricalFamily`` (the exact class: another family, also the
+            ``ManufacturedCylindricalFamily``, is refused). E and nu of each gear come from its
+            ``material_id`` registered in ``axisforge.core.materials``, unless given below.
+        points : "path", sequence of float, or mapping of str to float
+            ``"path"``: the points A..E for ``driver`` (AxisForge ``path_points``, at
+            ``dy1 = 2 sqrt((T1C + g_y)^2 + rb1^2)``, ISO 21771 Eq. (17) inverted; with gear 1 driving
+            A is the active root ``2 rA1`` and E the tip ``da1``; B and D are evaluated exactly at
+            the limits of single contact, so ``load_sharing`` gives the double-contact share there,
+            R-305; a one-sided point is the caller's). Otherwise diameter(s) ``dy1`` of gear 1 [mm]
+            on the path ``2 rA1 <= dy1 <= da1``: a mapping gives the labels, a sequence gets
+            ``f"dy1={dy1:.6g}"``.
+        driver : {"gear1", "gear2"}
+            The driving gear: names A..E for ``"path"``, recorded, and fixes ``entrainment_sign_x``.
+        F_bn_N : float, optional
+            Total normal force of the mesh [N] (AxisForge ``MeshForces.F_bn_N``), > 0:
+            ``load = F_bn / l_sum`` from ``load_sharing`` (the L0 of D-0035), ``share``, ``l``,
+            ``l_sum``, ``n_pairs`` recorded.
+        load : float, optional
+            Load per unit length of the contact line [N/m], > 0, the same at every point;
+            ``share``, ``l_mm``, ``l_sum_mm``, ``n_pairs`` nan. Exactly one of ``F_bn_N`` and
+            ``load``.
+        n1_rpm : float, optional
+            Speed of gear 1 [rpm], > 0, whichever gear drives (a wheel speed is converted by the
+            caller, ``n1 = n2 |z2 / z1|``): fills ``kinematics`` from ``pair_values_at``
+            (``surface_speeds``). None: ``kinematics`` None.
+        E, nu : (value or None, value or None), optional
+            Young's modulus [MPa] and Poisson's ratio [-] of gear 1 and gear 2, given only for a
+            gear without a registered AxisForge material; None for a gear that has one.
+        label : str, optional
+            Prefix of the labels; default ``pair.label`` or ``"gear"``.
+
+        Returns
+        -------
+        list of CylindricalGearContact
+            One per point, in the order given; label ``f"{prefix}_{point}"``. Every value at a
+            point comes from one call of ``pair_values_at``: ``rho1_t_mm``, ``rho2_t_mm`` (the
+            bodies, ``r = rho_t / cos(beta_b)`` = its ``rho1_n_mm``, ``rho2_n_mm``), ``g_y_mm``,
+            ``dy2_mm``, ``zeta1``, ``zeta2``, ``Kg`` and, with ``n1_rpm``, ``u1``, ``u2``, ``ue``,
+            ``vg``; the bridge recomputes none of them. Flank ends: gear 1 from its base circle to
+            its tip circle; gear 2 external the same, a ring from its inner tip circle to its root
+            circle. A helical point is the mid-face slice of its contact line, on ``[A, E]`` only:
+            ``load_sharing`` also loads lines whose mid-face point lies up to ``b tan(beta_b)/2``
+            outside the path, which are not translated (R-027).
+
+        Raises
+        ------
+        TypeError
+            If the pair is not of ``CylindricalFamily``.
+        ValueError
+            If not exactly one of ``F_bn_N`` and ``load`` is given, or it is not positive and
+            finite; if ``points`` is a string other than "path"; if a label contains ``:``; if the
+            path starts beyond the base-tangent point T1 (``T1A < 0``, a pair assembled with
+            ``check=False``: the ``dy1`` input folds such a point onto its mirror, SB-59); if a
+            ``dy1`` is off the path; if a point lies beyond T2 of an external pair (then
+            ``points="path"`` fails at E: give the points before T2 as a mapping); the material
+            errors of ``_materials``; and every check of the bodies and the contact.
+        """
+        tag = label or pair.label or "gear"
+        if type(pair.family) is not cls.family:
+            raise TypeError(f"{cls.__name__} takes a {cls.family.__name__} pair, got {type(pair.family).__name__} "
+                            f"(pair {tag!r})")
+        if (F_bn_N is None) == (load is None):
+            raise ValueError(f"{tag}: give either F_bn_N or load, not both")
+        # kept here: Contact would report the load per unit length, not the force given
+        for key, value in (("F_bn_N", F_bn_N), ("load", load)):
+            if value is not None and not (value > 0 and math.isfinite(value)):
+                raise ValueError(f"{tag}: {key} must be positive and finite, got {value}")
+        if isinstance(points, str):
+            if points != "path":
+                raise ValueError(f"{tag}: points must be 'path', diameters dy1 or a mapping label -> dy1, got {points!r}")
+            rb1 = pair.gear1.rb
+            points = {k: float(2.0 * math.hypot(pair.T1C + g_y, rb1))
+                      for k, g_y in CylindricalFamily.path_points(pair, driver).items()}
+        if isinstance(points, Mapping):
+            labels, diameters = list(points), [float(v) for v in points.values()]
+        else:
+            diameters = [float(v) for v in np.atleast_1d(points)]
+            labels = [f"dy1={d:.6g}" for d in diameters]
+        bad = [lab for lab in labels if ":" in lab]
+        if bad:
+            raise ValueError(f"{tag}: point labels go into file names, no ':' (NTFS stream): {bad}")
+        # OPEN SB-59: the whole-pair refusal keeps the T1 branch only (the dy1 input folds a point beyond T1 onto its
+        # mirror, rho_y1 = L_y1 >= 0); a point beyond T2 of an external pair is refused point by point below
+        if pair.T1A < 0.0:
+            raise ValueError(f"{tag}: the path starts beyond the base-tangent point T1 (T1A = {pair.T1A:.6g} mm < 0): "
+                             "a pair assembled with check=False is not translated")
+        E_MPa, nu_gear, source = _materials(pair, tag, E, nu)
+
+        values = CylindricalFamily.pair_values_at(pair, np.asarray(diameters), n1_rpm)
+        g_y = values["g_y_mm"]                     # signed position on the path, + toward the tip of gear 1
+        # on the path: distance from the stored A within [0, AE], with the end tolerance of load_sharing
+        # (1e-9 p_bt) so that both agree at A and E; a dy1 below the base circle gives nan and fails too
+        s, tol = g_y + pair.AC, 1e-9 * pair.gear1.pbt
+        for lab, d, s_i in zip(labels, diameters, s):
+            if not -tol <= s_i <= pair.AE + tol:
+                raise ValueError(f"{tag}_{lab}: dy1 = {d} mm is off the path [{2.0 * pair.rA1:.6g}, "
+                                 f"{pair.gear1.da:.6g}] mm (2 rA1 to da1)")
+        sharing = load_sharing(pair, g_y) if F_bn_N is not None else None
+        g1, g2 = pair.gear1, pair.gear2
+        z2 = int(g2.z)
+        # OPEN SB-66: root ends: the base circle of an external gear (upper bound of the involute; the ideal family
+        # stores no d_Ff), the root circle of a ring (the fillet lies between d_Ff2 and d_f2)
+        r_root2 = g2.rb if z2 > 0 else g2.rf
+        out = []
+        for i, lab in enumerate(labels):
+            rho1_t, rho2_t = (float(values[k][i]) for k in ("rho1_t_mm", "rho2_t_mm"))
+            if np.sign(rho2_t) != np.sign(z2):
+                raise ValueError(f"{tag}_{lab}: the point is beyond the base-tangent point T2 (rho2_t = {rho2_t:.6g} "
+                                 "mm): no involute of gear 2 there (SB-59)")
+            # beta_b of gear 1 for both flanks, as curvature_radii (the hand only signs it)
+            body1 = InvoluteFlank(rb=g1.rb * _MM, rho_t=rho1_t * _MM, beta_b=g1.betab, r_tip=g1.ra * _MM,
+                                  r_root=g1.rb * _MM, toward_tip=True, E=E_MPa[0] * _MPA, nu=nu_gear[0])
+            body2 = InvoluteFlank(rb=g2.rb * _MM, rho_t=rho2_t * _MM, beta_b=g1.betab, r_tip=g2.ra * _MM,
+                                  r_root=r_root2 * _MM, toward_tip=False, E=E_MPa[1] * _MPA, nu=nu_gear[1])
+            if sharing is None:
+                w, share = load, dict(share=math.nan, l_mm=math.nan, l_sum_mm=math.nan, n_pairs=math.nan)
+            else:
+                w = F_bn_N / float(sharing["l_sum_mm"][i]) / _MM                  # [N/mm] -> [N/m]
+                share = dict(share=float(sharing["share"][i]), l_mm=float(sharing["l_mm"][i]),
+                             l_sum_mm=float(sharing["l_sum_mm"][i]), n_pairs=int(sharing["n_pairs"][i]))
+            kinematics = None if n1_rpm is None else Kinematics(
+                **{k: float(values[f"{k}_m_per_s"][i]) for k in ("ue", "vg", "u1", "u2")})
+            out.append(cls(body1=body1, body2=body2, load=w, label=f"{tag}_{lab}", point=lab, dy1_mm=diameters[i],
+                           dy2_mm=float(values["dy2_mm"][i]), g_y_mm=float(g_y[i]), **share, driver=driver, z2=z2,
+                           material1=source[0], material2=source[1], zeta1=float(values["zeta1"][i]),
+                           zeta2=float(values["zeta2"][i]), Kg=float(values["Kg"][i]), kinematics=kinematics))
+        return out
 
 
 def _materials(pair, tag: str, E, nu) -> tuple[list[float], list[float], list[str]]:

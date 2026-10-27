@@ -14,7 +14,7 @@ grid x, which is bridge x when ``Grid.angle = 0`` (the default).
 from .core.contact import Body, Contact, SweptCircleBody
 from .core.machine_elements.bearings import (AngularContactBallContact, BearingContact, CylindricalRollerContact,
                                              DeepGrooveBallContact)
-from .core.machine_elements.gears import GearContact, InvoluteFlank, ToothContact, gear_contacts, path_diameters
+from .core.machine_elements.gears import CylindricalGearContact, GearContact, InvoluteFlank
 from .core.submodels import Kinematics
 from .mesh.grid import SPAN_X_0, Grid
 from .results.hertz import HertzResult
@@ -25,5 +25,5 @@ from .solvers.surfaces import surface_pair
 
 __all__ = ["Body", "SweptCircleBody", "Contact", "Kinematics",
            "BearingContact", "DeepGrooveBallContact", "AngularContactBallContact", "CylindricalRollerContact",
-           "InvoluteFlank", "GearContact", "ToothContact", "gear_contacts", "path_diameters",
+           "InvoluteFlank", "GearContact", "CylindricalGearContact",
            "Grid", "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"]

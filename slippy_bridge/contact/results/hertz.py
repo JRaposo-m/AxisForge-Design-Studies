@@ -10,7 +10,7 @@ contact; the approach is not defined locally, text after Eq. (4.37), p. 100); se
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -56,9 +56,15 @@ class HertzResult:
         Only this relative-radius criterion; the per-body condition a << R1, R2 (iii) is not
         checked (OPEN SB-07; e.g. 6210 a/|r_groove| = 0.23).
     valid : bool
-        Whether ``size_ratio`` is within the limit the solver applies (Hertz validity).
+        Hertz validity: ``size_ratio`` within the limit the solver applies and no end of a body
+        within the half-width (``ends_over_b`` all >= 1).
     line : bool
         True for a line contact (load per unit length).
+    reason : str, optional
+        Why ``valid`` is False ("" when valid).
+    ends_over_b : dict, optional
+        Distances to the ends of the bodies in half-widths ``b`` [-], by name
+        (``d_end_<...>_over_b``, from ``Contact.end_distances``); empty for bodies without ends.
     """
 
     p0: float
@@ -71,6 +77,8 @@ class HertzResult:
     size_ratio: float
     valid: bool
     line: bool
+    reason: str = ""
+    ends_over_b: dict = field(default_factory=dict)
 
     def pressure(self, X: np.ndarray, Y: np.ndarray, frame_angle: float = 0.0) -> np.ndarray:
         """Hertz pressure on the coordinates of a frame at ``frame_angle`` from bridge x [Pa], zero
@@ -118,8 +126,10 @@ class HertzResult:
     def record(self, tag: str = "") -> dict:
         """Flat record of the scalars, the unit in the key and ``tag`` before the unit:
         ``p0{tag}_Pa``, ``a{tag}_m``, ``b{tag}_m``, ``psi{tag}_rad``, ``delta{tag}_m``,
-        ``b_over_a{tag}``, ``E_star{tag}_Pa``, ``size_ratio{tag}``, ``valid{tag}``, ``line{tag}``
-        (``tag="_ref"`` gives ``p0_ref_Pa``, the name a study reads)."""
+        ``b_over_a{tag}``, ``E_star{tag}_Pa``, ``size_ratio{tag}``, ``valid{tag}``, ``line{tag}``,
+        ``reason{tag}`` and each ``d_end_<...>_over_b{tag}`` (``tag="_ref"`` gives ``p0_ref_Pa``, the
+        name a study reads)."""
         return {f"p0{tag}_Pa": self.p0, f"a{tag}_m": self.a, f"b{tag}_m": self.b, f"psi{tag}_rad": self.psi,
                 f"delta{tag}_m": self.delta, f"b_over_a{tag}": self.b_over_a, f"E_star{tag}_Pa": self.E_star,
-                f"size_ratio{tag}": self.size_ratio, f"valid{tag}": self.valid, f"line{tag}": self.line}
+                f"size_ratio{tag}": self.size_ratio, f"valid{tag}": self.valid, f"line{tag}": self.line,
+                f"reason{tag}": self.reason, **{f"{key}{tag}": value for key, value in self.ends_over_b.items()}}

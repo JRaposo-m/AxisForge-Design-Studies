@@ -15,7 +15,7 @@ from axisforge.results import (BallBearingResult, BallLoadDistributionResult,  #
                                BearingAnalysisResult, RollerLoadDistributionResult)
 from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.contact_solver import (  # noqa: E402
     ISO16281BallSolver)
-from axisforge.solvers.machine_elements.gears.contact import contact_inputs  # noqa: E402
+from axisforge.solvers.machine_elements.gears.contact import contact_inputs, load_sharing  # noqa: E402
 
 from studies.r00_analytical_references.contact.hertz import hertz_point  # noqa: E402
 
@@ -23,8 +23,7 @@ from slippy_bridge.contact.core.contact import Body, Contact, SweptCircleBody  #
 from slippy_bridge.contact.core.machine_elements.bearings import (AngularContactBallContact,  # noqa: E402
                                                                   BearingContact, CylindricalRollerContact,
                                                                   DeepGrooveBallContact)
-from slippy_bridge.contact.core.machine_elements.gears import (InvoluteFlank, ToothContact,  # noqa: E402
-                                                               gear_contacts, path_diameters)
+from slippy_bridge.contact.core.machine_elements.gears import CylindricalGearContact, InvoluteFlank  # noqa: E402
 from slippy_bridge.contact.mesh.grid import SPAN_X_0, Grid  # noqa: E402
 from slippy_bridge.contact.results.hertz import HertzResult  # noqa: E402
 from slippy_bridge.contact.results.static import StaticResult  # noqa: E402
@@ -1103,7 +1102,7 @@ def test_hertz_half_extents():
 
 def test_hertz_record_keys():
     assert list(_hertz(1.0 * MM, 0.2 * MM).record()) == ["p0_Pa", "a_m", "b_m", "psi_rad", "delta_m", "b_over_a",
-                                                        "E_star_Pa", "size_ratio", "valid", "line"]
+                                                        "E_star_Pa", "size_ratio", "valid", "line", "reason"]
     assert list(_hertz(1.0 * MM, 0.2 * MM).record("_ref"))[:5] == ["p0_ref_Pa", "a_ref_m", "b_ref_m", "psi_ref_rad",
                                                                    "delta_ref_m"]
 
@@ -1293,7 +1292,8 @@ def test_bem_of_a_roller_line_contact(roller_10, tmp_path):
 
 
 def test_bem_of_the_fzg_h501_tooth_contact(h501_C, tmp_path):
-    """FZG H501 at C (ToothContact from AxisForge, BR2 section 6): p0 within 1 %, b within 3 % of Hertz."""
+    """FZG H501 at C (CylindricalGearContact from AxisForge, the two involute flanks, BR2 section 6): p0 within
+    1 %, b within 3 % of Hertz."""
     res = _bem(h501_C, tmp_path)
     assert abs(res.err_p0) <= 0.01 and abs(res.err_b) <= 0.03 and _all_checks(res)
 
@@ -1525,7 +1525,7 @@ def test_grid_around_refuses_an_unknown_angle_name():
         Grid.around(_tori(), hertz(_tori()), angle="major")
 
 
-# ---- gears: AxisForge cylindrical pair -> ToothContact (core/machine_elements/gears.py) ------------------
+# ---- gears: AxisForge cylindrical pair -> CylindricalGearContact (core/machine_elements/gears.py, C12b) -----
 
 _TEST_STEEL = "test_steel_206GPa"     # an AxisForge material registered for the gear tests
 
@@ -1551,6 +1551,11 @@ def _gear_pair(material_id=_TEST_STEEL, z2=40):
         label="internal" if z2 < 0 else "")
 
 
+def _point(contacts, label):
+    (c,) = [c for c in contacts if c.point == label]
+    return c
+
+
 @pytest.fixture
 def fzg_h501(load_case):
     """FZG H501 pair of ``validation/gears/fzg_geometry_ph``, T1 60.75 N m: (case, pair, F_bn [N])."""
@@ -1561,22 +1566,32 @@ def fzg_h501(load_case):
 
 @pytest.fixture
 def h501_C(fzg_h501):
-    """The H501 tooth contact at the pitch point C, gear 1 driving, E 206 000 MPa, nu 0.3 (the case's)."""
+    """The H501 contact at the pitch point C, gear 1 driving, E 206 000 MPa, nu 0.3 (the case's)."""
     cc, pair, F_bn_N = fzg_h501
-    (c,) = gear_contacts(pair, {"C": path_diameters(pair, "gear1")["C"]}, F_bn_N, driver="gear1",
-                         E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
-    return c
+    return _point(CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=F_bn_N, E=cc.GEAR_E_MPA,
+                                                   nu=cc.GEAR_NU), "C")
+
+
+@pytest.fixture
+def c40_k9(fzg_c40):
+    """C40 at K9 (wheel torque 323.27 N m, T1 = 215.51 N m, R-124), the case's driver (gear 1): (case, pair,
+    F_bn [N], the contacts A..E)."""
+    cc, pair = fzg_c40
+    F_bn_N = cc.FAMILY.mesh_forces(pair, cc.WHEEL_TORQUE_NM["K9"] * pair.gear1.z / pair.gear2.z, rot1=+1).F_bn_N
+    return cc, pair, F_bn_N, CylindricalGearContact.from_pair(pair, driver=cc.DRIVER, F_bn_N=F_bn_N,
+                                                               E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
 
 
 def test_fzg_h501_at_C_against_the_hand_check(fzg_h501, h501_C):
     """BR2 section 6, independent hand check (ISO 21771 geometry, ISO 6336-2 forces, Johnson 1985 Eq. (4.43),
     (4.45)): F_bn 1847.109 N, rho1_n 14.20546 mm, rho2_n 21.30819 mm, w = F_bn / l_sum = 75 697.52 N/m,
-    3 tooth pairs, share 0.9717558, Hertz p0 565.67 MPa (the local equivalent cylinders under AxisForge's equal
-    line load, not the ISO 6336-2 sigma_H)."""
+    3 tooth pairs, share 0.9717558, Hertz p0 565.67 MPa (the radii of the flanks at the point under AxisForge's
+    equal line load, not the ISO 6336-2 sigma_H). Unchanged from ToothContact (C12b test 10)."""
     cc, pair, F_bn_N = fzg_h501
     c = h501_C
     assert F_bn_N == pytest.approx(1847.109, abs=0.0005)
-    assert isinstance(c, ToothContact) and c.line and (c.label, c.point, c.driver) == ("H501_C", "C", "gear1")
+    assert isinstance(c, CylindricalGearContact) and c.line and (c.label, c.point, c.driver) == ("H501_C", "C", "gear1")
+    assert isinstance(c.body1, InvoluteFlank) and isinstance(c.body2, InvoluteFlank)
     assert c.body1.r == pytest.approx((14.20546 * MM, math.inf), rel=1e-6)
     assert c.body2.r == pytest.approx((21.30819 * MM, math.inf), rel=1e-6)
     assert (c.body1.E, c.body2.E, c.body1.nu) == (206000.0e6, 206000.0e6, 0.3)
@@ -1590,17 +1605,17 @@ def test_fzg_h501_at_C_against_the_hand_check(fzg_h501, h501_C):
 
 
 @pytest.mark.parametrize("which", ["H501", "internal"])
-def test_tooth_contact_radii_at_C_are_axisforge_curvature_radii(request, which):
-    """C11b: the bridge takes the normal-plane radii from AxisForge (pair_values_at -> curvature_radii, D-0018,
-    D-0032): at the pitch point C the body radii equal CylindricalFamily.curvature_radii(pair, 0) rho1_n, rho2_n
-    (signed: the ring concave) within 1e-12, and the stored segments T1C / cos(beta_b), T2C / cos(beta_b) (ISO 21771
-    Eq. (81), (82), independent of curvature_radii; gear-expert C11b); g_y = 0 within 1e-9 mm."""
+def test_gear_contact_radii_at_C_are_axisforge_curvature_radii(request, which):
+    """C11b, kept: the bridge takes the normal-plane radii from AxisForge (pair_values_at -> curvature_radii,
+    D-0018, D-0032): at C the body radii equal CylindricalFamily.curvature_radii(pair, 0) rho1_n, rho2_n (signed:
+    the ring concave) within 1e-12, and the stored segments T1C / cos(beta_b), T2C / cos(beta_b) (ISO 21771 Eq.
+    (81), (82)); g_y = 0 within 1e-9 mm."""
     if which == "H501":
         cc, pair, F_bn_N = request.getfixturevalue("fzg_h501")
         kw = dict(E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
     else:
         pair, F_bn_N, kw = _gear_pair(z2=-60), 1000.0, {}            # the radii do not depend on the load
-    (c,) = gear_contacts(pair, {"C": path_diameters(pair, "gear1")["C"]}, F_bn_N, driver="gear1", **kw)
+    c = _point(CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=F_bn_N, **kw), "C")
     r = CylindricalFamily.curvature_radii(pair, 0.0)
     assert c.body1.r[0] / MM == pytest.approx(float(r["rho1_n_mm"]), rel=1e-12)
     assert c.body2.r[0] / MM == pytest.approx(float(r["rho2_n_mm"]), rel=1e-12)
@@ -1610,20 +1625,25 @@ def test_tooth_contact_radii_at_C_are_axisforge_curvature_radii(request, which):
     assert np.sign(c.body2.r[0]) == np.sign(pair.gear2.z) and c.g_y_mm == pytest.approx(0.0, abs=1e-9)
 
 
-def test_path_diameters_of_both_drivers(fzg_h501):
-    """Gear 2 driving swaps A <-> E and B <-> D, C stays; with gear 1 driving A is the active root 2 rA1
-    (d_Nf1), E the tip da1, C the operating pitch diameter dl1."""
-    _, pair, _ = fzg_h501
-    d1, d2 = path_diameters(pair, "gear1"), path_diameters(pair, "gear2")
+def test_path_points_of_both_drivers(fzg_h501):
+    """points="path" (the old path_diameters): gear 2 driving swaps A <-> E and B <-> D, C stays; with gear 1
+    driving A is the active root 2 rA1 (d_Nf1), E the tip da1, C the operating pitch diameter dl1; the sense of the
+    entrainment along bridge x is -1 with gear 1 driving, +1 with gear 2 (SB-68)."""
+    cc, pair, F_bn_N = fzg_h501
+    kw = dict(F_bn_N=F_bn_N, E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    cs = {d: CylindricalGearContact.from_pair(pair, driver=d, **kw) for d in ("gear1", "gear2")}
+    d1, d2 = ({c.point: c.dy1_mm for c in cs[d]} for d in ("gear1", "gear2"))
     assert (d2["A"], d2["B"], d2["C"], d2["D"], d2["E"]) == (d1["E"], d1["D"], d1["C"], d1["B"], d1["A"])
     assert d1["A"] == pytest.approx(2 * pair.rA1, rel=1e-12) and d1["E"] == pytest.approx(pair.gear1.da, rel=1e-12)
     assert d1["C"] == pytest.approx(pair.dl1, rel=1e-12)
     assert d1["A"] < d1["C"] < d1["E"]           # B and D need not bracket C (internal 24/-60)
+    for driver, sense in (("gear1", -1), ("gear2", 1)):
+        assert {c.entrainment_sign_x for c in cs[driver]} == {sense}
 
 
 @pytest.mark.parametrize("driver", ["gear1", "gear2"])
 @pytest.mark.parametrize("which", ["H501", "internal"])
-def test_gear_contacts_agree_with_contact_inputs(fzg_h501, driver, which):
+def test_from_pair_agrees_with_contact_inputs(fzg_h501, driver, which):
     """At each step of AxisForge ``contact_inputs`` (9 steps A..E for the driver), dy1 = 2 sqrt((T1C + g_y)^2
     + rb1^2) gives the same rho1_n, rho2_n and w through ``pair_values_at`` and ``load_sharing``: no hidden
     'pinion = gear 1' assumption in AxisForge. FZG H501 (helical) and an internal spur pair 24/-60."""
@@ -1633,7 +1653,7 @@ def test_gear_contacts_agree_with_contact_inputs(fzg_h501, driver, which):
         pair, material = _gear_pair(z2=-60), {}
     inputs = contact_inputs(pair, driver, 1500.0, F_bn_N, n_points=9)
     dy1 = 2.0 * np.sqrt((pair.T1C + inputs["g_y_mm"]) ** 2 + pair.gear1.rb ** 2)
-    cs = gear_contacts(pair, list(dy1), F_bn_N, driver=driver, **material)
+    cs = CylindricalGearContact.from_pair(pair, points=list(dy1), driver=driver, F_bn_N=F_bn_N, **material)
     np.testing.assert_allclose([c.body1.r[0] / MM for c in cs], inputs["rho1_n_mm"], rtol=1e-9)
     np.testing.assert_allclose([c.body2.r[0] / MM for c in cs], inputs["rho2_n_mm"], rtol=1e-9)
     np.testing.assert_allclose([c.load * MM for c in cs], inputs["w_N_per_mm"], rtol=1e-9)
@@ -1642,30 +1662,70 @@ def test_gear_contacts_agree_with_contact_inputs(fzg_h501, driver, which):
 
 
 def test_internal_pair_contacts():
-    """Internal spur pair z 24/-60, mn 2 mm: the ring flank is concave (rho2 < 0), the relative curvature stays
-    positive and Hertz solves along the whole path."""
+    """C12b test 7: internal spur pair z 24/-60, mn 2 mm: from_pair along the path; the ring flank is concave
+    (r[0] < 0, rho_t < 0, its tip inside its root end), the relative curvature stays positive and Hertz solves
+    at every point."""
     pair = _gear_pair(z2=-60)
-    cs = gear_contacts(pair, path_diameters(pair, "gear1"), 1000.0, driver="gear1")
+    cs = CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=1000.0)
     for c in cs:
-        assert c.body2.r[0] < 0.0 < c.kappa_max and c.z2 == -60 and math.isfinite(hertz(c).p0)
+        ring = c.body2
+        assert ring.r[0] < 0.0 < c.kappa_max and ring.rho_t < 0 and c.z2 == -60 and math.isfinite(hertz(c).p0)
+        assert ring.r_tip == pair.gear2.ra * MM < ring.r_root == pair.gear2.rf * MM
     # closed form at C (spur, x = 0, so d_w = m z): rho_C = (d_w / 2) sin(alpha_wt), alpha_wt = 20 deg
     c = cs[2]
     assert c.body1.r[0] / MM == pytest.approx(24.0 * math.sin(math.radians(20.0)), rel=1e-9)     # 8.2085 mm
     assert c.body2.r[0] / MM == pytest.approx(-60.0 * math.sin(math.radians(20.0)), rel=1e-9)    # -20.521 mm
     assert [c.label for c in cs] == ["internal_A", "internal_B", "internal_C", "internal_D", "internal_E"]
+    assert cs[0].d_end_tip_2_m == pytest.approx(0.0, abs=1e-12)        # A: on the inner tip circle of the ring
+
+
+def test_helical_contact_values(fzg_h501):
+    """C12b test 8: H501 at its five points with n1 1500 rpm: rho_n = rho_t / cos(beta_b) for both flanks, share,
+    l, l_sum and n_pairs from load_sharing, zeta1, zeta2, Kg and the kinematics from pair_values_at (one call; the
+    speeds equal surface_speeds at g_y)."""
+    cc, pair, F_bn_N = fzg_h501
+    cs = CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=F_bn_N, n1_rpm=1500.0, E=cc.GEAR_E_MPA,
+                                          nu=cc.GEAR_NU)
+    g_y = np.array([c.g_y_mm for c in cs])
+    sharing, speeds = load_sharing(pair, g_y), CylindricalFamily.surface_speeds(pair, g_y, 1500.0)
+    values = CylindricalFamily.pair_values_at(pair, [c.dy1_mm for c in cs])
+    cos_betab = math.cos(pair.gear1.betab)
+    for i, c in enumerate(cs):
+        assert c.beta_b_rad == pair.gear1.betab and c.body2.beta_b == pair.gear1.betab
+        for body in (c.body1, c.body2):
+            assert body.r[0] == pytest.approx(body.rho_t / cos_betab, rel=1e-15)
+        assert (c.share, c.l_mm, c.l_sum_mm, c.n_pairs) == (sharing["share"][i], sharing["l_mm"][i],
+                                                          sharing["l_sum_mm"][i], sharing["n_pairs"][i])
+        assert (c.zeta1, c.zeta2, c.Kg) == (values["zeta1"][i], values["zeta2"][i], values["Kg"][i])
+        k = c.kinematics
+        for name in ("ue", "vg", "u1", "u2"):
+            assert getattr(k, name) == pytest.approx(float(speeds[f"{name}_m_per_s"][i]), rel=1e-12)
+    assert CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=F_bn_N, E=cc.GEAR_E_MPA,
+                                            nu=cc.GEAR_NU)[0].kinematics is None
+
+
+def test_given_load_mode():
+    """C12b test 9: load = w [N/m] given: one contact per point, each with that load; share, l, l_sum and n_pairs
+    nan."""
+    pair = _gear_pair()
+    cs = CylindricalGearContact.from_pair(pair, driver="gear2", load=2.5e5)
+    assert [c.point for c in cs] == list("ABCDE") and all(c.load == 2.5e5 for c in cs)
+    assert all(math.isnan(v) for c in cs for v in (c.share, c.l_mm, c.l_sum_mm, c.n_pairs))
 
 
 def test_gear_material_source_and_default_labels():
     """E, nu from the AxisForge material (the contact names the material_id); a scalar or sequence dy1 gets the
-    label ``dy1=<value>``."""
+    label ``dy1=<value>``; ``label`` replaces the prefix."""
     pair = _gear_pair()
-    d = path_diameters(pair, "gear1")["C"]
-    (c,) = gear_contacts(pair, d, 1000.0, driver="gear1")
+    d = _point(CylindricalGearContact.from_pair(pair, driver="gear1", load=1e5), "C").dy1_mm
+    (c,) = CylindricalGearContact.from_pair(pair, points=d, driver="gear1", F_bn_N=1000.0)
     assert (c.material1, c.material2, c.body1.E) == (_TEST_STEEL, _TEST_STEEL, 206000.0e6)
     assert c.point == f"dy1={d:.6g}" and c.label == f"gear_dy1={d:.6g}"
+    assert CylindricalGearContact.from_pair(pair, points={"C": d}, driver="gear1", load=1e5,
+                                            label="run7")[0].label == "run7_C"
     for material_id, recorded in (("", "given"), ("typo_steel", "given:typo_steel")):
-        (c,) = gear_contacts(_gear_pair(material_id), [d], 1000.0, driver="gear1", E=(206000.0, 210000.0),
-                             nu=(0.3, 0.29))
+        (c,) = CylindricalGearContact.from_pair(_gear_pair(material_id), points=[d], driver="gear1", F_bn_N=1000.0,
+                                                E=(206000.0, 210000.0), nu=(0.3, 0.29))
         assert (c.material1, c.material2, c.body2.E, c.body2.nu) == (recorded, recorded, 210000.0e6, 0.29)
 
 
@@ -1675,50 +1735,139 @@ def test_gear_material_source_and_default_labels():
     ("driver", "driver must be"),
     ("colon", "no ':'"),
     ("F_bn", "F_bn_N must be positive"),
+    ("both_loads", "either F_bn_N or load"),
+    ("no_load", "either F_bn_N or load"),
+    ("points", "points must be 'path'"),
     ("material_given", "given only for a gear without one"),
     ("material_missing", "has no AxisForge material"),
     ("material_format", "must be"),
 ])
-def test_gear_contacts_refuses(change, match):
+def test_from_pair_refuses(change, match):
     pair = _gear_pair("" if change in ("material_missing", "material_format") else _TEST_STEEL)
-    d = path_diameters(pair, "gear1")
-    kwargs = dict(dy1=d["C"], F_bn_N=1000.0, driver="gear1")
-    kwargs.update({"off_path_low": dict(dy1=d["A"] * (1 - 1e-6)), "off_path_high": dict(dy1=d["E"] * (1 + 1e-6)),
-                   "driver": dict(driver="pinion"), "colon": dict(dy1={"t:1": d["C"]}),
-                   "F_bn": dict(F_bn_N=0.0), "material_given": dict(E=(206000.0, None), nu=(0.3, None)),
+    d = {c.point: c.dy1_mm for c in CylindricalGearContact.from_pair(_gear_pair(), driver="gear1", load=1e5)}
+    kwargs = dict(points=[d["C"]], F_bn_N=1000.0, driver="gear1")
+    kwargs.update({"off_path_low": dict(points=[d["A"] * (1 - 1e-6)]), "off_path_high": dict(points=[d["E"] * (1 + 1e-6)]),
+                   "driver": dict(driver="pinion"), "colon": dict(points={"t:1": d["C"]}),
+                   "F_bn": dict(F_bn_N=0.0), "both_loads": dict(load=1e5), "no_load": dict(F_bn_N=None),
+                   "points": dict(points="A..E"), "material_given": dict(E=(206000.0, None), nu=(0.3, None)),
                    "material_format": dict(E=206000.0, nu=(0.3, 0.3))}.get(change, {}))
     with pytest.raises(ValueError, match=match):
-        gear_contacts(pair, kwargs.pop("dy1"), kwargs.pop("F_bn_N"), **kwargs)
+        CylindricalGearContact.from_pair(pair, **kwargs)
 
 
-def test_pair_through_a_base_tangent_point_is_refused():
-    """A pair assembled with check=False whose path passes T2 (external 10/10, x +0.6/-0.6: T2E < 0): there
-    there is no involute beyond T2 (rho2 from the line of action changes sign), and the pair is refused whole (SB-20;
-    OPEN SB-59)."""
+def test_from_pair_refuses_another_family():
+    """As the bearing classes: the exact AxisForge family, a stand-in pair of another family is refused."""
+    pair = SimpleNamespace(family=SimpleNamespace(), label="other")
+    with pytest.raises(TypeError, match="takes a CylindricalFamily pair"):
+        CylindricalGearContact.from_pair(pair, driver="gear1", load=1e5)
+
+
+def test_pair_beyond_a_base_tangent_point():
+    """Pairs assembled with check=False (SB-59): external 10/10 with x +0.6/-0.6 ends beyond T2 (T2E < 0): the
+    points before T2 are translated, E (beyond T2: rho2_t < 0 on an external gear, no involute) is refused point
+    by point; with x -0.6/+0.6 the path starts beyond T1 (T1A < 0) and the pair is refused whole (dy1 folds such a
+    point onto its mirror)."""
     from axisforge.core.machine_elements.gears import CylindricalGearData, Gear, GearPair
     family = CylindricalFamily()
-    gears = [Gear.assemble(family, CylindricalGearData(2.0, 10, x=x, b=20.0, material_id=""), check=False)
-             for x in (0.6, -0.6)]
-    pair = GearPair.assemble(family, gear1=gears[0], gear2=gears[1], check=False)
-    assert pair.T2E < 0
-    with pytest.raises(ValueError, match="passes a base-tangent point"):
-        gear_contacts(pair, 2.0 * pair.rA1, 1000.0, driver="gear1", E=(206000.0, 206000.0), nu=(0.3, 0.3))
+
+    def pair(x1, x2):
+        gears = [Gear.assemble(family, CylindricalGearData(2.0, 10, x=x, b=20.0, material_id=""), check=False)
+                 for x in (x1, x2)]
+        return GearPair.assemble(family, gear1=gears[0], gear2=gears[1], check=False)
+
+    kw = dict(driver="gear1", F_bn_N=1000.0, E=(206000.0, 206000.0), nu=(0.3, 0.3))
+    beyond_T2 = pair(0.6, -0.6)
+    assert beyond_T2.T2E < 0 <= beyond_T2.T1A
+    d = 2.0 * math.hypot(beyond_T2.T1C + CylindricalFamily.path_points(beyond_T2, "gear1")["A"], beyond_T2.gear1.rb)
+    assert CylindricalGearContact.from_pair(beyond_T2, points={"A": d}, **kw)[0].body2.rho_t > 0
+    with pytest.raises(ValueError, match="beyond the base-tangent point T2"):
+        CylindricalGearContact.from_pair(beyond_T2, **kw)
+    beyond_T1 = pair(-0.6, 0.6)
+    assert beyond_T1.T1A < 0
+    with pytest.raises(ValueError, match="beyond the base-tangent point T1"):
+        CylindricalGearContact.from_pair(beyond_T1, **kw)
 
 
-def test_tooth_contact_checks():
-    """rho1 > 0, sign of rho2 = sign of z2, straight along y: a hand-built ToothContact."""
-    flank = dict(E=206e9, nu=0.3)
+def test_cylindrical_gear_contact_checks():
+    """Hand-built contacts: the bodies must be the two InvoluteFlank toward tip / root (the equivalent cylinders
+    are refused), of one beta_b, rho1 > 0, the sign of rho2 that of z2."""
+    steel = dict(E=206e9, nu=0.3)
     fields = dict(load=1e5, point="C", dy1_mm=40.0, dy2_mm=80.0, g_y_mm=0.0, share=1.0, l_mm=20.0, l_sum_mm=20.0,
-                  n_pairs=1,
-                  driver="gear1", material1="given", material2="given")
-    convex, concave = SweptCircleBody(r=(10 * MM, math.inf), **flank), SweptCircleBody(r=(-60 * MM, math.inf), **flank)
+                  n_pairs=1, driver="gear1", material1="given", material2="given", zeta1=0.0, zeta2=0.0, Kg=0.0)
+    f1, f2 = (InvoluteFlank(**_FLANKS[k], **steel) for k in ("gear1", "gear2"))
+    ring = InvoluteFlank(**_FLANKS["ring"], **steel)
+    c = CylindricalGearContact(body1=f1, body2=f2, z2=40, **fields)
+    assert c.kappa_max > 0 and c.entrainment_sign_x == -1 and c.d_end_tip_2_m == f2.d_end_tip_m and c.kinematics is None
+    assert CylindricalGearContact(body1=f1, body2=ring, z2=-60, **fields).kappa_max > 0
+    cylinder = SweptCircleBody(r=f2.r, **steel)
+    with pytest.raises(ValueError, match="must be the InvoluteFlank"):
+        CylindricalGearContact(body1=f1, body2=cylinder, z2=40, **fields)
+    with pytest.raises(ValueError, match="must be the InvoluteFlank"):
+        CylindricalGearContact(body1=f2, body2=f2, z2=40, **fields)
     with pytest.raises(ValueError, match="has not the sign of z2"):
-        ToothContact(body1=convex, body2=convex, z2=-60, **fields)
-    with pytest.raises(ValueError, match="rho1_n must be > 0"):
-        ToothContact(body1=concave, body2=convex, z2=40, **fields)
-    with pytest.raises(ValueError, match="straight along the face width"):
-        ToothContact(body1=SweptCircleBody(r=10 * MM, **flank), body2=convex, z2=40, **fields)
-    assert ToothContact(body1=convex, body2=concave, z2=-60, **fields).kappa_max > 0
+        CylindricalGearContact(body1=f1, body2=f2, z2=-60, **fields)
+    with pytest.raises(ValueError, match="same beta_b"):
+        CylindricalGearContact(body1=f1, body2=replace(f2, beta_b=0.1), z2=40, **fields)
+    with pytest.raises(ValueError, match="driver must be"):
+        CylindricalGearContact(body1=f1, body2=f2, z2=40, **{**fields, "driver": "pinion"})
+
+
+def test_hertz_of_a_gear_contact_reports_the_flank_ends(c40_k9):
+    """C12b item 3: the Hertz reference carries the four ends in half-widths; at A (on the tip of gear 2) and E (on
+    the tip of gear 1) one of them is 0 < 1, so the reference is not valid, with the reason; B, C, D are valid.
+    C40 at K9: d_end/b at A 128.4 / 4.69 / 0 / 154.4 (tip 1, root 1, tip 2, root 2)."""
+    *_, cs = c40_k9
+    for c in cs:
+        hz = hertz(c)
+        assert set(hz.ends_over_b) == {"d_end_tip_1_over_b", "d_end_root_1_over_b", "d_end_tip_2_over_b",
+                                       "d_end_root_2_over_b"}
+        assert hz.valid == (c.point in "BCD") and (hz.reason == "") == hz.valid
+    A = hertz(cs[0])
+    assert A.ends_over_b["d_end_root_1_over_b"] == pytest.approx(4.687, abs=5e-4)
+    assert A.ends_over_b["d_end_tip_2_over_b"] == pytest.approx(0.0, abs=1e-9) and "d_end_tip_2_over_b" in A.reason
+    assert "d_end_tip_1_over_b" in hertz(cs[4]).reason
+
+
+def test_bem_of_the_fzg_c40_gear_contact_at_C(c40_k9, tmp_path):
+    """C12b test 5: C40 at C, K9, solved with pk: the two involute flanks give p0 and b of the two equivalent
+    cylinders (the old ToothContact: same radii, load and grid) within 0.5 % (the prompt), here within 1e-4.
+    Measured: p0 829.883 / 829.865 MPa, b 0.1223587 / 0.1223564 mm (+0.002 %, +0.002 %): the gap error of the flanks
+    (+0.5 % at -b, -0.4 % at +b) is odd, so p0 and b change only at its second order (physics-reviewer C12b). Its
+    sign shows in the pressure centroid: +9.5e-4 b, toward the smaller gap (+x), against 0 for the cylinders.
+    Every check passes; the record carries the new fields."""
+    *_, cs = c40_k9
+    c = cs[2]
+    cylinders = _Line(body1=SweptCircleBody(r=c.body1.r, E=c.body1.E, nu=c.body1.nu),
+                      body2=SweptCircleBody(r=c.body2.r, E=c.body2.E, nu=c.body2.nu), load=c.load, label="cyl_C")
+    res, ref = _bem(c, tmp_path / "flank"), _bem(cylinders, tmp_path / "cyl")
+    assert res.p0 == pytest.approx(ref.p0, rel=1e-4) and res.b == pytest.approx(ref.b, rel=1e-4)
+    centroid = [(r.p[:, 0] * r.grid.X[:, 0]).sum() / r.p[:, 0].sum() / r.hertz.b for r in (res, ref)]
+    assert 5e-4 < centroid[0] < 2e-3 and abs(centroid[1]) < 1e-9
+    assert _all_checks(res)
+    rec = res.record()
+    assert (rec["contact"], rec["body1_class"], rec["body2_class"]) == ("CylindricalGearContact", "InvoluteFlank",
+                                                                        "InvoluteFlank")
+    assert rec["entrainment_sign_x"] == -1 and math.isnan(rec["ue_m_per_s"]) and rec["hertz_reason"] == ""
+    assert rec["d_end_tip_1_over_b_ref"] == pytest.approx(43.644, abs=5e-3)
+    assert rec["d_end_tip_1_m"] == c.d_end_tip_1_m and rec["zeta1"] == c.zeta1
+
+
+def test_bem_of_a_gear_contact_at_the_tip_edge(c40_k9, tmp_path):
+    """C12b test 6: C40 at K9, a point past A by half the Hertz half-width at A along the path (d_end_tip_2 / b =
+    0.30): it solves; the Hertz reference is not valid (the reason recorded) and the pressure peak lies on the side
+    of the tip of gear 2 (-x). Measured: peak at x = -0.262 b (the tip at -0.301 b), p0 3.08 GPa against Hertz 0.87
+    GPa (edge contact, mesh-dependent: 4.16 / 5.87 GPa at h/2, h/4 (slippy-expert C12b); every check of the solve
+    passes, only hertz_valid says it, SB-70; no value asserted beyond the side)."""
+    cc, pair, F_bn_N, cs = c40_k9
+    g_y = cs[0].g_y_mm + 0.5 * hertz(cs[0]).b / MM
+    (c,) = CylindricalGearContact.from_pair(pair, points={"A+": 2.0 * math.hypot(pair.T1C + g_y, pair.gear1.rb)},
+                                            driver=cc.DRIVER, F_bn_N=F_bn_N, E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    res = _bem(c, tmp_path)
+    rec = res.record()
+    assert res.converged and not res.hertz_valid and "d_end_tip_2_over_b" in rec["hertz_reason"]
+    assert rec["d_end_tip_2_over_b_ref"] < 1
+    x_peak = res.grid.X[np.unravel_index(np.argmax(res.p), res.p.shape)]
+    assert -c.d_end_tip_2_m <= x_peak < 0
 
 
 # ---- gears: the involute flank as a body (InvoluteFlank, C12a) --------------------------------------
@@ -1918,12 +2067,12 @@ def _fzg_p_H_MPa(cc, pair, stage, points):
     the one-sided point DELTA_S_MM past B toward D (single contact for a spur pair)."""
     z1, z2 = pair.gear1.z, pair.gear2.z
     F_bn_N = cc.FAMILY.mesh_forces(pair, cc.WHEEL_TORQUE_NM[stage] * z1 / z2, rot1=+1).F_bn_N
-    dy1 = path_diameters(pair, cc.DRIVER)
     g = CylindricalFamily.path_points(pair, cc.DRIVER)
-    g_b = g["B"] + math.copysign(cc.DELTA_S_MM, g["E"] - g["A"])            # past B in the direction of travel
-    dy1 = {**dy1, "B+": 2.0 * math.hypot(pair.T1C + g_b, pair.gear1.rb)}
-    dy1 = {k: dy1[k] for k in points}
-    contacts = gear_contacts(pair, dy1, F_bn_N, driver=cc.DRIVER, E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    g["B+"] = g["B"] + math.copysign(cc.DELTA_S_MM, g["E"] - g["A"])        # past B in the direction of travel
+    dy1 = {k: 2.0 * math.hypot(pair.T1C + g[k], pair.gear1.rb) for k in points}
+    contacts = CylindricalGearContact.from_pair(pair, points=dy1, driver=cc.DRIVER, F_bn_N=F_bn_N,
+                                                E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    # the Hertz pressure of the flank radii at the point (valid or not: at A the flank of gear 2 ends there)
     return [hertz(c).p0 / 1e6 for c in contacts]                              # Pa -> MPa
 
 
@@ -2004,11 +2153,13 @@ def test_layer_order_of_the_contact_package():
 def test_public_names_import_from_the_package():
     import slippy_bridge.contact as pkg
     for name in ("Body", "SweptCircleBody", "Contact", "Kinematics", "BearingContact", "DeepGrooveBallContact",
-                 "AngularContactBallContact", "CylindricalRollerContact", "InvoluteFlank", "GearContact", "ToothContact",
-                 "gear_contacts", "path_diameters", "Grid",
+                 "AngularContactBallContact", "CylindricalRollerContact", "InvoluteFlank", "GearContact",
+                 "CylindricalGearContact", "Grid",
                  "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"):
         assert name in pkg.__all__ and getattr(pkg, name) is not None
-    assert pkg.solve is solve and pkg.ToothContact is ToothContact
+    assert pkg.solve is solve and pkg.CylindricalGearContact is CylindricalGearContact
+    for name in ("ToothContact", "gear_contacts", "path_diameters"):      # removed in C12b (no dispatcher)
+        assert not hasattr(pkg, name)
 
 
 def test_kinematics_data():

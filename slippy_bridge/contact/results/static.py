@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ..core.contact import DC
+from ..core.submodels import Kinematics
 from .hertz import HertzResult
 
 if TYPE_CHECKING:
@@ -175,7 +176,10 @@ class StaticResult:
         Groups, in order:
 
         * identification: ``contact`` (class name), ``label``, ``line`` and the contact's own scalar
-          fields under their names (bearing: ``race``, ``alpha_rad``, ``j``, ``phi_rad``, ...);
+          fields under their names (bearing: ``race``, ``alpha_rad``, ``j``, ``phi_rad``, ...; gear:
+          ``g_y_mm``, ``zeta1``, ``d_end_tip_1_m``, ``entrainment_sign_x``, ...); a contact with a
+          ``kinematics`` field adds ``ue_m_per_s``, ``vg_m_per_s``, ``u1_m_per_s``, ``u2_m_per_s``
+          (nan when None or not known);
         * geometry: ``body1_class``, ``body2_class`` (the Body subclasses: a local torus and a
           true raceway have the same radii), ``r1_x_m``, ``r1_y_m``, ``r2_x_m``, ``r2_y_m`` (signed
           body radii in the body frames), ``E1_Pa``, ``E2_Pa``, ``nu1``, ``nu2``, ``angle_rad``, ``kappa_max_per_m``,
@@ -195,8 +199,12 @@ class StaticResult:
           ``solve_time_s``;
         * measured: ``p0_Pa``, ``a_m``, ``b_m``, ``load_N``, ``apex_offset_nodes``, ``delta_m``;
         * Hertz reference: :meth:`HertzResult.record` with ``tag="_ref"`` (``p0_ref_Pa``, ``a_ref_m``,
-          ``b_ref_m``, ``delta_ref_m``, ``b_over_a_ref``, ``size_ratio_ref``), without the copies of
-          the contact (psi, E_star, line) and ``valid`` (the check ``hertz_valid``);
+          ``b_ref_m``, ``delta_ref_m``, ``b_over_a_ref``, ``size_ratio_ref``, the flank ends
+          ``d_end_<...>_over_b_ref``), without the copies of the contact (psi, E_star, line), ``valid``
+          and ``reason`` (the check ``hertz_valid`` and ``hertz_reason``). When ``hertz_reason``
+          names an end (``d_end_*_over_b < 1``) the measured ``p0_Pa``, ``b_m``, ``delta_m`` and the
+          ``err_*`` belong to an edge contact and the mesh (OPEN SB-70: no check of the solve
+          flags it);
         * errors ``err_*``, checks, and ``commit_axisforge``, ``commit_slippy``,
           ``commit_design_studies``.
         """
@@ -206,6 +214,11 @@ class StaticResult:
             value = getattr(c, f.name)
             if f.name not in _CONTACT_GROUPED and (value is None or isinstance(value, (bool, int, float, str))):
                 ident[f.name] = value
+        if hasattr(c, "kinematics"):
+            k = c.kinematics
+            for name in (f.name for f in dataclasses.fields(Kinematics)):
+                value = None if k is None else getattr(k, name)
+                ident[f"{name}_m_per_s"] = math.nan if value is None else value
         (r1x, r1y), (r2x, r2y) = c.body1.r, c.body2.r
         geometry = {"body1_class": type(c.body1).__name__, "body2_class": type(c.body2).__name__,
                     "r1_x_m": r1x, "r1_y_m": r1y, "r2_x_m": r2x, "r2_y_m": r2y,
@@ -220,7 +233,7 @@ class StaticResult:
                 "y_min_m": float(y.min()), "y_max_m": float(y.max()),
                 "span_x": span_x, "span_y": span_y}
         ref = {k: v for k, v in hz.record("_ref").items()
-               if k not in ("psi_ref_rad", "E_star_ref_Pa", "line_ref", "valid_ref")}
+               if k not in ("psi_ref_rad", "E_star_ref_Pa", "line_ref", "valid_ref", "reason_ref")}
         return {**ident, **geometry, **grid, "build": self.build,
                 "Q_N": math.nan if c.line else c.load, "w_N_per_m": c.load if c.line else math.nan,
                 "load_applied_N": self.load_applied, "period_m": self.period,
@@ -236,5 +249,5 @@ class StaticResult:
                 "err_load": self.err_load,
                 "load_ok": self.load_ok, "edge_clear": self.edge_clear, "margin_ok": self.margin_ok,
                 "resolution_ok": self.resolution_ok, "within_reference": self.within_reference,
-                "hertz_valid": self.hertz_valid,
+                "hertz_valid": self.hertz_valid, "hertz_reason": hz.reason,
                 **{f"commit_{k}": self.commits.get(k, "unknown") for k in ("axisforge", "slippy", "design_studies")}}

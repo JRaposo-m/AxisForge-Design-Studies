@@ -24,8 +24,11 @@ class Kinematics:
     of the two surfaces relative to the contact point); the names drop its ``_m_per_s`` suffix. Gear
     speeds will come from AxisForge (``surface_speeds``, ``contact_inputs``).
 
-    Bridge +x is meant along the entrainment, so SlipPY's Reynolds solver (inlet at array index 0)
-    needs ``ue > 0``; not checked here because nothing uses this class yet. No SlipPY Reynolds step
+    Bridge x is the rolling axis (array axis 0); the sense of the entrainment along it is the
+    contact's: SlipPY's Reynolds solver (inlet at array index 0) needs it along +x and ``ue > 0``;
+    not checked here because nothing uses this class yet. A gear contact keeps AxisForge's
+    magnitudes here and records the sense apart (``CylindricalGearContact.entrainment_sign_x``: -1
+    with gear 1 driving, bridge +x pointing toward the tip of gear 1; SB-68). No SlipPY Reynolds step
     reads a sliding speed; ``RollingSliding1D`` takes the creep ``vg / ue`` (its sign to be checked
     when wired). In SlipPY's sub-models ``direction='x'`` is array axis 1, so bridge x (axis 0) is
     SlipPY ``'y'`` there (R-156).

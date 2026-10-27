@@ -352,6 +352,13 @@ class Contact:
         for key, value in (("kappa_max", kappa_max), ("kappa_min", kappa_min), ("psi", psi), ("E_star", E_star)):
             object.__setattr__(self, key, value)
 
+    def end_distances(self) -> dict[str, float]:
+        """Distances [m] along bridge x from the contact point to the ends of the bodies, by name
+        (``d_end_<...>_m``); empty here: bodies without ends. For line contacts (the line along y,
+        ends across it): a gear contact gives the ends of its flanks; ``solvers.hertz`` divides
+        them by the half-width b and marks the reference not valid when the contact reaches one."""
+        return {}
+
     def profiles(self, grid) -> tuple[np.ndarray, np.ndarray]:
         """Exact profiles of the two bodies on a grid, body 2 turned by ``angle``.
 
