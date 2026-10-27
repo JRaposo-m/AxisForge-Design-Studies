@@ -21,6 +21,3 @@ htmlcov/
 
 # Generated output of a study or validation case: results/ next to it (D-0020).
 studies/**/results/
-validation/**/results/
-# Old location, still used by examples/.
-/artifacts/

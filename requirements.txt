@@ -1,7 +1,4 @@
-# axisforge and slippy are not on PyPI yet -- install them separately, see README.md#setup:
-#   pip install -e <AxisForge repo>
-#   pip install -e <slippy repo>        (only for examples/slippy and studies/contact)
-#   pip install -e .                    (this repository: references + validation._support)
+# Install axisforge and slippy first (pip install -e of each repository, not on PyPI), then pip install -e .
 numpy
 scipy
 matplotlib
