@@ -1,12 +1,15 @@
-# r01_beams: Euler-Bernoulli and Timoshenko beams on two pins
+# r01_beams: Euler-Bernoulli and Timoshenko beams on two pins or one fixed end
 
 ## 1. Reference
-Closed-form deflection, rotation, bending moment and shear force of a beam on two pin supports, in
-one bending plane: a uniform section under point loads (Macaulay) and a stepped section under point
-and polynomial distributed loads (piecewise exact integration), Euler-Bernoulli and Timoshenko. The
-bending and corrected shear stiffness are computed here from the section data (P-01). Judge of the
-AxisForge shaft FEM (v001, which absorbs today's v002 stepped case). The uniform solver is a
-special case of the stepped one, kept as an independent cross-check (C7).
+Closed-form deflection, rotation, bending moment and shear force of a beam on two pin supports or
+one fixed end (cantilever), in one bending plane: a uniform section under point forces and point
+couples (Macaulay) and a stepped section under point forces, point couples and polynomial
+distributed loads (piecewise exact integration), Euler-Bernoulli and Timoshenko. The bending and
+corrected shear stiffness are computed here from the section data (P-01). Judge of the AxisForge
+shaft FEM: v001 (uniform shaft) and v002 (stepped shaft with a gear load; the couple F_a r_w of a
+helical mesh, CW-01, CW-02). The uniform solver is a special case of the stepped one, kept as an
+independent cross-check (C7, C15), except for the statics: both take the reactions from the shared
+`_reactions` (equilibrium is tested on its own, C8, C14, and the closed forms C3-C5, C10-C13 catch a sign).
 
 ## 2. Sources
 | Key | What | Equation / figure | PDF page |
@@ -16,21 +19,42 @@ special case of the stepped one, kept as an independent cross-check (C7).
 | Onate2013_vol2 | M = EI d(theta)/dx, Q = GA gamma | (2.4b)-(2.5b) | 70-71 |
 | Onate2013_vol2 | gamma = Q / (k_z G A); k_z by shear strain energy | (2.6c), (2.7) | 72 |
 | Onate2013_vol2 | shear factors; solid circle 6/7 at nu = 0; hollow circle k_z = 6/(7 + 20 K^2) without nu | Fig. 2.3 | 73 |
-Onate writes Q and k_z for V and kappa. V = -dM/dx (equilibrium) and the closed forms of tests C3-C5 are
-textbook statics with no source held (unverified).
+| Onate2013_vol2 | Timoshenko clamp: w1 = 0, theta1 = 0 (the section rotation) | (2.29) | 79 |
+| Onate2013_vol2 | Timoshenko cantilever: flexibility matrix (tip force and tip moment), w2 = (L/GA* + L^3/(3 EI)) P, theta2 = L^2 P/(2 EI) | (2.35)-(2.36) | 81 |
+Onate writes Q and k_z for V and kappa. V = -dM/dx (equilibrium) and the closed forms of tests C3-C5 and
+C10-C14 are textbook statics with no source held: no beam handbook (Roark, Gere, Timoshenko) is in the
+library. The cantilever cases C11-C12 are printed in Onate (2.35)-(2.36) (tip force: deflection and rotation,
+EB and Timoshenko; tip moment: the flexibility entries L^2/(2 EI), L/EI); the clamp of C11-C13 is Onate (2.29). The
+couple on a simply supported span (C10), the mirrored and interior clamps and the cantilever under uniform q (C13)
+are derived in the test docstrings by Macaulay integration of EI v'' = M (no print held).
 | Cowper1966 | shear correction factor, solid circle, 6 (1 + nu) / (7 + 6 nu); J. Appl. Mech. 33(2) 335-340 | Table 1 (unverified) | MISSING (not in the library) |
 | Hutchinson2001 | shear correction factor, solid circle, 6 (1 + nu)^2 / (7 + 12 nu + 4 nu^2); J. Appl. Mech. 68(1) 87-92 | (to confirm) | MISSING |
 Onate2013_vol2: book page = PDF page - 31. The kappa formulas are kept as they were before R1; their
 equation numbers wait for the two papers.
 
 ## 3. Scope and validity
-Linear elastic, small slopes, statically determinate (two ideal pins: v = 0, rotation free); section
+Linear elastic, small slopes, statically determinate only: two ideal pins (v = 0, rotation free) at
+`x_A < x_B`, or one ideal fixed end at `x_A`, at an end or inside the beam (`x_B=None`: v = 0 and theta = 0, theta the rotation of the
+cross-section, so the shear strain is free at the clamp: the Timoshenko cantilever gains P L / kGA). A third
+support, a pin with a fixed end or two fixed ends make the beam hyperstatic: out of scope, and the API has
+no argument for them (`# OPEN SW-03`). Section
 constant per segment with abrupt steps (fillets do not change EI or kGA); kappa constant per
 segment; one bending plane (a circular shaft loaded in two planes is two calls, resultant by
 `hypot`). Point loads may lie outside the span (overhangs). Distributed loads: polynomial intensity
-of degree <= 6 is integrated exactly. Sign convention: forces and deflections share one positive
-direction per plane; `M = sum F_k <x - x_k>`, `V = -dM/dx`; `M` and `V` are right-continuous at a
-point load. Units: mm, N, MPa, N.mm, rad.
+of degree <= 6 is integrated exactly. Units: mm, N, MPa, N.mm, rad.
+
+**Sign convention (one bending plane with axes x along the beam, v transverse).** Forces and deflections
+share one positive direction, +v. A **couple is positive when it turns from +x toward +v** (counterclockwise
+with x to the right and v up; right-handed about the axis e_x x e_v). The rotation theta has the same sense.
+Bending moment and shear force: `M = sum F_k <x - x_k> - sum C_k <x - c_k>^0`, `EI theta' = M`,
+`V = -dM/dx` between loads; a couple lowers M by C_k across c_k and adds no shear force (so no shear
+deflection). `M` and `V` are right-continuous at a load. Equilibrium, with a force F at x giving the moment
+x F about x = 0: `sum F + R_A + R_B = 0`, `sum x F + sum C + x_A R_A + x_B R_B + C_A = 0` (R_B = 0, C_A the
+reaction couple at a fixed end; C_A = 0 on two pins). r01 imports no AxisForge and knows nothing of its
+axes: the v case that uses it (v002) maps AxisForge `ExternalMoment` and the plane XY / XZ to this
+convention, and writes the mapping there (CW-01, D-0010). Trap for that mapping: the positive axis of a couple
+is e_x x e_v; in a plane (x, y) it is +z, but in a plane (x, z) it is e_x x e_z = -e_y, so a moment M_y about +y
+enters r01 as C = -M_y.
 Domain errors raise: supports out of order; `E <= 0`, `nu` outside (-1, 0.5), not `0 <= d_i < d_o`.
 **Hollow section with shear (Timoshenko): `NotImplementedError` (`# OPEN MG-02`)**: the hollow
 Cowper / Hutchinson factors need Cowper 1966 and Hutchinson 2001, not in the library. Onate Fig. 2.3 prints a
@@ -42,10 +66,12 @@ Euler-Bernoulli (`kappa=None`) is available.
 from studies.r00_analytical_references.r01_beams import (section_stiffness, solve_uniform, solve_stepped,
                                                          Segment, DistributedLoad, KAPPA)
 section_stiffness(E, nu, d_o, d_i=0.0, kappa="cowper" | "hutchinson" | None) -> (EI [N.mm^2], kGA [N] or None)
-solve_uniform(loads, x_A, x_B, EI, kGA) -> PlaneSolution             # loads: [(x [mm], F [N])]; kGA None: EB
-solve_stepped(point_loads, distributed, x_A, x_B, segments, length) -> SteppedPlaneSolution
+solve_uniform(loads, x_A, x_B, EI, kGA, *, couples=()) -> PlaneSolution
+solve_stepped(point_loads, distributed, x_A, x_B, segments, length, *, couples=()) -> SteppedPlaneSolution
+# loads: [(x [mm], F [N])]; couples: [(x [mm], C [N.mm])]; x_B=None: fixed end at x_A; kGA None: EB
 Segment(x_lo, x_hi, EI, kGA=None)          DistributedLoad(x_lo, x_hi, q)      # q(x) [N/mm]
-# both solutions: .v(x), .M(x), .V(x), .R_A, .R_B; uniform also .v_bending(x); stepped also .theta(x)
+# both solutions: .v(x), .theta(x), .M(x), .V(x), .R_A, .R_B (None at a fixed end), .C_A (0 on two pins);
+# uniform also .v_bending(x)
 kappa_cowper(nu), kappa_hutchinson(nu), KAPPA = {"cowper": ..., "hutchinson": ...}
 ```
 The solutions are callable objects built once, not frozen dataclasses (structure_proposal B.2 asks
@@ -70,7 +96,15 @@ are MISSING). No `published/` until one is.
 | C7 | uniform = stepped with three equal segments and overhangs: v, M, V, R | identity | 1e-12 of max v / 1e-10 |
 | C8 | reactions balance a point and a linear distributed load | identity | rel 1e-13 |
 | C9 | hollow kappa, bad section, supports out of order raise | validity | exact |
-A cantilever is outside the two-pin scope: C4 holds its term.
+| C10 | couple C0 at a on pins at 0, L: R_A = -R_B = C0/L; M jump -C0; v(x <= a) = C0 x (x^2 + 3 (L - a)^2 - L^2)/(6 L EI), v(a) = C0 a (L - a)(L - 2a)/(3 L EI); v unchanged by shear, theta(0) + C0/(L kGA); V = -C0/L | closed form (Macaulay) | rel 1e-11 |
+| C11 | cantilever, tip force P: v(L) = P L^3/(3 EI) + P L/kGA, theta(L) = P L^2/(2 EI), R_A = -P, C_A = -P L, M = P (L - x) | closed form | rel 1e-12 |
+| C12 | cantilever, tip couple C0: v(L) = C0 L^2/(2 EI), theta(L) = C0 L/EI (shear adds nothing), C_A = -C0 | closed form | rel 1e-12 |
+| C13 | cantilever fixed at the right end (mirror of C11); fixed inside the beam with a force at each end (two cantilevers); uniform q on a cantilever (stepped): q L^4/(8 EI) + q L^2/(2 kGA) | closed form | rel 1e-12 |
+| C14 | equilibrium of forces and couples, pins and fixed end, both solvers; M = V = 0 past the last load | identity | 1e-12 / 1e-9 |
+| C15 | uniform = stepped with forces, couples, pins or fixed end: v, theta, M, V, C_A | identity | 1e-12 of max v / 1e-10 |
+| C16 | EB = Timoshenko as kGA -> inf with couples, pins and fixed end (v, theta) | limit | rel 1e-12 |
+Test values (C10-C16): steel shaft E 210 GPa, nu 0.3, d 30 mm (EI = 8.3498e9 N.mm^2, Cowper kGA = 5.0605e7 N),
+L = 200 mm, P = 1000 N, C0 = 5e4 N.mm at a = 60 mm, q = 5 N/mm.
 
 ## 7. Depends on
 NumPy only; nothing in this repository, AxisForge, SlipPY or the bridge (checked by

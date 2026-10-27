@@ -1,41 +1,44 @@
 # studies
 
-**Engineering questions** answered with AxisForge (and, for contact, SlipPY).
-A study has no known answer to check against — if it has one, it is a
-validation case (`validation/`).
+The cases of this repository: **r** analytical references (independent judges), **v** validations
+(AxisForge or SlipPY against a known answer) and **s** studies (open engineering questions). Layout and rules
+of D-0036 with its amendment of 2026-10-27; the reasons are in the vault (`01_Decisions/_register.md` D-0036,
+`80_Inbox/2026-10-27/D-0036_amendment_notes_2026-10-27.md`). The old v and s cases were swept on
+2026-10-27; their code is in the tag `studies-pre-sweep` until each is ported.
 
-```
+```text
 studies/
-├── shafts/
-│   ├── slenderness_eb_vs_timoshenko/
-│   └── stepped_fatigue_fillet/
-├── bearings/
-│   └── clearance_load_distribution/
-├── gears/
-│   └── khbeta_shaft_deflection/
-├── systems/
-│   └── hyperstatic_reactions_vs_bearing_stiffness/
-└── contact/
-    └── ball_on_raceway/          the AxisForge → SlipPY spike
+  r00_analytical_references/      r cases sit directly below the level folder
+    r01_beams/  r02_hertz_contact/  r05_ehl_film_and_rheology/
+  v000_axisforge/  v100_dry_contact/  ...   v cases, by level (0 AxisForge, 1 dry contact, 2 rough, 3 EHL, ...)
+  s000_axisforge/  s100_dry_contact/  ...   s cases, by level
+  outputs/                        plot and report models (to come at run O1)
 ```
+A level folder exists only when it holds a case.
 
-All are planned; each README holds the question and why it matters.
-
-## Rules
-
-- **One folder per study**, named by the question (no numbers). Inside:
-  README, optional `construction.py`, scripts numbered by stage (`01_…`, `02_…`).
-- **Construction against the AxisForge API, inside the study.** `construction.py`
-  returns the system **not solved**. When the variable is the system itself
-  (clearance, L/d, bearing choice), `construction.py` takes it as a parameter and
-  the study sweeps it. Keep construction in the study script when it is trivial
-  or used once — separate it when that makes the study easier to read.
-- **Stages:** build → solve → analyse. Frozen data between stages is a file in
-  `results/` stamped with the AxisForge commit that produced it — e.g. the
-  ADR-002 fields (`Q_j`, `alpha_j`, `phi_j`, `r1`, `r2`) written by the AxisForge
-  stage and read by the SlipPY stage.
-- **Imports:** only `references` and the study's own files. Never another
-  study, never `validation._support` (copy what you need).
-- **README of each study:** question, AxisForge commit, criteria if any (fixed
-  before running), what each file does, result and conclusion.
-- Generated files go to `results/` inside the study folder (git-ignored, D-0020).
+## A case is a small repository
+```text
+xNNN_<name>/
+  README.md        1 question or reference, 2 sources, 3 scope, 4 public API, 5 data, 6 criteria,
+                   7 depends on, 8 how to run (9 result, after a run)
+  __init__.py      public API: explicit imports and __all__
+  construction.py  the system, NOT solved (default; a construction/ folder only when it grows)
+  check.py (v)     check(system, ...) -> comparison records; takes any system, from the literature or a study
+  literature/ (v)  the published systems the v knows, with published/ tables of the papers
+  model.py (s)     the model of the study
+  study.py         one-step case; a study/ folder with __main__.py (orchestrator) for several steps
+  tests/           fast tests of the case
+  results/         generated, git-ignored (D-0020), read by no other case
+```
+- **r:** one module of formulas with sources (a second past about 400 lines), `published/`, tests against the
+  printed tables; no `study.py`, no `results/`, no notebook; imports NumPy, SciPy and the standard library only.
+- **v:** `check(system)` plus `literature/`; one Jupyter notebook (jupytext pair) that compares with the
+  literature; its `check` calls the matching r.
+- **s:** validates its own system through `v.check(its_system)` at its own conditions; never calls an r directly.
+  A model shared by later studies lives in the first study and the later ones import its API; it moves to the
+  library when three cases use it.
+- **One case = one validation or one study:** no case holds several questions or several validations.
+- **No plot or report-formatting code in a case:** styles, plot and report models live in `outputs/`.
+- Relative imports inside a case; a case is imported as `studies.<level>.<case>` and run as
+  `python -m studies.<level>.<case>.study`; records are `list[dict]` with units in the keys, written with
+  `axisforge.outputs._format`.

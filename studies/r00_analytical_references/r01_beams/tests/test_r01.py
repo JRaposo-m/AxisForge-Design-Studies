@@ -107,3 +107,133 @@ def test_reactions_balance_the_loads():
 def test_supports_out_of_order_raise(solve):
     with pytest.raises(ValueError):
         solve()
+
+
+# ---- point couples and the fixed end (CW-02) ------------------------------------------------------------------------
+# Closed forms derived here by Macaulay integration of EI v'' = M (README section 2: no beam handbook held). A couple
+# is positive from +x toward +v; it lowers M by C across its position and adds no shear force.
+C0, A = 5.0e4, 60.0                              # couple [N.mm], its position on the span [mm]
+
+
+def _uniform_and_stepped(loads, x_A, x_B, kGA, couples, length=L):
+    """The same beam through both solvers (stepped: three equal segments)."""
+    cuts = np.linspace(0.0, length, 4)
+    segments = [Segment(lo, hi, EI, kGA) for lo, hi in zip(cuts[:-1], cuts[1:])]
+    return (solve_uniform(loads, x_A, x_B, EI, kGA, couples=couples),
+            solve_stepped(loads, [], x_A, x_B, segments, length, couples=couples))
+
+
+@pytest.mark.parametrize("kGA", [None, KGA])
+def test_couple_on_a_simply_supported_span(kGA):
+    """Couple C0 at a on pins at 0 and L: R_A = C0 / L = -R_B; M = C0 x / L before a, C0 x / L - C0 after (jump -C0);
+    v(x <= a) = C0 x (x^2 + 3 (L - a)^2 - L^2) / (6 L EI), v(a) = C0 a (L - a) (L - 2a) / (3 L EI). V = -C0 / L is
+    constant on the span, so its shear deflection is a rigid rotation the pins take back: v is the same with shear,
+    theta(0) is not (theta = v' - V / kGA)."""
+    for sol in _uniform_and_stepped([], 0.0, L, kGA, [(A, C0)]):
+        assert (sol.R_A, sol.R_B) == (pytest.approx(C0 / L, rel=1e-12), pytest.approx(-C0 / L, rel=1e-12))
+        x = np.array([20.0, A - 1e-9, A, 150.0])
+        np.testing.assert_allclose(sol.M(x), C0 * x / L - C0 * (x >= A), rtol=0.0, atol=1e-9 * C0)
+        before = X[X <= A]
+        np.testing.assert_allclose(sol.v(before), C0 * before * (before**2 + 3.0 * (L - A)**2 - L**2) / (6.0 * L * EI),
+                                   rtol=0.0, atol=1e-12 * float(np.max(np.abs(sol.v(X)))))
+        assert float(sol.v(A)) == pytest.approx(C0 * A * (L - A) * (L - 2.0 * A) / (3.0 * L * EI), rel=1e-11)
+        shear = 0.0 if kGA is None else C0 / (L * kGA)
+        assert float(sol.theta(0.0)) == pytest.approx(C0 * (3.0 * (L - A)**2 - L**2) / (6.0 * L * EI) + shear,
+                                                      rel=1e-11)
+        np.testing.assert_allclose(sol.V(X[:-1]), -C0 / L, rtol=0.0, atol=1e-10 * F)   # V(L) takes R_B
+
+
+@pytest.mark.parametrize("kGA", [None, KGA])
+def test_cantilever_tip_force(kGA):
+    """Fixed at 0, P at L: v(L) = P L^3 / (3 EI) + P L / kGA, theta(L) = P L^2 / (2 EI) (the section rotation: shear
+    does not turn it); R_A = -P, C_A = -P L, M = P (L - x)."""
+    for sol in _uniform_and_stepped([(L, F)], 0.0, None, kGA, []):
+        shear = 0.0 if kGA is None else F * L / kGA
+        assert float(sol.v(L)) == pytest.approx(F * L**3 / (3.0 * EI) + shear, rel=1e-12)
+        assert float(sol.theta(L)) == pytest.approx(F * L**2 / (2.0 * EI), rel=1e-12)
+        assert (sol.R_A, sol.R_B, sol.C_A) == (pytest.approx(-F, rel=1e-15), None, pytest.approx(-F * L, rel=1e-15))
+        np.testing.assert_allclose(sol.M(X[:-1]), F * (L - X[:-1]), rtol=1e-12, atol=1e-9 * F * L)
+        assert float(sol.v(0.0)) == pytest.approx(0.0, abs=1e-15)
+        assert float(sol.theta(0.0)) == pytest.approx(0.0, abs=1e-15)
+
+
+@pytest.mark.parametrize("kGA", [None, KGA])
+def test_cantilever_tip_couple(kGA):
+    """Fixed at 0, couple C0 at L: v(L) = C0 L^2 / (2 EI), theta(L) = C0 L / EI, with or without shear (V = 0);
+    R_A = 0, C_A = -C0, M = C0 on the span."""
+    for sol in _uniform_and_stepped([], 0.0, None, kGA, [(L, C0)]):
+        assert float(sol.v(L)) == pytest.approx(C0 * L**2 / (2.0 * EI), rel=1e-12)
+        assert float(sol.theta(L)) == pytest.approx(C0 * L / EI, rel=1e-12)
+        assert (sol.R_A, sol.C_A) == (0.0, pytest.approx(-C0, rel=1e-15))
+        np.testing.assert_allclose(sol.M(X[:-1]), C0, rtol=1e-12)
+
+
+@pytest.mark.parametrize("kGA", [None, KGA])
+def test_cantilever_fixed_at_the_right_end(kGA):
+    """The mirror of the tip-force case: fixed at L, P at 0: v(0) = P L^3 / (3 EI) + P L / kGA,
+    theta(0) = -P L^2 / (2 EI)."""
+    for sol in _uniform_and_stepped([(0.0, F)], L, None, kGA, []):
+        shear = 0.0 if kGA is None else F * L / kGA
+        assert float(sol.v(0.0)) == pytest.approx(F * L**3 / (3.0 * EI) + shear, rel=1e-12)
+        assert float(sol.theta(0.0)) == pytest.approx(-F * L**2 / (2.0 * EI), rel=1e-12)
+
+
+@pytest.mark.parametrize("kGA", [None, KGA])
+def test_fixed_inside_the_beam(kGA):
+    """Fixed at L/2 with P at 0 and P at L: two cantilevers of length L/2,
+    v(0) = v(L) = P (L/2)^3 / (3 EI) + P (L/2) / kGA,
+    R_A = -2 P, C_A = 0 by symmetry."""
+    h = L / 2.0
+    for sol in _uniform_and_stepped([(0.0, F), (L, F)], h, None, kGA, []):
+        tip = F * h**3 / (3.0 * EI) + (0.0 if kGA is None else F * h / kGA)
+        assert (float(sol.v(0.0)), float(sol.v(L))) == (pytest.approx(tip, rel=1e-12), pytest.approx(tip, rel=1e-12))
+        assert (sol.R_A, sol.C_A) == (pytest.approx(-2.0 * F, rel=1e-15), pytest.approx(0.0, abs=1e-9 * F * L))
+
+
+@pytest.mark.parametrize("kGA", [None, KGA])
+def test_cantilever_uniform_load_stepped(kGA):
+    """Stepped solver, fixed at 0, q over the length: v(L) = q L^4 / (8 EI) + q L^2 / (2 kGA)."""
+    sol = solve_stepped([], [DistributedLoad(0.0, L, lambda x: Q)], 0.0, None, [Segment(0.0, L, EI, kGA)], L)
+    shear = 0.0 if kGA is None else Q * L**2 / (2.0 * kGA)
+    assert float(sol.v(L)) == pytest.approx(Q * L**4 / (8.0 * EI) + shear, rel=1e-12)
+
+
+MIXED = [(30.0, F), (120.0, -0.5 * F)], [(80.0, C0), (170.0, -2.0 * C0)]   # forces, couples
+
+
+@pytest.mark.parametrize("x_B", [L, None], ids=["pins", "fixed"])
+@pytest.mark.parametrize("kGA", [None, KGA])
+def test_equilibrium_with_forces_and_couples(x_B, kGA):
+    """Forces and moments about x = 0 sum to zero (a force F at x gives x F); M and V vanish past the last load."""
+    loads, couples = MIXED
+    uni, step = _uniform_and_stepped(loads, 0.0, x_B, kGA, couples)
+    for sol in (uni, step):
+        R_B = sol.R_B or 0.0
+        assert sum(F_ for _, F_ in loads) + sol.R_A + R_B == pytest.approx(0.0, abs=1e-12 * F)
+        moment = sum(x * F_ for x, F_ in loads) + sum(C for _, C in couples) + (x_B or 0.0) * R_B + sol.C_A
+        assert moment == pytest.approx(0.0, abs=1e-12 * F * L)
+        assert float(sol.M(L)) == pytest.approx(0.0, abs=1e-9 * F * L)
+    assert float(uni.M(L + 10.0)) == pytest.approx(0.0, abs=1e-9 * F * L)       # Macaulay: also past the beam end
+    assert float(uni.V(L + 10.0)) == pytest.approx(0.0, abs=1e-9 * F)
+
+
+@pytest.mark.parametrize("x_B", [L, None], ids=["pins", "fixed"])
+def test_couples_euler_bernoulli_is_timoshenko_with_infinite_kGA(x_B):
+    loads, couples = MIXED
+    eb = solve_uniform(loads, 0.0, x_B, EI, None, couples=couples)
+    stiff = solve_uniform(loads, 0.0, x_B, EI, 1e30, couples=couples)
+    np.testing.assert_allclose(stiff.v(X), eb.v(X), rtol=1e-12, atol=1e-18)
+    np.testing.assert_allclose(stiff.theta(X), eb.theta(X), rtol=1e-12, atol=1e-18)
+
+
+@pytest.mark.parametrize("x_B", [L, None], ids=["pins", "fixed"])
+@pytest.mark.parametrize("kGA", [None, KGA])
+def test_couples_uniform_equals_stepped(x_B, kGA):
+    """Forces and couples, pins or a fixed end: the stepped solver with equal steps gives the Macaulay beam."""
+    uni, step = _uniform_and_stepped(*MIXED[:1], 0.0, x_B, kGA, MIXED[1])
+    scale = float(np.max(np.abs(uni.v(X))))
+    np.testing.assert_allclose(step.v(X), uni.v(X), rtol=0.0, atol=1e-12 * scale)
+    np.testing.assert_allclose(step.theta(X), uni.theta(X), rtol=0.0, atol=1e-12 * scale / L)
+    np.testing.assert_allclose(step.M(X), uni.M(X), rtol=0.0, atol=1e-10 * F * L)
+    np.testing.assert_allclose(step.V(X[:-1]), uni.V(X[:-1]), rtol=0.0, atol=1e-10 * F)   # at L: left / right limit
+    assert step.C_A == pytest.approx(uni.C_A, rel=1e-13, abs=1e-12 * F * L)

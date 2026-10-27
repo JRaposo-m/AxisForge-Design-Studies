@@ -1,12 +1,12 @@
-"""r00 contact/ehl.py (PROVISIONAL scaffold): the judge alone; SlipPY only in the Dowson-Higginson unit check.
+"""r05_ehl_film_and_rheology (PROVISIONAL scaffold): the judge alone; SlipPY only in the Dowson-Higginson unit check.
 
-Split from tests/test_contact_reference.py when its Hertz part moved to r02_hertz_contact (R1); this file
-moves with ehl.py to r05_ehl_film_and_rheology in run R3 (OPEN MG-01: temporary home).
+Split from tests/test_contact_reference.py when its Hertz part moved to r02_hertz_contact (R1); moved here with
+ehl.py in the sweep (SW3, closes MG-01). The content of the tests is unchanged; R3 extends it.
 """
 import numpy as np
 import pytest
 
-from studies.r00_analytical_references.contact.ehl import canzi_moes, e_prime, groups, moes
+from studies.r00_analytical_references.r05_ehl_film_and_rheology import canzi_moes, e_prime, groups, moes
 
 # two materials (E [Pa], nu [-]): pairing nu of one body with E of the other would show
 MIXED = dict(E=(210e9, 70e9), nu=(0.3, 0.33))
@@ -18,7 +18,7 @@ def _e_star(E, nu):
     return 1.0 / ((1.0 - nu1**2) / E1 + (1.0 - nu2**2) / E2)
 
 
-# ---- studies.r00_analytical_references.contact.ehl ---------------------------------------------------------------
+# ---- studies.r00_analytical_references.r05_ehl_film_and_rheology --------------------------------------------
 
 def test_e_prime_definition():
     """E' = 2 / [(1 - nu1^2)/E1 + (1 - nu2^2)/E2] = 2 E*; for two equal steels E' = E / (1 - nu^2)."""

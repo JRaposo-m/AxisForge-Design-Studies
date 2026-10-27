@@ -1,4 +1,4 @@
-"""r01_beams: Euler-Bernoulli and Timoshenko beams on two pins, uniform and stepped (README)."""
+"""r01_beams: Euler-Bernoulli and Timoshenko beams on two pins or one fixed end, uniform and stepped (README)."""
 from .stepped_beam import DistributedLoad, Segment
 from .stepped_beam import PlaneSolution as SteppedPlaneSolution
 from .stepped_beam import solve_plane as solve_stepped
