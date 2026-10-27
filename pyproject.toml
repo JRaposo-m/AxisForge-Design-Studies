@@ -20,12 +20,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "jupytext"]
 
-# Only the shared code is a package. Case and study folders are not: each
-# script imports its own construction.py as a sibling module.
+# The bridge and the studies are packages: a case is imported as studies.<level>.<case> (D-0036).
 [tool.setuptools.packages.find]
-include = ["references*", "validation", "validation._support*", "slippy_bridge*"]
+include = ["slippy_bridge*", "studies*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "studies"]
 pythonpath = ["tests"]
 addopts = "-q --import-mode=importlib"
+markers = ["slow: a test that runs a solver at full size (deselect with -m 'not slow')"]

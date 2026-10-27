@@ -1,86 +1,119 @@
 """
-references/beams/uniform_beam.py -- closed-form reference solution:
-uniform shaft, two pin supports, point loads (Macaulay).
+Uniform beam on two pin supports under point loads (Macaulay), and the section data both r01
+beams share: EI and kappa G A from the design inputs (P-01), shear correction factors.
 
-Moved here on 2026-10-06 from the ``analytical_solution.py`` of the uniform
-FEM case (now ``validation/shafts/fem_uniform_radial_load``):
-nothing in it is specific to that case (it reads loads and supports from any
-resolved ``ShaftSystem``).
-
-Euler-Bernoulli and Timoshenko (shear-corrected) deflection, bending
-moment and shear force for a uniform beam on two pin supports under
-transverse point loads, by Macaulay's method. First used as the
-exact reference for ``case_radial_single_position``.
-
-Method
-------
-For one bending plane, with every transverse force F_k at x_k (applied
-loads and support reactions alike) and Macaulay brackets
-<x - a>^n = (x - a)^n H(x - a):
+Euler-Bernoulli and Timoshenko (shear-corrected) deflection, bending moment and shear force in
+one bending plane. For every transverse force F_k at x_k (applied loads and support reactions
+alike) and Macaulay brackets <x - a>^n = (x - a)^n H(x - a):
 
 .. math::
 
-    M(x) = \\sum_k F_k \\langle x - x_k \\rangle
-
+    M(x) = \\sum_k F_k \\langle x - x_k \\rangle, \\qquad
     V(x) = -\\frac{dM}{dx} = -\\sum_k F_k \\langle x - x_k \\rangle^0
 
     v(x) = \\frac{1}{EI}\\sum_k F_k \\frac{\\langle x - x_k\\rangle^3}{6}
-         - \\frac{1}{\\kappa G A}\\sum_k F_k \\langle x - x_k\\rangle
-         + C_1 x + C_2
+         - \\frac{1}{\\kappa G A}\\sum_k F_k \\langle x - x_k\\rangle + C_1 x + C_2
 
-The first deflection term is the bending (Euler-Bernoulli) part,
-EI v_b'' = M. The second is the shear part: the shear strain is
-gamma = v_s' = V / kGA with V = -dM/dx, hence v_s = -M / kGA (+ linear
-terms). Its sign is fixed by V = -dM/dx; with the opposite sign the
-Timoshenko beam would come out STIFFER than Euler-Bernoulli, which is
-physically impossible. C_1, C_2 follow from v(x_A) = v(x_B) = 0 applied to the total
-deflection. Euler-Bernoulli is the limit kGA -> infinity; it is solved
-with ``kGA=None`` (shear term dropped) instead of a large number.
+The first deflection term is the bending (Euler-Bernoulli) part, EI v_b'' = M (Onate 2013,
+Eq. (1.5)). The second is the shear part: the shear strain is gamma = v_s' = V / kGA with
+V = -dM/dx, hence v_s = -M / kGA (+ linear terms) (Onate 2013, Eqs (2.1)-(2.6c)). With the
+opposite sign the Timoshenko beam would come out stiffer than Euler-Bernoulli, which is
+impossible. C_1, C_2 follow from v(x_A) = v(x_B) = 0 on the total deflection. Euler-Bernoulli is
+the limit kGA -> infinity and is solved with ``kGA=None`` (shear term dropped).
 
-Assumptions
------------
-* Linear elasticity, small displacements, uniform section.
-* Supports are ideal pins (v = 0, rotation free) -- valid because the
-  AxisForge rigid-support solver never constrains bending rotation.
-* The two bending planes (XY, XZ) are uncoupled (circular section).
-* Point loads only; no distributed load, no axial-bending coupling.
+Assumptions: linear elasticity, small slopes, uniform section, ideal pins (v = 0, rotation free),
+statically determinate, point loads only, kappa constant along the beam.
 
-Scope
------
-Independent from the FEM discretisation (mesh, shape functions,
-stiffness matrix), NOT from the load resolution: the applied forces are
-read from the same resolved ``ShaftSystem`` that the FEM solves
-(``Load.component(plane)``), so gear-force errors would go undetected
-here by design.
-
-References
-----------
-.. [1] Timoshenko, S. P. & Gere, J. M., *Mechanics of Materials*,
-       Macaulay / singularity functions for beam deflection.
-.. [2] Cowper, G. R. (1966). The shear coefficient in Timoshenko's beam
-       theory. *J. Appl. Mech.* 33(2), 335-340.
-.. [3] Hutchinson, J. R. (2001). Shear coefficients for Timoshenko beam
-       theory. *J. Appl. Mech.* 68(1), 87-92.
-
-Units: mm, N, MPa, N.mm.
+Units: mm, N, MPa, N.mm. Imports NumPy only (an r imports no AxisForge, D-0036).
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
-from typing import Callable
 
 import numpy as np
 
-from axisforge.core.loads import LoadPlane
+__all__ = ["kappa_cowper", "kappa_hutchinson", "KAPPA", "section_stiffness", "PlaneSolution", "solve_plane"]
 
 
-# Shear correction factors: single definition in shear_coefficients.py,
-# re-exported here so callers keep using ``an.kappa_cowper`` / ``an.KAPPA``.
-from references.beams.shear_coefficients import (  # noqa: F401
-    KAPPA,
-    kappa_cowper,
-    kappa_hutchinson,
-)
+# =============================================================================
+# Section
+# =============================================================================
+
+def kappa_cowper(nu: float) -> float:
+    """Cowper shear correction factor of a solid circular section [-].
+
+    ``kappa = 6 (1 + nu) / (7 + 6 nu)`` (Cowper 1966, Table 1, solid circle; source not held in
+    the library: README section 2).
+
+    Examples
+    --------
+    >>> round(kappa_cowper(0.3), 6)
+    0.886364
+    """
+    return 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
+
+
+def kappa_hutchinson(nu: float) -> float:
+    """Hutchinson shear correction factor of a solid circular section [-].
+
+    ``kappa = 6 (1 + nu)^2 / (7 + 12 nu + 4 nu^2)`` (Hutchinson 2001, solid circle; source not
+    held in the library: README section 2).
+
+    Examples
+    --------
+    >>> round(kappa_hutchinson(0.3), 6)
+    0.925182
+    """
+    return 6.0 * (1.0 + nu) ** 2 / (7.0 + 12.0 * nu + 4.0 * nu**2)
+
+
+KAPPA = {"cowper": kappa_cowper, "hutchinson": kappa_hutchinson}
+
+
+def section_stiffness(E: float, nu: float, d_o: float, d_i: float = 0.0,
+                      kappa: str | None = "cowper") -> tuple[float, float | None]:
+    """Bending and corrected shear stiffness of a circular section, from the design inputs.
+
+    Parameters
+    ----------
+    E : float
+        Young's modulus [MPa].
+    nu : float
+        Poisson's ratio [-]; ``G = E / (2 (1 + nu))``.
+    d_o, d_i : float
+        Outer and inner diameter [mm]; ``d_i = 0`` for a solid section.
+    kappa : {"cowper", "hutchinson"} or None
+        Shear correction factor (``KAPPA``); None for Euler-Bernoulli.
+
+    Returns
+    -------
+    EI : float
+        Bending stiffness [N.mm^2], ``I = pi (d_o^4 - d_i^4) / 64``.
+    kGA : float or None
+        Corrected shear stiffness kappa G A [N], ``A = pi (d_o^2 - d_i^2) / 4``; None when
+        ``kappa`` is None.
+
+    Raises
+    ------
+    ValueError
+        ``E <= 0``, ``nu`` outside (-1, 0.5), not ``0 <= d_i < d_o``, or an unknown ``kappa``.
+    NotImplementedError
+        A hollow section with a shear correction factor: the hollow Cowper and Hutchinson factors
+        need sources the library does not hold (# OPEN MG-02).
+    """
+    if kappa is not None and kappa not in KAPPA:
+        raise ValueError(f"kappa must be one of {sorted(KAPPA)} or None, got {kappa!r}")
+    if not E > 0.0 or not -1.0 < nu < 0.5 or not 0.0 <= d_i < d_o:
+        raise ValueError(f"expected E > 0, -1 < nu < 0.5, 0 <= d_i < d_o; got {E}, {nu}, {d_i}, {d_o}")
+    EI = E * math.pi * (d_o**4 - d_i**4) / 64.0
+    if kappa is None:
+        return EI, None
+    if d_i > 0.0:
+        raise NotImplementedError("shear correction factor of a hollow section: Cowper 1966 / "
+                                  "Hutchinson 2001 not in the library (OPEN MG-02)")
+    G = E / (2.0 * (1.0 + nu))
+    return EI, KAPPA[kappa](nu) * G * math.pi * (d_o**2 - d_i**2) / 4.0
 
 
 # =============================================================================
@@ -96,7 +129,7 @@ def _bracket(x: np.ndarray, a: float, n: int) -> np.ndarray:
 
 @dataclass
 class PlaneSolution:
-    """Closed-form solution in one bending plane.
+    """Closed-form solution in one bending plane; build it with :func:`solve_plane`.
 
     Attributes
     ----------
@@ -142,35 +175,22 @@ class PlaneSolution:
 
     def v_bending(self, x) -> np.ndarray:
         """Bending-only part of the deflection [mm] (same supports)."""
-        bending = PlaneSolution(self.x_A, self.x_B, self.R_A, self.R_B,
-                                self.loads, self.EI, None)
-        bending._C = _integration_constants(bending)
-        return bending.v(x)
+        return solve_plane(self.loads, self.x_A, self.x_B, self.EI, None).v(x)
 
     def M(self, x) -> np.ndarray:
         """Bending moment [N.mm] at positions ``x`` [mm]."""
         x = np.asarray(x, dtype=float)
-        return sum((Fk * _bracket(x, xk, 1) for xk, Fk in self.forces),
-                   start=np.zeros_like(x))
+        return sum((Fk * _bracket(x, xk, 1) for xk, Fk in self.forces), start=np.zeros_like(x))
 
     def V(self, x) -> np.ndarray:
         """Shear force V = -dM/dx [N] at positions ``x`` [mm]."""
         x = np.asarray(x, dtype=float)
-        return -sum((Fk * _bracket(x, xk, 0) for xk, Fk in self.forces),
-                    start=np.zeros_like(x))
-
-
-def _integration_constants(sol: PlaneSolution) -> tuple[float, float]:
-    """C1, C2 from v(x_A) = v(x_B) = 0 on the total deflection."""
-    pts = np.array([sol.x_A, sol.x_B])
-    rhs = -sol._v_particular(pts)
-    C1, C2 = np.linalg.solve(np.array([[sol.x_A, 1.0], [sol.x_B, 1.0]]), rhs)
-    return float(C1), float(C2)
+        return -sum((Fk * _bracket(x, xk, 0) for xk, Fk in self.forces), start=np.zeros_like(x))
 
 
 def solve_plane(loads: list[tuple[float, float]], x_A: float, x_B: float,
                 EI: float, kGA: float | None) -> PlaneSolution:
-    """Solve one bending plane of a two-pin beam under point loads.
+    """Solve one bending plane of a uniform two-pin beam under point loads.
 
     Parameters
     ----------
@@ -179,9 +199,10 @@ def solve_plane(loads: list[tuple[float, float]], x_A: float, x_B: float,
     x_A, x_B : float
         Pin support positions [mm], x_A < x_B.
     EI : float
-        Bending stiffness [N.mm^2].
+        Bending stiffness [N.mm^2] (:func:`section_stiffness`).
     kGA : float or None
-        Corrected shear stiffness kappa G A [N]; None for Euler-Bernoulli.
+        Corrected shear stiffness kappa G A [N] (:func:`section_stiffness`); None for
+        Euler-Bernoulli.
 
     Returns
     -------
@@ -195,19 +216,18 @@ def solve_plane(loads: list[tuple[float, float]], x_A: float, x_B: float,
 
     Notes
     -----
-    Sign convention: forces and deflections share one positive direction
-    per plane; M = sum F_k <x - x_k>, V = -dM/dx.
+    Sign convention: forces and deflections share one positive direction per plane;
+    M = sum F_k <x - x_k>, V = -dM/dx. A shaft loaded in two planes is two calls; the resultant
+    is ``hypot`` of the two (circular section, uncoupled planes).
 
     Examples
     --------
-    Simply supported span L = 100 mm, central load 1000 N, EI = 1e9 N.mm^2;
-    the bending-only mid-span deflection is F L^3 / (48 EI):
+    Simply supported span L = 100 mm, central load 1000 N, EI = 1e9 N.mm^2; the bending-only
+    mid-span deflection is F L^3 / (48 EI):
 
     >>> sol = solve_plane([(50.0, 1000.0)], 0.0, 100.0, EI=1e9, kGA=None)
     >>> round(float(sol.v(50.0)), 9), round(1000.0 * 100.0**3 / (48 * 1e9), 9)
     (0.020833333, 0.020833333)
-    >>> round(sol.R_A, 6), round(sol.R_B, 6)
-    (-500.0, -500.0)
     """
     if x_A >= x_B:
         raise ValueError(f"expected x_A < x_B, got {x_A}, {x_B}")
@@ -216,71 +236,7 @@ def solve_plane(loads: list[tuple[float, float]], x_A: float, x_B: float,
     R_B = -sum_M_A / (x_B - x_A)
     R_A = -sum_F - R_B
     sol = PlaneSolution(x_A, x_B, R_A, R_B, list(loads), EI, kGA)
-    sol._C = _integration_constants(sol)
+    rhs = -sol._v_particular(np.array([x_A, x_B]))               # v(x_A) = v(x_B) = 0
+    C1, C2 = np.linalg.solve(np.array([[x_A, 1.0], [x_B, 1.0]]), rhs)
+    sol._C = (float(C1), float(C2))
     return sol
-
-
-# =============================================================================
-# Whole shaft
-# =============================================================================
-
-@dataclass
-class ShaftSolution:
-    """Closed-form solution of one shaft, both bending planes.
-
-    Attributes
-    ----------
-    name : str
-        Shaft name.
-    xy, xz : PlaneSolution
-        Solutions in the XY and XZ planes; their ``v``, ``M``, ``V`` map
-        onto ``ShaftResults.v_xy`` / ``v_xz`` etc.
-    """
-
-    name: str
-    xy: PlaneSolution
-    xz: PlaneSolution
-
-    def v(self, x) -> np.ndarray:
-        """Resultant deflection sqrt(v_xy^2 + v_xz^2) [mm]."""
-        return np.hypot(self.xy.v(x), self.xz.v(x))
-
-    def M(self, x) -> np.ndarray:
-        """Resultant bending moment [N.mm]."""
-        return np.hypot(self.xy.M(x), self.xz.M(x))
-
-
-def solve_shaft(shaft_system, EI: float, kGA: float | None) -> ShaftSolution:
-    """Closed-form solution for one resolved AxisForge shaft.
-
-    Parameters
-    ----------
-    shaft_system : ShaftSystem
-        Resolved shaft (user and gear-mesh radial loads already present).
-    EI : float
-        Bending stiffness [N.mm^2].
-    kGA : float or None
-        Corrected shear stiffness [N]; None for Euler-Bernoulli.
-
-    Returns
-    -------
-    ShaftSolution
-
-    Notes
-    -----
-    Exercised on a real system by ``validation/shafts/fem_uniform_radial_load``
-    and by ``tests/test_fem_validation_regression.py`` (v(100 mm) = 0.3763 mm
-    for ``shaft1`` with Cowper's kappa). The example is not a doctest here:
-    ``references/`` must not import a validation case.
-    """
-    x_A, x_B = sorted(b.position for b in shaft_system.bearings)
-
-    def plane_loads(plane):
-        out = [(ld.position, float(ld.component(plane))) for ld in shaft_system.radial_loads]
-        return [(x, F) for x, F in out if F != 0.0]
-
-    return ShaftSolution(
-        name=shaft_system.name,
-        xy=solve_plane(plane_loads(LoadPlane.XY), x_A, x_B, EI, kGA),
-        xz=solve_plane(plane_loads(LoadPlane.XZ), x_A, x_B, EI, kGA),
-    )

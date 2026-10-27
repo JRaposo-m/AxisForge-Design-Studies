@@ -1,17 +1,11 @@
 """
-references/beams/stepped_beam.py -- closed-form reference solution:
-piecewise-constant section, two pin supports, point and polynomial
-distributed loads.
-
-Moved here on 2026-10-06 from the ``analytical_solution.py`` of the stepped
-FEM case (now ``validation/shafts/fem_stepped_distributed_gear``):
-nothing in it is specific to that case.
+Stepped beam on two pin supports: piecewise-constant section, point and polynomial distributed
+loads.
 
 Exact Euler-Bernoulli and Timoshenko deflection, rotation, bending moment
 and shear force for a shaft with piecewise-constant section properties,
 two pin supports, and transverse point and distributed loads with
-polynomial intensity. First used as the exact reference
-for ``case_distributed_gear_parabolic``.
+polynomial intensity. Judge of the stepped shaft of v001 (today's v002 folder).
 
 Method
 ------
@@ -34,7 +28,7 @@ are then integrated section by section,
 
 with theta and v continuous across section changes and load points. The
 second term is the Timoshenko shear strain gamma = V / kGA; it is omitted
-for Euler-Bernoulli (theta = dv/dx). The two integration constants v(0)
+for Euler-Bernoulli (theta = dv/dx) (Onate 2013, Eqs (1.5), (2.1)-(2.6c)). The two integration constants v(0)
 and theta(0) follow from v(x_A) = v(x_B) = 0.
 
 Between consecutive breakpoints (shaft ends, section changes, supports,
@@ -46,27 +40,13 @@ load intensities up to degree ``_DEGREE - 2``.
 
 Assumptions
 -----------
-* Linear elasticity, small displacements, solid circular sections.
-* Section properties constant within each section (shoulder fillets do
-  not modify EI or kGA).
-* Ideal pin supports (v = 0, rotation free), consistent with the
-  AxisForge rigid-support solver.
-* The two bending planes (XY, XZ) are uncoupled.
+* Linear elasticity, small slopes, statically determinate.
+* Section properties constant within each segment, abrupt steps (shoulder fillets do not modify
+  EI or kGA); kappa constant per segment.
+* Ideal pin supports (v = 0, rotation free); one bending plane (circular sections: the two
+  planes are uncoupled and solved by two calls).
 
-Scope
------
-Independent from the FEM discretisation, NOT from the load resolution:
-the loads are read from the same resolved ``ShaftSystem`` that the FEM
-solves (``Load.component`` / ``DistributedRadialLoad.component_intensity``).
-
-References
-----------
-.. [1] Timoshenko, S. P. & Gere, J. M., *Mechanics of Materials* --
-       deflection of statically determinate beams by integration.
-.. [2] Cowper, G. R. (1966). *J. Appl. Mech.* 33(2), 335-340.
-.. [3] Hutchinson, J. R. (2001). *J. Appl. Mech.* 68(1), 87-92.
-
-Units: mm, N, MPa, N.mm, rad.
+Units: mm, N, MPa, N.mm, rad. Imports NumPy only (an r imports no AxisForge, D-0036).
 """
 from __future__ import annotations
 
@@ -76,19 +56,10 @@ from typing import Callable, Sequence
 import numpy as np
 from numpy.polynomial import polynomial as P
 
-from axisforge.core.loads import LoadPlane
+__all__ = ["DistributedLoad", "Segment", "PlaneSolution", "solve_plane"]
 
 _DEGREE = 8                     # polynomial degree per interval (exact for q up to degree 6)
 _GAUSS = np.polynomial.legendre.leggauss(12)   # exact for polynomial integrands up to degree 23
-
-
-# Shear correction factors: single definition in shear_coefficients.py,
-# re-exported here so callers keep using ``an.kappa_cowper`` / ``an.KAPPA``.
-from references.beams.shear_coefficients import (  # noqa: F401
-    KAPPA,
-    kappa_cowper,
-    kappa_hutchinson,
-)
 
 
 # =============================================================================
@@ -111,6 +82,27 @@ class DistributedLoad:
     x_lo: float
     x_hi: float
     q: Callable[[float], float]
+
+
+@dataclass(frozen=True)
+class Segment:
+    """One constant-section piece of the beam.
+
+    Attributes
+    ----------
+    x_lo, x_hi : float
+        Extent [mm], x_lo < x_hi.
+    EI : float
+        Bending stiffness [N.mm^2] (``uniform_beam.section_stiffness``).
+    kGA : float or None
+        Corrected shear stiffness kappa G A [N] (``uniform_beam.section_stiffness``); None for
+        Euler-Bernoulli.
+    """
+
+    x_lo: float
+    x_hi: float
+    EI: float
+    kGA: float | None = None
 
 
 def _gauss_integral(f: Callable[[np.ndarray], np.ndarray], a: float, b: float) -> float:
@@ -189,8 +181,7 @@ class PlaneSolution:
 def solve_plane(point_loads: Sequence[tuple[float, float]],
                 distributed: Sequence[DistributedLoad],
                 x_A: float, x_B: float,
-                segments: Sequence, kappa: float | None,
-                length: float) -> PlaneSolution:
+                segments: Sequence[Segment], length: float) -> PlaneSolution:
     """Solve one bending plane of a stepped beam on two pin supports.
 
     Parameters
@@ -201,11 +192,9 @@ def solve_plane(point_loads: Sequence[tuple[float, float]],
         Applied distributed loads in this plane.
     x_A, x_B : float
         Pin support positions [mm], x_A < x_B.
-    segments : sequence
-        Objects with attributes ``x_lo``, ``x_hi`` [mm], ``EI`` [N.mm^2]
-        and ``GA`` [N], covering [0, length] left to right.
-    kappa : float or None
-        Shear correction factor; None for Euler-Bernoulli.
+    segments : sequence of Segment
+        Section pieces covering [0, length] left to right; a segment with
+        ``kGA=None`` has no shear term (Euler-Bernoulli).
     length : float
         Shaft length [mm].
 
@@ -228,9 +217,8 @@ def solve_plane(point_loads: Sequence[tuple[float, float]],
     Uniform shaft, L = 100 mm, pins at the ends, uniform q = 1 N/mm,
     EI = 1e9 N.mm^2: mid-span deflection 5 q L^4 / (384 EI).
 
-    >>> class S: x_lo, x_hi, EI, GA = 0.0, 100.0, 1e9, 1e8
     >>> sol = solve_plane([], [DistributedLoad(0.0, 100.0, lambda x: 1.0)],
-    ...                   0.0, 100.0, [S], None, 100.0)
+    ...                   0.0, 100.0, [Segment(0.0, 100.0, 1e9)], 100.0)
     >>> round(float(sol.v(50.0)), 9), round(5 * 100.0**4 / (384 * 1e9), 9)
     (0.001302083, 0.001302083)
     """
@@ -284,7 +272,7 @@ def solve_plane(point_loads: Sequence[tuple[float, float]],
         M_c = P.polyfit(u_nodes, [M_exact(x) for x in xs_eval], _DEGREE)
         V_c = -P.polyder(M_c) / h
         th_c = P.polyadd([theta0], P.polyint(M_c / seg.EI) * h)
-        slope = th_c if kappa is None else P.polyadd(th_c, V_c / (kappa * seg.GA))
+        slope = th_c if seg.kGA is None else P.polyadd(th_c, V_c / seg.kGA)
         v_c = P.polyadd([v0], P.polyint(slope) * h)
         pieces.append(_Piece(a, b, M_c, V_c, th_c, v_c))
         theta0, v0 = P.polyval(1.0, th_c), P.polyval(1.0, v_c)
@@ -299,66 +287,3 @@ def solve_plane(point_loads: Sequence[tuple[float, float]],
         p.theta = P.polyadd(p.theta, [C1])
         p.v = P.polyadd(p.v, [C2 + C1 * p.a, C1 * h])
     return PlaneSolution(pieces, R_A, R_B, x_A, x_B)
-
-
-# =============================================================================
-# Whole shaft
-# =============================================================================
-
-@dataclass
-class ShaftSolution:
-    """Closed-form solution of one shaft, both bending planes.
-
-    Attributes
-    ----------
-    name : str
-        Shaft name.
-    xy, xz : PlaneSolution
-        Solutions in the XY and XZ planes; they map onto
-        ``ShaftResults.v_xy`` / ``v_xz`` etc.
-    """
-
-    name: str
-    xy: PlaneSolution
-    xz: PlaneSolution
-
-    def v(self, x) -> np.ndarray:
-        """Resultant deflection sqrt(v_xy^2 + v_xz^2) [mm]."""
-        return np.hypot(self.xy.v(x), self.xz.v(x))
-
-    def M(self, x) -> np.ndarray:
-        """Resultant bending moment [N.mm]."""
-        return np.hypot(self.xy.M(x), self.xz.M(x))
-
-
-def solve_shaft(shaft_system, segments: Sequence, kappa: float | None,
-                length: float) -> ShaftSolution:
-    """Closed-form solution for one resolved AxisForge shaft.
-
-    Parameters
-    ----------
-    shaft_system : ShaftSystem
-        Resolved shaft; its ``radial_loads`` and ``distributed_radial_loads``
-        are read as they are given to the FEM solver.
-    segments : sequence
-        Section properties (see :func:`solve_plane`).
-    kappa : float or None
-        Shear correction factor; None for Euler-Bernoulli.
-    length : float
-        Shaft length [mm].
-
-    Returns
-    -------
-    ShaftSolution
-    """
-    x_A, x_B = sorted(b.position for b in shaft_system.bearings)
-
-    def plane(pl):
-        pts = [(ld.position, float(ld.component(pl))) for ld in shaft_system.radial_loads]
-        pts = [(x, F) for x, F in pts if F != 0.0]
-        dist = [DistributedLoad(ld.x_lo, ld.x_hi,
-                                lambda x, _ld=ld, _pl=pl: float(_ld.component_intensity(x, _pl)))
-                for ld in shaft_system.distributed_radial_loads]
-        return solve_plane(pts, dist, x_A, x_B, segments, kappa, length)
-
-    return ShaftSolution(shaft_system.name, plane(LoadPlane.XY), plane(LoadPlane.XZ))

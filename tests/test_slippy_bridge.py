@@ -17,7 +17,7 @@ from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.con
     ISO16281BallSolver)
 from axisforge.solvers.machine_elements.gears.contact import contact_inputs, load_sharing  # noqa: E402
 
-from studies.r00_analytical_references.contact.hertz import hertz_point  # noqa: E402
+from studies.r00_analytical_references.r02_hertz_contact import hertz_point  # noqa: E402
 
 from slippy_bridge.contact.core.contact import Body, Contact, SweptCircleBody  # noqa: E402
 from slippy_bridge.contact.core.machine_elements.bearings import (AngularContactBallContact,  # noqa: E402
@@ -1167,11 +1167,11 @@ def test_hertz_of_the_6210_contacts(load_case):
 
 
 def test_hertz_agrees_with_the_independent_judge(load_case):
-    """``references.contact.hertz.hertz_point`` (D-0021, no SlipPY, no bridge) on the 6210 contacts."""
+    """r02 ``hertz_point`` (D-0021, no SlipPY, no bridge) on the 6210 contacts."""
     for c in _6210_contacts(load_case):
-        hz, ref = hertz(c), hertz_point(c.body1.r, c.body2.r, (c.body1.E, c.body2.E), (c.body1.nu, c.body2.nu), c.load)
-        assert hz.p0 == pytest.approx(ref["p0_Pa"], rel=1e-6) and hz.delta == pytest.approx(ref["delta_m"], rel=1e-6)
-        assert (hz.b, hz.a) == (pytest.approx(ref["s_x_m"], rel=1e-6), pytest.approx(ref["s_y_m"], rel=1e-6))
+        hz, ref = hertz(c), hertz_point(*c.body1.r, *c.body2.r, c.body1.E, c.body1.nu, c.body2.E, c.body2.nu, c.load)
+        assert hz.p0 == pytest.approx(ref.p0_Pa, rel=1e-6) and hz.delta == pytest.approx(ref.delta_m, rel=1e-6)
+        assert (hz.b, hz.a) == (pytest.approx(ref.b_m, rel=1e-6), pytest.approx(ref.a_m, rel=1e-6))
 
 
 def test_hertz_of_a_roller_line_contact(roller_10):
