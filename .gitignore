@@ -1,20 +1,29 @@
+# Python bytecode and packaging
 __pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
-.env
-.dat
-.json
-.ipynb_checkpoints/
-.pytest_cache/
-.DS_Store
+*.py[cod]
 *.egg-info/
 build/
 dist/
 
+# Environments, editors, tool caches
+.venv/
+venv/
+.env
+.vscode/
+.idea/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.DS_Store
+
 # Generated output of a study or validation case: results/ next to it (D-0020).
 studies/**/results/
 validation/**/results/
+# Exception: regression baselines read by tests/test_regression.py (MIG-07, kept by José).
+!studies/s000_axisforge/s001_bearing_load_distribution/clearance_and_alpha/angular_contact/results/
+!studies/s000_axisforge/s001_bearing_load_distribution/clearance_and_alpha/cylindrical_roller/results/
 # Old location, still used by examples/.
 /artifacts/
