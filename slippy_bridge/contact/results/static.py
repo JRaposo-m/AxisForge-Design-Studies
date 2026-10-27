@@ -45,14 +45,29 @@ class StaticResult:
         Initial gap of the undeformed surfaces [m]: SlipPY ``just_touching_gap``, ``-(z1 + z2)``
         shifted to a minimum of 0, so >= 0.
     load_applied : float
-        Load given to the step [N] (a line: load per unit length x period).
+        Load given to the step [N] (a line: load per unit length x period); ``nan`` under
+        ``interference`` or ``mean_gap`` control (no load given).
     period : float
         Period of a line contact along grid y = bridge y [m]; ``nan`` for a point contact.
+    load_control : {"normal_load", "interference", "mean_gap"}
+        What the step was given: the load (``contact.load``), the rigid approach of the bodies, or
+        the mean gap (``Grid.step_args``).
+    load_found : float
+        Total normal load of the step [N], SlipPY ``total_normal_load`` (under every control; under
+        ``normal_load`` it equals ``load_applied`` within the solver tolerance; the same sum as
+        ``load``). A line: on one period, the load per unit length is ``load_found / period``
+        (``w_N_per_m`` of the record stays the contact's nominal load).
+    interference, mean_gap : float
+        The approach and the mean gap given to the step [m]; ``nan`` when not given.
+    off_set_x, off_set_y : float
+        Offsets of body 2 given to the step [m] (SlipPY ``off_set_x`` along array axis 0, grid x);
+        ``nan`` when not given (SlipPY's default is 0). See ``solvers.solve`` for what an offset
+        changes in the measurements.
     use_frequency_domain : bool
         How the SlipPY influence matrix is defined (``Elastic(use_frequency_domain=...)``): True in
         the frequency domain, False in space. Periodicity comes from ``periodic_axes`` of the step.
     method : str
-        SlipPY solution method of the step.
+        SlipPY solution method of the step, as given (not used under ``interference``: BCCG).
     tolerance : float
         Convergence tolerance given to the step [-].
     converged : bool
@@ -82,10 +97,12 @@ class StaticResult:
         indicator (on a flat top the maximum may fall one node off, e.g. on a true raceway whose
         pressure centre moves a fraction of a node), not a measured shift.
     hertz : HertzResult
-        Hertz reference of the contact.
+        Hertz reference of the contact, at ``contact.load`` under ``normal_load`` control and at the
+        load found (``load_found``, a line: over ``period``) under ``interference`` or ``mean_gap``.
     err_p0, err_a, err_b, err_delta, err_load : float
         Relative errors ``(measured - reference)/reference`` [-] against Hertz (``err_load``
-        against ``load_applied``); ``nan`` when the reference is not finite or zero.
+        against ``load_applied``, so ``nan`` under ``interference`` or ``mean_gap``); ``nan`` when the
+        reference is not finite or zero.
     load_ok, edge_clear, margin_ok, resolution_ok, within_reference : bool
         Checks of the solve: load balance; no pressure on the domain edge; domain margin around
         the contact; nodes across the contact; errors within the reference tolerance. With
@@ -106,6 +123,12 @@ class StaticResult:
     # load
     load_applied: float
     period: float
+    load_control: str
+    load_found: float
+    interference: float
+    mean_gap: float
+    off_set_x: float
+    off_set_y: float
     # solver
     use_frequency_domain: bool
     method: str
@@ -165,7 +188,9 @@ class StaticResult:
           grid axes, as ``Grid.around``; ``span_y`` nan for a line). ``psi_rad`` and the measured
           ``a_m``, ``b_m`` do not depend on the grid angle;
         * profile ``build``; load: ``Q_N`` (the load of a point contact, nan for a line) and
-          ``w_N_per_m`` (of a line contact, nan for a point), ``load_applied_N``, ``period_m``;
+          ``w_N_per_m`` (of a line contact, nan for a point; both the contact's nominal load),
+          ``load_applied_N``, ``period_m``, ``load_control``, ``interference_m``, ``mean_gap_m``,
+          ``off_set_x_m``, ``off_set_y_m`` (nan when not given), ``load_found_N``;
         * solver: ``use_frequency_domain``, ``method``, ``tolerance``, ``converged``,
           ``solve_time_s``;
         * measured: ``p0_Pa``, ``a_m``, ``b_m``, ``load_N``, ``apex_offset_nodes``, ``delta_m``;
@@ -199,6 +224,9 @@ class StaticResult:
         return {**ident, **geometry, **grid, "build": self.build,
                 "Q_N": math.nan if c.line else c.load, "w_N_per_m": c.load if c.line else math.nan,
                 "load_applied_N": self.load_applied, "period_m": self.period,
+                "load_control": self.load_control, "interference_m": self.interference,
+                "mean_gap_m": self.mean_gap, "off_set_x_m": self.off_set_x, "off_set_y_m": self.off_set_y,
+                "load_found_N": self.load_found,
                 "use_frequency_domain": self.use_frequency_domain, "method": self.method,
                 "tolerance": self.tolerance, "converged": self.converged, "solve_time_s": self.solve_time,
                 "p0_Pa": self.p0, "a_m": self.a, "b_m": self.b, "load_N": self.load,

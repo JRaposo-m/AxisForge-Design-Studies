@@ -7,6 +7,7 @@ the three repositories.
 """
 from __future__ import annotations
 
+import dataclasses
 import functools
 import itertools
 import math
@@ -44,9 +45,34 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
           **step_kwargs) -> StaticResult:
     """Solve the dry normal contact of ``contact`` on ``grid`` with the SlipPY BEM and measure it.
 
-    Both bodies are elastic half-spaces with their exact profiles; the load is ``contact.load``
-    (``Grid.step_args``: a line gets load per unit length x period on a strip periodic along y).
-    The pressure field is measured and compared with Hertz.
+    Both bodies are elastic half-spaces with their exact profiles. The pressure field is measured
+    and compared with Hertz. Load control (``Grid.step_args``), one of three:
+
+    * ``"normal_load"`` (nothing given): the load is ``contact.load`` (a line: load per unit
+      length x period on a strip periodic along y); the Hertz reference is ``hertz_result``
+      (or :func:`hertz` of ``contact``);
+    * ``"interference"`` [m] (the rigid approach of the bodies, solved by SlipPY's BCCG at that
+      approach; ``method`` is then not used) or ``"mean_gap"`` [m] (``method="rey"`` only, which no
+      bridge contact can use: ``Grid.step_args``, OPEN SB-61) in ``step_kwargs``: the load is an output, SlipPY
+      ``total_normal_load`` of the step (``HeightOptimisationFunction.results``,
+      ``slippy/contact/_step_utils.py:226-241``). The Hertz reference and every ``err_*`` are
+      then computed at that load (a line: the found load / period [N/m]), and ``hertz_result``
+      is not used for the comparison (only the grid was built with it). Hertz at the found load
+      hides the kernel's approach error in the load (it shows in ``err_delta`` only, OPEN SB-57).
+      The approach of a line contact is not defined locally (Johnson 1985, 4.2(c)): the
+      interference given to a line is a number of its grid and kernel (the zero-frequency term
+      is summed over the padded domain), meaningful only on the grid it came from.
+
+    Offsets ``off_set_x``, ``off_set_y`` [m] are passed to SlipPY (``off_set_x`` shifts body 2
+    along array axis 0, grid x; ``_model_utils.get_gap_from_model``). The measurements assume the
+    apex on the grid centre node. With an offset ``s`` the contact moves to the minimum of the
+    shifted gap, ``x* = (K1 + K2)^-1 K2 s`` for paraboloids (not ``s`` itself), shown by
+    ``apex_offset_nodes``; ``p0``, ``a``, ``b`` (cuts through the peak) and ``delta`` do not
+    depend on it, but ``margin_ok`` counts the spans from the grid centre and overstates the
+    margin by up to ``|x*|`` (OPEN SB-63). With ``periodic_geometry=False`` (a point contact by
+    default) SlipPY keeps only the overlap of the two surfaces (``_model_utils.py:137-150``), so
+    a pressure field smaller than the grid comes back and is refused below;
+    ``periodic_geometry=True`` keeps the grid (and wraps body 2 along both axes).
 
     Parameters
     ----------
@@ -63,8 +89,9 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
     use_frequency_domain : bool, optional
         Influence matrix of both bodies (:func:`surface_pair`).
     method, tolerance, **step_kwargs
-        Passed to ``slippy.contact.StaticStep`` (with the load and periodic flags of
-        ``Grid.step_args``, which refuses another load and an offset).
+        Passed to ``slippy.contact.StaticStep`` unchecked (with the load and periodic flags of
+        ``Grid.step_args``); SlipPY raises its own errors (see ``Grid.step_args`` for its limits
+        and their source lines).
     span_x_min : float
         Limit of ``margin_ok`` [-]: the domain must reach ``span_x_min`` half-extents of the Hertz
         ellipse on each side along grid x (rolling when ``grid.angle = 0``; the minor axis on a
@@ -82,13 +109,16 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
     Returns
     -------
     StaticResult
-        Fields, measured values, Hertz reference, errors, checks, provenance. The measured load is
-        the bridge's own ``sum p h^2``, independent of SlipPY's bookkeeping (it equals SlipPY
-        ``total_normal_load``). The checks:
+        Fields, measured values, Hertz reference, errors, checks, provenance, the load control
+        and its inputs. The measured load is the bridge's own ``sum p h^2``, independent of
+        SlipPY's bookkeeping (it equals SlipPY ``total_normal_load``, recorded as
+        ``load_found``). The checks:
 
         * ``converged`` - SlipPY's own flag;
         * ``load_ok`` - the pressure integrates to the applied load within 1e-3: a consistency
-          check of the solve (what tolerance a study needs is open, R-057);
+          check of the solve (what tolerance a study needs is open, R-057). Under
+          ``interference`` or ``mean_gap`` no load is applied (``load_applied`` and ``err_load``
+          nan) and ``load_ok`` is True: not a check there (OPEN SB-57);
         * ``edge_clear`` - the pressure on the domain boundary is at most 1e-6 p0 (the threshold
           of the measured edge); a line: only the two ends along grid x (y is periodic).
           Necessary, not sufficient;
@@ -98,14 +128,19 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
     Raises
     ------
     ValueError
-        From ``Grid.step_args`` (another load, an offset, a non-periodic line) and
-        :func:`surface_pair`; if SlipPY returns a pressure field not of the grid's shape.
+        From ``Grid.step_args`` (``normal_load`` given, a non-periodic or turned line),
+        :func:`surface_pair` and SlipPY (its options); if SlipPY returns a pressure field not of
+        the grid's shape (an offset on a non-periodic geometry); from :class:`Contact` if the
+        load found under ``interference`` is not positive (no Hertz reference).
+    TypeError
+        From SlipPY, when ``interference`` leaves no node in contact (``interference <= 0``):
+        its results are never set (``_step_utils.py:190``; OPEN SB-62).
     """
-    hz = hertz(contact) if hertz_result is None else hertz_result
     name = f"{contact.label or type(contact).__name__}_{next(_ids)}"
     s1, s2 = surface_pair(contact, grid, name=name, use_frequency_domain=use_frequency_domain)
     args = grid.step_args(contact, **step_kwargs)
-    load_applied = args["normal_load"]
+    control = next((k for k in ("interference", "mean_gap") if args.get(k) is not None), "normal_load")
+    load_applied = args.get("normal_load", math.nan)
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -122,6 +157,13 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
     p = np.asarray(sol["loads_z"], dtype=float)                  # a pressure [Pa]
     if p.shape != grid.X.shape:
         raise ValueError(f"SlipPY returned a pressure field of shape {p.shape}, the grid is {grid.X.shape}")
+    load_found = float(sol["total_normal_load"])                 # [N], the step's total (_step_utils.py:226)
+    if control == "normal_load":
+        hz = hertz(contact) if hertz_result is None else hertz_result
+    else:
+        # OPEN SB-56: the Hertz reference at the found load; the contact keeps its nominal load
+        found = load_found / grid.length_y_m if contact.line else load_found      # [N/m] (line) or [N]
+        hz = hertz(dataclasses.replace(contact, load=found))
     h = grid.h
     # psi is from bridge x; the cuts are on the grid, at psi - gamma from grid x (a, b stay intrinsic)
     p0, b, a, apex_offset = _measure(p, h, contact.psi - grid.angle, contact.line)
@@ -137,7 +179,8 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
     edge = np.concatenate([p[0, :], p[-1, :]] + ([] if contact.line else [p[:, 0], p[:, -1]]))
     span_x, _ = grid.spans(hz)
     checks = {
-        "load_ok": abs(err["err_load"]) <= 1e-3,
+        # OPEN SB-57: no applied load under interference / mean_gap control: nothing to balance
+        "load_ok": control != "normal_load" or abs(err["err_load"]) <= 1e-3,
         "edge_clear": bool(edge.max(initial=0.0) <= _EDGE * p0),
         "margin_ok": bool(span_x >= span_x_min),
         "resolution_ok": bool(hz.b / h >= min_nodes),
@@ -148,6 +191,9 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
     return StaticResult(contact=contact, grid=grid, z1=np.asarray(s1.profile), z2=np.asarray(s2.profile),
                         gap0=np.asarray(sol["just_touching_gap"], dtype=float),
                         load_applied=load_applied, period=grid.length_y_m if contact.line else math.nan,
+                        load_control=control, load_found=load_found,
+                        **{k: math.nan if args.get(k) is None else float(args[k])     # nan: not given
+                           for k in ("interference", "mean_gap", "off_set_x", "off_set_y")},
                         use_frequency_domain=use_frequency_domain, method=method, tolerance=tolerance,
                         converged=bool(sol.get("converged", False)), solve_time=solve_time,
                         p=p, delta=delta, **displacements, p0=p0, a=a, b=b, load=load,

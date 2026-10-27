@@ -294,9 +294,13 @@ class DeepGrooveBallContact(BearingContact):
 
         The parallel and the meridian are lines of curvature of a surface of revolution, so x_b,
         y_b are principal: ``r_y = -r_g`` (concave groove) and, by Meusnier's theorem, ``r_x = sign
-        R_P / cos(alpha)`` (the normal section along rolling has curvature ``cos(alpha) / R_P``;
-        Harris's raceway radius ``(Dpw -/+ D cos(alpha)) / (2 cos(alpha))``, AxisForge
-        ``r_bx_inner`` / ``r_bx_outer`` at ``alpha_0``, when ``R_P = (Dpw -/+ D cos(alpha)) / 2``).
+        R_P / cos(alpha)`` (the normal section along rolling has curvature ``cos(alpha) / R_P``).
+        At ``alpha = +-alpha_0`` the ball families give ``R_P = (Dpw -/+ D cos(alpha)) / 2`` and
+        ``r_x`` is Harris's raceway radius ``(Dpw -/+ D cos(alpha)) / (2 cos(alpha))``, AxisForge
+        ``r_bx_inner`` / ``r_bx_outer``. At any other ``alpha`` the groove stays fixed in the ring
+        and ``R_P`` differs from that pitch-circle value by ``sign (r_g - D/2) (cos(alpha_0) -
+        cos(alpha))`` (``sign = +1`` inner, ``-1`` outer), so ``r_x`` differs from Harris's formula
+        evaluated at ``alpha`` (SB-48, SB-55).
 
         Parameters
         ----------

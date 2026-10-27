@@ -1024,11 +1024,31 @@ def test_step_args_refuses_a_non_periodic_line(roller_10, contrary):
         grid.step_args(c, **contrary)
 
 
-@pytest.mark.parametrize("key", ["normal_load", "interference", "mean_gap"])
-def test_step_args_refuses_another_load(key):
+def test_step_args_refuses_another_load():
+    """The load of the bridge is contact.load (one source): normal_load from the caller is refused (C11)."""
     c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
-    with pytest.raises(ValueError, match=f"{key} not accepted"):
-        Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, **{key: 1.0})
+    with pytest.raises(ValueError, match="normal_load not accepted"):
+        Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, normal_load=1.0)
+
+
+@pytest.mark.parametrize("kwargs", [{"interference": 1e-6}, {"mean_gap": 2e-6, "method": "rey"},
+                                    {"off_set_x": 3e-6}, {"off_set_y": -3e-6}],
+                         ids=["interference", "mean_gap", "off_set_x", "off_set_y"])
+def test_step_args_passes_slippy_options_through(kwargs):
+    """C11 (José, 2026-10-27): the SlipPY options reach StaticStep unchanged; with interference or mean_gap the load
+    is an output, so no normal_load; with only an offset the load is still contact.load (SlipPY StaticStep,
+    static_step.py:140-142: exactly one of normal_load, interference, mean_gap)."""
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=7.0)
+    args = Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, **kwargs)
+    displacement = "interference" in kwargs or "mean_gap" in kwargs
+    assert args == (kwargs if displacement else {"normal_load": 7.0, **kwargs})
+
+
+def test_step_args_line_with_interference_keeps_the_periodic_flags(roller_10):
+    """A line contact under interference control: the line-contact flags stay (they define the contact), no load."""
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    args = Grid.around(c, _ellipse(math.inf, 0.0688)).step_args(c, interference=1e-6)
+    assert args == {"interference": 1e-6, "periodic_geometry": True, "periodic_axes": (False, True)}
 
 
 def test_step_args_point_with_periodic_flags_keeps_the_full_load():
@@ -1093,7 +1113,9 @@ def _static_result(contact, grid, hz):
     z1, z2 = contact.profiles(grid)
     p = hz.pressure(grid.X, grid.Y)
     return StaticResult(contact=contact, grid=grid, z1=z1, z2=z2, gap0=-(z1 + z2), load_applied=contact.load,
-                        period=math.nan, use_frequency_domain=True, method="pk", tolerance=1e-9, converged=True,
+                        period=math.nan, load_control="normal_load", load_found=contact.load,
+                        interference=math.nan, mean_gap=math.nan, off_set_x=math.nan, off_set_y=math.nan,
+                        use_frequency_domain=True, method="pk", tolerance=1e-9, converged=True,
                         solve_time=0.1, p=p, delta=hz.delta, p0=float(p.max()), a=hz.a, b=hz.b,
                         load=float(p.sum() * grid.h**2), apex_offset_nodes=0.0, hertz=hz, err_p0=0.0, err_a=0.0,
                         err_b=0.0, err_delta=0.0, err_load=0.0, load_ok=True, edge_clear=True, margin_ok=True,
@@ -1313,10 +1335,72 @@ def test_tight_reference_tolerance_is_flagged(inner_6210, tmp_path):
     assert not _bem(inner_6210, tmp_path, solve_kwargs={"rtol_reference": 1e-6}).within_reference
 
 
-def test_offset_of_the_surfaces_is_refused(inner_6210):
-    grid = Grid.around(inner_6210, hertz(inner_6210))
-    with pytest.raises(ValueError, match="off_set_x not accepted"):
-        grid.step_args(inner_6210, off_set_x=1e-6)
+def test_offset_of_the_surfaces_reaches_slippy(tmp_path):
+    """An offset is SlipPY's (C11): with periodic_geometry=True the field keeps the grid, the record carries the
+    offset and the peak leaves the centre node (to the minimum of the shifted gap: crossed cylinders at 45 deg on the
+    principal grid, off_set_x = s = 4 h along kappa_max: x* = (K1 + K2)^-1 K2 s = (4.83, 2.00) h, |x*| = 5.23 h, the
+    nearest node at 5.39, physics-reviewer C11a). Without periodic geometry SlipPY keeps only the overlap of the
+    surfaces (slippy/contact/_model_utils.py:137-150) and the smaller field is refused by solve."""
+    c = _crossed(math.pi / 4)
+    hz = hertz(c)
+    grid = Grid.around(c, hz, angle="principal")
+    res = _bem(c, tmp_path, angle="principal", solve_kwargs={"off_set_x": 4 * grid.h, "periodic_geometry": True})
+    rec = res.record()
+    assert rec["off_set_x_m"] == 4 * grid.h and math.isnan(rec["off_set_y_m"]) and rec["load_control"] == "normal_load"
+    assert abs(res.apex_offset_nodes - 5.23) <= 1.0 and res.load_ok and res.converged
+    with pytest.raises(ValueError, match="pressure field of shape"):
+        _bem(c, tmp_path, angle="principal", solve_kwargs={"off_set_x": 4 * grid.h})
+
+
+@pytest.mark.parametrize("use_frequency_domain", [True, False])
+def test_interference_control_gives_back_the_load(use_frequency_domain, tmp_path):
+    """C11 test 2: crossed cylinders at 45 deg (R 10 mm, 100 N, principal grid) solved by pk at Q, then by SlipPY's
+    BCCG at the approach found (StaticStep(interference=...), _step_utils.py:437): the load found is Q within 1 %,
+    p0 and b equal within 1 %, the control recorded, the Hertz reference at the found load. Measured (C11a): load
+    100 N -> 99.99999998 N (frequency kernel), 100.00000002 N (spatial); p0 and b equal to 1e-9. pk and BCCG on the
+    same operator: a self-consistency test, not of the kernel's accuracy; delta is the input echoed by SlipPY
+    (_step_utils.py:442)."""
+    kw = dict(angle="principal", use_frequency_domain=use_frequency_domain)
+    c = _crossed(math.pi / 4)
+    ref = _bem(c, tmp_path, **kw)
+    res = _bem(c, tmp_path, solve_kwargs={"interference": ref.delta}, **kw)
+    assert ref.load_control == "normal_load" and ref.load_found == pytest.approx(100.0, rel=1e-3)
+    assert res.load_found == pytest.approx(100.0, rel=0.01)
+    assert res.p0 == pytest.approx(ref.p0, rel=0.01) and res.b == pytest.approx(ref.b, rel=0.01)
+    assert res.delta == ref.delta and res.converged and _all_checks(res)
+    rec = res.record()
+    assert (rec["load_control"], rec["interference_m"], rec["load_found_N"]) == ("interference", ref.delta,
+                                                                                 res.load_found)
+    assert math.isnan(rec["load_applied_N"]) and math.isnan(rec["err_load"]) and math.isnan(rec["mean_gap_m"])
+    assert rec["Q_N"] == 100.0                                  # the contact's nominal load keeps its meaning
+    assert res.hertz.p0 == pytest.approx(hertz(replace(c, load=res.load_found)).p0, rel=1e-12)
+    assert res.err_p0 == pytest.approx(res.p0 / res.hertz.p0 - 1.0, rel=1e-12)
+
+
+def test_interference_control_of_a_line_contact(tmp_path):
+    """C11 test 3: two parallel cylinders R 10 / 20 mm, 1e5 N/m. The approach of the pk solve (SlipPY's definition,
+    the mean of gap0 + displacement over the loaded nodes, _step_utils.py:406) given back as interference: the load
+    per unit length is load_found / period and the Hertz reference is at that load. Self-consistency on one grid: the
+    approach of a line is a number of its grid and kernel (Johnson 1985, 4.2(c))."""
+    c = _Line(body1=SweptCircleBody(r=(10 * MM, math.inf), **STEEL), body2=SweptCircleBody(r=(20 * MM, math.inf),
+                                                                                           **STEEL),
+              load=1e5, label="line")
+    ref = _bem(c, tmp_path)
+    loaded = ref.p > 0
+    approach = float(np.mean((ref.gap0 + ref.total_displacement_z)[loaded]))
+    res = _bem(c, tmp_path, solve_kwargs={"interference": approach})
+    w_found = res.load_found / res.period
+    assert w_found == pytest.approx(1e5, rel=0.01) and res.load_control == "interference"
+    assert res.hertz.p0 == pytest.approx(hertz(replace(c, load=w_found)).p0, rel=1e-12)
+    assert res.hertz.b == pytest.approx(hertz(replace(c, load=w_found)).b, rel=1e-12)
+    assert abs(res.err_p0) <= 0.01 and abs(res.err_b) <= 0.03 and res.converged
+
+
+def test_an_option_slippy_refuses_raises_slippys_error(inner_6210, tmp_path):
+    """C11 test 4: mean_gap with method "pk" reaches SlipPY, which refuses it (StaticStep, static_step.py:143-145);
+    the bridge adds no check of its own."""
+    with pytest.raises(ValueError, match="pk and double methods don't support mean gap"):
+        _bem(inner_6210, tmp_path, solve_kwargs={"mean_gap": 1e-6, "method": "pk"})
 
 
 @pytest.mark.parametrize("flag", [True, False])

@@ -11,7 +11,8 @@ Conventions fixed here, because SlipPY does not check them:
   ``np.arange(0, n*h, h)`` gives exactly ``n`` points (``slippy/contact/_model_utils.py``, R-049).
 * **The one place of the load given to the step** (:meth:`Grid.step_args`). A line contact is
   periodic along y (the roller axis): one period of an infinitely long strip, whose load per
-  unit length [N/m] becomes the load on the period [N] here.
+  unit length [N/m] becomes the load on the period [N] here. The other options of the step
+  (``interference``, ``mean_gap``, offsets, method) are SlipPY's and passed through.
 
 Imports nothing from SlipPY; the Hertz ellipse that sizes the grid is given by the caller.
 """
@@ -58,6 +59,11 @@ class Grid:
     ``gamma != 0`` (or turn its vector): lubrication needs the entrainment along grid x (SlipPY's
     Reynolds solver differences along axis 0); SlipPY sub-models take ``'x'`` = array axis 1 (R-156:
     ``RigidBodyDisplacement``, ``ContactTime``, tangential load, slip, wear).
+
+    Any mesh is allowed (:meth:`around` takes ``h``, the spans, ``n_y_line`` and ``angle``; a grid
+    may be built by hand). Two conditions are SlipPY's, not the bridge's, and are checked here
+    because SlipPY does not check them: ``h`` a power of two (its node count, R-049) and grid x on
+    array axis 0 (its Reynolds solver differences along axis 0).
 
     The contact centre (apex of the bodies) is the origin and lies on a node. A grid built by hand
     is checked for its axes and spacing (see Raises). One more thing :meth:`around` guarantees is
@@ -201,15 +207,34 @@ class Grid:
         """Length of the domain across rolling, ``n_y h`` [m]: the period of a line contact."""
         return self.Y.shape[1] * self.h
 
-    # OPEN SB-06: no normal_load override; the load given to the step is always contact.load (x period for a line)
+    # OPEN SB-06: no normal_load override; under load control the load is always contact.load (x period for a line)
     def step_args(self, contact: Contact, **step_kwargs) -> dict:
         """Keyword arguments of the SlipPY step (``StaticStep``) for ``contact`` on this grid.
 
-        A point contact gets ``normal_load = contact.load`` [N]; periodic flags given for it are
-        the caller's choice and keep the full load. A line contact is an infinitely long cylinder,
-        modelled by SlipPY as one period of a strip periodic along the roller axis (array axis 1):
-        it gets ``periodic_geometry=True``, ``periodic_axes=(False, True)`` and the load on one
-        period, ``contact.load`` [N/m] times the period :attr:`length_y_m` [m].
+        The SlipPY options are passed through unchecked; SlipPY raises its own errors. Load
+        control, one of three:
+
+        * nothing given: ``normal_load = contact.load`` [N] (point) or ``contact.load`` [N/m] times
+          the period :attr:`length_y_m` [m] (line), the load on one period;
+        * ``interference`` [m] (rigid approach) or ``mean_gap`` [m] given: passed through and no
+          ``normal_load`` set; the load is then an output of the step.
+
+        Offsets ``off_set_x``, ``off_set_y`` [m] are passed through as well. A point contact keeps
+        any periodic flags the caller gives (and the full load). A line contact is an infinitely
+        long cylinder, modelled by SlipPY as one period of a strip periodic along the roller axis
+        (array axis 1): it gets ``periodic_geometry=True`` and ``periodic_axes=(False, True)``.
+
+        SlipPY's own limits (``slippy/contact/static_step.py``, ``_step_utils.py``, branch
+        ``local-fixes``): ``mean_gap`` only with ``method`` ``"rey"`` or ``"auto"`` (``StaticStep``,
+        static_step.py:143-147); ``interference`` not with ``"rey"`` (static_step.py:148-149) and
+        solved by BCCG at the given approach (``HeightOptimisationFunction.__call__``,
+        _step_utils.py:437); ``"rey"`` needs both axes periodic and a zero zero-frequency term of
+        the influence matrix (``HeightOptimisationFunction.rey``, _step_utils.py:352-355). The
+        bridge's ``Elastic`` materials (``solvers.surfaces.surface_pair``) leave that term at
+        SlipPY's default, the sum of the kernel, so ``"rey"``, and with it ``mean_gap``, raises for
+        every bridge contact (OPEN SB-61). In a single-step bridge solve ``relative_loading`` fails
+        (no earlier state), ``unloading`` and the step's ``adhesion`` have no effect, and the
+        ``*_outer`` options act on ``"double"`` only.
 
         Parameters
         ----------
@@ -221,25 +246,20 @@ class Grid:
         Returns
         -------
         dict
-            ``normal_load`` [N], the periodic flags of a line contact and ``step_kwargs``.
+            ``normal_load`` [N] (load control only), the periodic flags of a line contact and
+            ``step_kwargs``.
 
         Raises
         ------
         ValueError
-            If ``step_kwargs`` sets the load (``normal_load``, ``interference``, ``mean_gap``) or an
-            offset of the surfaces (``off_set_x``, ``off_set_y``: the apex stays on the centre node);
-            for a line contact given ``periodic_geometry`` other than True or ``periodic_axes``
-            other than ``(False, True)``: the load would still be that of one period of an
-            infinite cylinder while the solve is not periodic; for a line contact on a turned grid
-            (``angle != 0``): its line must lie along grid y, the periodic axis.
+            If ``step_kwargs`` sets ``normal_load`` (the load of the bridge is ``contact.load``, one
+            source); for a line contact given ``periodic_geometry`` other than True or
+            ``periodic_axes`` other than ``(False, True)``: the contact would be that of one period
+            of an infinite cylinder while the solve is not periodic; for a line contact on a turned
+            grid (``angle != 0``): its line must lie along grid y, the periodic axis.
         """
-        load_keys = sorted({"normal_load", "interference", "mean_gap"} & step_kwargs.keys())
-        if load_keys:
-            raise ValueError(f"step_args: {', '.join(load_keys)} not accepted; the load is contact.load")
-        # the measurement of a solve assumes the apex on the grid centre node
-        offsets = sorted({"off_set_x", "off_set_y"} & step_kwargs.keys())
-        if offsets:
-            raise ValueError(f"step_args: {', '.join(offsets)} not accepted; the apex stays on the centre node")
+        if "normal_load" in step_kwargs:
+            raise ValueError("step_args: normal_load not accepted; the load is contact.load")
         if contact.line:
             # the strip is periodic along grid y only; Contact keeps a line along bridge y (psi = 0)
             if self.angle != 0.0:
@@ -253,7 +273,8 @@ class Grid:
             if not (isinstance(axes, (tuple, list)) and tuple(axes) == (False, True)):
                 raise ValueError(f"a line contact needs periodic_axes=(False, True) (periodic along the roller "
                                  f"axis), got {axes!r}")
-            load = contact.load * self.length_y_m                  # [N/m] * [m] = [N]
-        else:
-            load = contact.load
+        # displacement control: the load is the step's output (SlipPY refuses both set, static_step.py:140-142)
+        if step_kwargs.get("interference") is not None or step_kwargs.get("mean_gap") is not None:
+            return step_kwargs
+        load = contact.load * self.length_y_m if contact.line else contact.load      # [N/m] * [m] = [N]
         return {"normal_load": load, **step_kwargs}
