@@ -6,8 +6,6 @@ Every case package imports, and the layer law holds where an import test can see
 - An r module imports only NumPy, SciPy and the standard library (AST scan; relative imports only
   inside the case): no AxisForge, SlipPY, bridge or other case. The case tests may import the case package itself.
 - ``slippy_bridge`` imports nothing from ``studies``.
-
-The ``construction.py`` of the v cases not migrated yet still load through ``load_case``.
 """
 from __future__ import annotations
 
@@ -59,12 +57,3 @@ def test_the_bridge_imports_nothing_from_studies():
            for name, _, line in _imports(p) if name == "studies"]
     assert not bad
 
-
-# OPEN MG-06: kept until V1; needs the CASE_DIRS plugin of SB-34 / SB-69 (tests/conftest.py is stale)
-@pytest.mark.parametrize("case", ["fem_uniform_radial_load", "fem_stepped_distributed_gear"])
-def test_case_construction_loads(case, load_case):
-    try:
-        module = load_case(case)
-    except FileNotFoundError:
-        pytest.xfail("tests/conftest.py CASE_DIRS points to validation/ (SB-69); run with the SB-34 plugin")
-    assert callable(module.build_system)
