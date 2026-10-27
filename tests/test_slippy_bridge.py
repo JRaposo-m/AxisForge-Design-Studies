@@ -1589,6 +1589,27 @@ def test_fzg_h501_at_C_against_the_hand_check(fzg_h501, h501_C):
     assert hertz(c).p0 / 1e6 == pytest.approx(565.67, abs=0.005)
 
 
+@pytest.mark.parametrize("which", ["H501", "internal"])
+def test_tooth_contact_radii_at_C_are_axisforge_curvature_radii(request, which):
+    """C11b: the bridge takes the normal-plane radii from AxisForge (pair_values_at -> curvature_radii, D-0018,
+    D-0032): at the pitch point C the body radii equal CylindricalFamily.curvature_radii(pair, 0) rho1_n, rho2_n
+    (signed: the ring concave) within 1e-12, and the stored segments T1C / cos(beta_b), T2C / cos(beta_b) (ISO 21771
+    Eq. (81), (82), independent of curvature_radii; gear-expert C11b); g_y = 0 within 1e-9 mm."""
+    if which == "H501":
+        cc, pair, F_bn_N = request.getfixturevalue("fzg_h501")
+        kw = dict(E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    else:
+        pair, F_bn_N, kw = _gear_pair(z2=-60), 1000.0, {}            # the radii do not depend on the load
+    (c,) = gear_contacts(pair, {"C": path_diameters(pair, "gear1")["C"]}, F_bn_N, driver="gear1", **kw)
+    r = CylindricalFamily.curvature_radii(pair, 0.0)
+    assert c.body1.r[0] / MM == pytest.approx(float(r["rho1_n_mm"]), rel=1e-12)
+    assert c.body2.r[0] / MM == pytest.approx(float(r["rho2_n_mm"]), rel=1e-12)
+    cos_betab = math.cos(pair.gear1.betab)
+    assert c.body1.r[0] / MM == pytest.approx(pair.T1C / cos_betab, rel=1e-12)
+    assert c.body2.r[0] / MM == pytest.approx(pair.T2C / cos_betab, rel=1e-12)
+    assert np.sign(c.body2.r[0]) == np.sign(pair.gear2.z) and c.g_y_mm == pytest.approx(0.0, abs=1e-9)
+
+
 def test_path_diameters_of_both_drivers(fzg_h501):
     """Gear 2 driving swaps A <-> E and B <-> D, C stays; with gear 1 driving A is the active root 2 rA1
     (d_Nf1), E the tip da1, C the operating pitch diameter dl1."""
@@ -1672,7 +1693,8 @@ def test_gear_contacts_refuses(change, match):
 
 def test_pair_through_a_base_tangent_point_is_refused():
     """A pair assembled with check=False whose path passes T2 (external 10/10, x +0.6/-0.6: T2E < 0): there
-    pair_values_at would return rho2 with the wrong sign, so the pair is refused (SB-20)."""
+    there is no involute beyond T2 (rho2 from the line of action changes sign), and the pair is refused whole (SB-20;
+    OPEN SB-59)."""
     from axisforge.core.machine_elements.gears import CylindricalGearData, Gear, GearPair
     family = CylindricalFamily()
     gears = [Gear.assemble(family, CylindricalGearData(2.0, 10, x=x, b=20.0, material_id=""), check=False)

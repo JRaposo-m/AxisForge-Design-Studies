@@ -105,9 +105,12 @@ class ToothContact(GearContact):
     profile (bridge x), straight along the contact line (bridge y).
 
     The radius checks guard hand-built contacts (D-0034 item 6). Through :func:`gear_contacts`
-    they cannot fail: ``pair_values_at`` signs the radii by z, and a pair whose path passes a
-    base-tangent point, where that sign would be wrong, is refused there (SB-20). A zero radius is
-    refused by :class:`SweptCircleBody` before these checks.
+    they cannot fail: ``pair_values_at`` gives ``rho_y1 = L_y1 >= 0`` from ``dy1`` and
+    ``rho_y2 = T1T2 - rho_y1`` from the line of action, of the sign of z2 wherever the flanks are
+    involutes (beyond T2 of an external pair ``rho_y2`` changes sign; for a ring T2 is not
+    reachable), and a pair whose path passes a base-tangent point is refused by
+    :func:`gear_contacts` (SB-20). A zero radius is refused by :class:`SweptCircleBody` before
+    these checks.
 
     Raises
     ------
@@ -197,7 +200,8 @@ def gear_contacts(pair, dy1, F_bn_N: float, *, driver: str, E=None, nu=None) -> 
     list of ToothContact
         One per diameter, in the order given; label ``f"{pair.label or 'gear'}_{point}"``.
         ``body1 = SweptCircleBody(r=(rho1_n, inf))``, ``body2 = SweptCircleBody(r=(rho2_n, inf))`` with
-        ``rho_n = L_y / cos(beta_b)`` [m] (signed: a ring is concave), ``load = w`` [N/m] with
+        ``rho1_n``, ``rho2_n`` the normal-plane radii of ``pair_values_at`` (``curvature_radii``,
+        ``rho_t / cos(beta_b)``) [m] (signed: a ring is concave), ``load = w`` [N/m] with
         ``w = F_bn / l_sum`` (AxisForge ``load_sharing``: ``share F_bn / l`` written without
         ``l``, which is zero at the ends of a helical line).
 
@@ -223,9 +227,11 @@ def gear_contacts(pair, dy1, F_bn_N: float, *, driver: str, E=None, nu=None) -> 
     bad = [label for label in labels if ":" in label]
     if bad:
         raise ValueError(f"{tag}: point labels go into file names, no ':' (NTFS stream): {bad}")
-    # pair_values_at signs L_y by z only: beyond a base-tangent point a radius would come back with
-    # the wrong sign, silently. The Q39 test of AxisForge validate_pair on the stored segments.
-    # OPEN SB-20: pairs whose path passes a base-tangent point are refused (pair_values_at loses the sign of rho there); alternative: signed radii from curvature_radii
+    # Beyond a base-tangent point there is no involute (curvature_radii: the values there are not radii
+    # of a flank). The Q39 test of AxisForge validate_pair on the stored segments.
+    # OPEN SB-20: pairs whose path passes a base-tangent point are refused whole
+    # OPEN SB-59: since AxisForge 54e71dd rho_y2 is signed from the line of action, so the T2E < 0 branch could be left
+    # to ToothContact; T1A < 0 cannot: the dy1 input folds a point beyond T1 onto its mirror (rho_y1 = L_y1 >= 0)
     if pair.T1A < 0.0 or np.sign(pair.gear2.z) * pair.T2E < 0.0:
         raise ValueError(f"{tag}: the path passes a base-tangent point (T1A = {pair.T1A:.6g} mm, "
                          f"sign(z2) T2E = {np.sign(pair.gear2.z) * pair.T2E:.6g} mm; both must be >= 0): "
@@ -233,10 +239,7 @@ def gear_contacts(pair, dy1, F_bn_N: float, *, driver: str, E=None, nu=None) -> 
     E_MPa, nu_gear, source = _materials(pair, tag, E, nu)
 
     values = CylindricalFamily.pair_values_at(pair, np.asarray(diameters))
-    cos_betab = math.cos(pair.gear1.betab)
-    # signed position on the path; pair_values_at gives only the unsigned g_alphay
-    # OPEN SB-19: pair_values_at documents a signed g_y_mm but returns g_alphay_mm (unsigned)
-    g_y = values["gear1"]["L_y"] - pair.T1C
+    g_y = values["g_y_mm"]                     # signed position on the path, + toward the tip of gear 1
     # on the path: distance from the stored A within [0, AE], with the end tolerance of load_sharing
     # (1e-9 p_bt) so that both agree at A and E; a dy1 below the base circle gives nan and fails too
     s, tol = g_y + pair.AC, 1e-9 * pair.gear1.pbt
@@ -248,9 +251,8 @@ def gear_contacts(pair, dy1, F_bn_N: float, *, driver: str, E=None, nu=None) -> 
     z2 = int(pair.gear2.z)
     out = []
     for i, label in enumerate(labels):
-        # Meusnier: the normal radius is the transverse one over cos(beta_b) (AxisForge curvature_radii)
-        # OPEN SB-01: use pair_values_at rho_n when AxisForge has it
-        rho1_n_mm, rho2_n_mm = (float(values[g]["L_y"][i]) / cos_betab for g in ("gear1", "gear2"))
+        # normal-plane radii (Meusnier, rho_t / cos(beta_b)), AxisForge curvature_radii at g_y
+        rho1_n_mm, rho2_n_mm = (float(values[k][i]) for k in ("rho1_n_mm", "rho2_n_mm"))
         out.append(ToothContact(
             # x = profile direction (rolling), y along the contact line; ring rho2 < 0
             body1=SweptCircleBody(r=(rho1_n_mm * _MM, math.inf), E=E_MPa[0] * _MPA, nu=nu_gear[0]),
