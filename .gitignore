@@ -22,8 +22,5 @@ htmlcov/
 # Generated output of a study or validation case: results/ next to it (D-0020).
 studies/**/results/
 validation/**/results/
-# Exception: regression baselines read by tests/test_regression.py (MIG-07, kept by José).
-!studies/s000_axisforge/s001_bearing_load_distribution/clearance_and_alpha/angular_contact/results/
-!studies/s000_axisforge/s001_bearing_load_distribution/clearance_and_alpha/cylindrical_roller/results/
 # Old location, still used by examples/.
 /artifacts/
