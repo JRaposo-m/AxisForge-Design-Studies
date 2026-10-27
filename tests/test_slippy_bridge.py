@@ -23,8 +23,8 @@ from slippy_bridge.contact.core.contact import Body, Contact, SweptCircleBody  #
 from slippy_bridge.contact.core.machine_elements.bearings import (AngularContactBallContact,  # noqa: E402
                                                                   BearingContact, CylindricalRollerContact,
                                                                   DeepGrooveBallContact)
-from slippy_bridge.contact.core.machine_elements.gears import (ToothContact, gear_contacts,  # noqa: E402
-                                                               path_diameters)
+from slippy_bridge.contact.core.machine_elements.gears import (InvoluteFlank, ToothContact,  # noqa: E402
+                                                               gear_contacts, path_diameters)
 from slippy_bridge.contact.mesh.grid import SPAN_X_0, Grid  # noqa: E402
 from slippy_bridge.contact.results.hertz import HertzResult  # noqa: E402
 from slippy_bridge.contact.results.static import StaticResult  # noqa: E402
@@ -1721,6 +1721,188 @@ def test_tooth_contact_checks():
     assert ToothContact(body1=convex, body2=concave, z2=-60, **fields).kappa_max > 0
 
 
+# ---- gears: the involute flank as a body (InvoluteFlank, C12a) --------------------------------------
+
+def _involute_frame(rb, t, u):
+    """Independent parametric involute (ISO 21771 4.3.7-4.3.8): the points of roll angle ``u`` of the involute of
+    base radius ``rb`` on the tangent axes at roll angle ``t`` (x along increasing roll, z away from the
+    base-tangent point) [m]."""
+    point = lambda v: rb * np.array([np.cos(v) + v * np.sin(v), np.sin(v) - v * np.cos(v)])
+    d = point(u) - point(t)[:, None]
+    return d.T @ np.array([math.cos(t), math.sin(t)]), d.T @ np.array([math.sin(t), -math.cos(t)])
+
+
+def _second_order(flank, x):
+    """Coefficient of x_b^2 in the profile from its even part at x and x/2, the x^4 term removed (Richardson)."""
+    even = [flank.profile(np.array([s, -s]), np.zeros(2)).mean() / s**2 for s in (x, x / 2)]
+    return (4 * even[1] - even[0]) / 3
+
+
+# a spur flank of each kind: gear 1 (+x_b toward its tip), an external gear 2 and a ring (+x_b toward their roots)
+_FLANKS = {"gear1": dict(rb=33.83 * MM, rho_t=13.97 * MM, beta_b=0.0, r_tip=41.23 * MM, r_root=33.83 * MM,
+                         toward_tip=True),
+           "gear2": dict(rb=50.74 * MM, rho_t=20.96 * MM, beta_b=0.0, r_tip=59.18 * MM, r_root=50.74 * MM,
+                         toward_tip=False),
+           "ring": dict(rb=56.38 * MM, rho_t=-20.52 * MM, beta_b=0.0, r_tip=58.0 * MM, r_root=62.5 * MM,
+                        toward_tip=False)}
+
+
+@pytest.mark.parametrize("kind", list(_FLANKS))
+def test_spur_flank_is_the_involute(kind):
+    """C12a test 1: the spur profile equals an independent parametric involute within 1e-12 m on both sides of the
+    point (gear 1, external gear 2, ring), independent of y_b; its second order is -x^2 / (2 rho_n) within 1e-6
+    at |x| = 1e-3 rho (x^4 term removed; the even part alone is 1.7e-6 off there, the involute's own x^4 term)."""
+    f = InvoluteFlank(**_FLANKS[kind], **STEEL)
+    rb, rho = f.rb, f.rho_t
+    t = abs(rho) / rb
+    u = t + np.linspace(-0.04, 0.04, 21)
+    x, z = _involute_frame(rb, t, u)
+    sign = math.copysign(1.0, rho)
+    sigma = sign * (1.0 if f.toward_tip else -1.0)           # roll angle grows toward an external tip / a ring root
+    X = np.repeat((sigma * x)[:, None], 3, axis=1)
+    Y = np.repeat(np.array([[-5.0, 0.0, 7.0]]) * MM, len(u), axis=0)
+    np.testing.assert_allclose(f.profile(X, Y), np.repeat((sign * z)[:, None], 3, axis=1), rtol=0, atol=1e-12)
+    assert f.r == (rho, math.inf)
+    assert _second_order(f, 1e-3 * abs(rho)) == pytest.approx(-1 / (2 * rho), rel=1e-6)
+
+
+def test_flank_radius_is_axisforge_curvature_radii(fzg_h501):
+    """C12a test 1: built the AxisForge way at a point of the helical H501 (g_y = 2 mm, beta_b 14.08 deg), r[0]
+    equals curvature_radii rho_n = rho_t / cos(beta_b) of each gear within 1e-12."""
+    _, pair, _ = fzg_h501
+    g_y = 2.0
+    r = CylindricalFamily.curvature_radii(pair, g_y)
+    assert pair.gear1.betab > 0.2
+    for gear, key, toward_tip in ((pair.gear1, "1", True), (pair.gear2, "2", False)):
+        f = InvoluteFlank(rb=gear.rb * MM, rho_t=float(r[f"rho{key}_t_mm"]) * MM, beta_b=pair.gear1.betab,
+                          r_tip=gear.ra * MM, r_root=gear.rb * MM, toward_tip=toward_tip, **STEEL)
+        assert f.r[0] / MM == pytest.approx(float(r[f"rho{key}_n_mm"]), rel=1e-12)
+
+
+def _hoehn_fzg_c():
+    """Hoehn FZG type C of the evidence (z 16/24, m 4.5, alpha 20 deg, a 91.5, da 82.46 / 118.36 mm): rb1, rb2,
+    ra1, ra2, T1T2, T1C [mm] (ISO 21771 Eq. (19), (54) at a, (81), (87))."""
+    m, alpha, z1, z2, a = 4.5, math.radians(20.0), 16, 24, 91.5
+    rb1, rb2 = z1 * m * math.cos(alpha) / 2, z2 * m * math.cos(alpha) / 2
+    alpha_w = math.acos((z1 + z2) * m * math.cos(alpha) / (2 * a))
+    return rb1, rb2, 82.46 / 2, 118.36 / 2, a * math.sin(alpha_w), rb1 * math.tan(alpha_w)
+
+
+def test_involute_flanks_against_the_cylinders_fzg_c():
+    """C12a test 2: the evidence table (80_Inbox/2026-10-27/gear_flank_check: Hoehn FZG C, not the FEUP C40 of the
+    case; T1 302 N m, w = F_bn / 14 mm, the whole load on one pair, E 210 GPa, nu 0.3, E* = E / (2 (1 - nu^2))). Gap
+    error of the two InvoluteFlank bodies against the two cylinders (SweptCircleBody) at +-b, +-2b: within 0.2
+    percentage points of the table on the flanks. The table continues the involutes past their ends; the bridge
+    does not: A is on the tip circle of gear 2 (-b, -2b fall away), E on that of gear 1 (+b, +2b fall away). With
+    the tips moved out the bridge gives the table there too, except A -2b, past the base circle of gear 1 (the
+    table's interpolation stops at its last sample, 0.30 mm below A)."""
+    rb1, rb2, ra1, ra2, T1T2, T1C = _hoehn_fzg_c()
+    rho1 = {"A": T1T2 - math.sqrt(ra2**2 - rb2**2), "C": T1C, "E": math.sqrt(ra1**2 - rb1**2)}
+    w = 302e3 / rb1 / 14.0                                                           # [N/mm]
+    E_star = 210e3 / (2 * (1 - 0.3**2))                                              # [MPa]
+    table = {"A": (10.59, -6.73, 5.22, -11.65), "C": (0.51, -0.43, 1.11, -0.78), "E": (-1.76, 2.07, -3.29, 4.55)}
+    # nodes past an end (-b, +b, -2b, +2b), the tips as drawn and moved out by 5 %
+    past = {1.0: {"A": [True, False, True, False], "C": [False] * 4, "E": [False, True, False, True]},
+            1.05: {"A": [False, False, True, False], "C": [False] * 4, "E": [False] * 4}}
+    for point, r1 in rho1.items():
+        r2 = T1T2 - r1
+        b = math.sqrt(4 * w / (math.pi * E_star) / (1 / r1 + 1 / r2))                 # Hertz half-width [mm]
+        s = np.array([-b, b, -2 * b, 2 * b]) * MM
+        cylinders = -sum(SweptCircleBody(r=(r * MM, math.inf), **STEEL).profile(s, 0 * s) for r in (r1, r2))
+        for grow in (1.0, 1.05):
+            flanks = (InvoluteFlank(rb=rb1 * MM, rho_t=r1 * MM, beta_b=0.0, r_tip=grow * ra1 * MM, r_root=rb1 * MM,
+                                    toward_tip=True, **STEEL),
+                      InvoluteFlank(rb=rb2 * MM, rho_t=r2 * MM, beta_b=0.0, r_tip=grow * ra2 * MM, r_root=rb2 * MM,
+                                    toward_tip=False, **STEEL))
+            gap = -sum(f.profile(s, 0 * s) for f in flanks)
+            # on both flanks: x_b between the end behind and the end ahead (+x_b toward the tip or the root)
+            on = np.all([(-f.d_end_root_m <= s) & (s <= f.d_end_tip_m) if f.toward_tip
+                         else (-f.d_end_tip_m <= s) & (s <= f.d_end_root_m) for f in flanks], axis=0)
+            error = (gap - cylinders) / cylinders * 100
+            np.testing.assert_allclose(error[on], np.array(table[point])[on], rtol=0, atol=0.2)
+            assert np.all(gap[~on] >= InvoluteFlank.SAG_PAST_END)                   # past an end: no material
+            assert list(~on) == past[grow][point]
+
+
+# fsolve warns at the base circle, where its Jacobian is singular (dx/du = 0); the result is checked below
+@pytest.mark.filterwarnings("ignore:The iteration is not making good progress:RuntimeWarning")
+@pytest.mark.parametrize("hand", [1, -1])
+def test_helical_flank_section(hand):
+    """C12a test 3: the helical profile equals the section of the involute helicoid by the plane normal to the
+    contact line, found here by brute force in 3D (fsolve), within 1e-12 m, for both hands and over the whole flank
+    (nodes on its root end, the base circle, and its tip included: the section points there lie on the base and tip
+    cylinders); beta_b -> 0 gives the spur profile within 1e-12 m; the second order is -x^2 / (2 rho_n),
+    rho_n = rho_t / cos(beta_b), within 1e-6 (H501-like)."""
+    from scipy.optimize import fsolve
+    rb, beta_b, t, ra = 33.907 * MM, hand * 0.245674, 0.42, 40.2 * MM
+    kw = dict(rb=rb, rho_t=rb * t, r_tip=ra, r_root=rb, toward_tip=True, **STEEL)
+    f = InvoluteFlank(beta_b=beta_b, **kw)
+    k = math.tan(beta_b) / rb                                     # twist of the transverse sections [rad/m]
+
+    def S(u, w):                                                  # the helicoid: the involute at u, turned by k w
+        p = rb * np.array([math.cos(u) + u * math.sin(u), math.sin(u) - u * math.cos(u)])
+        c, s = math.cos(k * w), math.sin(k * w)
+        return np.array([c * p[0] - s * p[1], s * p[0] + c * p[1], w])
+
+    P0, T = S(t, 0.0), np.array([math.cos(t), math.sin(t), 0.0])
+    N = np.cross(T, (S(t, 1e-7) - S(t, -1e-7)) / 2e-7)
+    N /= np.linalg.norm(N)
+    L = np.cross(N, T)                                            # the contact line (generator)
+
+    def section(x, u0):
+        """(u, w) of the section point at abscissa x and its height [m]."""
+        q = fsolve(lambda q: [(S(*q) - P0) @ L, (S(*q) - P0) @ T - x], [u0, 0.0], xtol=1e-12)
+        return q, (S(*q) - P0) @ N
+
+    xs = np.concatenate([np.linspace(-1.5, 1.5, 7) * MM, [-f.d_end_root_m, f.d_end_tip_m]])
+    found = [section(x, max(t + x / (rb * t), 1e-3)) for x in xs]
+    np.testing.assert_allclose(f.profile(xs, 0 * xs), [z for _, z in found], rtol=0, atol=1e-12)
+    radius = [np.hypot(*S(*q)[:2]) for q, _ in found[-2:]]       # the ends on the base and tip cylinders
+    np.testing.assert_allclose(radius, [rb, ra], rtol=1e-9)
+    spur, near = InvoluteFlank(beta_b=0.0, **kw), InvoluteFlank(beta_b=1e-7, **kw)
+    np.testing.assert_allclose(near.profile(xs[:7], 0 * xs[:7]), spur.profile(xs[:7], 0 * xs[:7]), rtol=0, atol=1e-12)
+    assert f.r[0] == pytest.approx(rb * t / math.cos(beta_b), rel=1e-15)
+    assert _second_order(f, 1e-3 * f.r[0]) == pytest.approx(-1 / (2 * f.r[0]), rel=1e-6)
+
+
+def test_flank_ends_at_C():
+    """C12a test 4: Hoehn FZG C (as test 2), gear 1 at C. The distances to the ends equal the hand values: the tip
+    point of roll angle sqrt(ra^2 - rb^2) / rb projected on the tangent at C, and the root end (base circle,
+    u = 0) at rb (1 - cos t), t = rho / rb (the arc length from the base circle, rho^2 / (2 rb), is 1.43 % longer).
+    Past each end the profile falls away (SAG_PAST_END below the lowest flank node); just inside it is the involute
+    (0.81 mm below the tangent plane at the tip, 5.2 mm from C)."""
+    rb1, _, ra1, _, _, T1C = _hoehn_fzg_c()
+    rb1, rho1, ra1 = rb1 * MM, T1C * MM, ra1 * MM
+    f = InvoluteFlank(rb=rb1, rho_t=rho1, beta_b=0.0, r_tip=ra1, r_root=rb1, toward_tip=True, **STEEL)
+    t, u_tip = rho1 / rb1, math.sqrt(ra1**2 - rb1**2) / rb1
+    x_end, z_end = _involute_frame(rb1, t, np.array([u_tip, 0.0]))          # the tip and the base circle
+    assert f.d_end_tip_m == pytest.approx(float(x_end[0]), rel=1e-12)
+    assert f.d_end_root_m == pytest.approx(rb1 * (1 - math.cos(t)), rel=1e-12)
+    assert rho1**2 / (2 * rb1) / f.d_end_root_m == pytest.approx(1.0143, abs=1e-4)
+    eps = 1e-9
+    x = np.array([f.d_end_tip_m + eps, f.d_end_tip_m - eps, -f.d_end_root_m - eps, -f.d_end_root_m + eps])
+    z = f.profile(x, 0 * x)
+    assert z[0] == z[2] == min(z[1], z[3]) - InvoluteFlank.SAG_PAST_END
+    np.testing.assert_allclose(z[[1, 3]], z_end, rtol=0, atol=1e-9)        # just inside: the involute at its ends
+    # gear 2 (+x_b toward its root): its tip is on the -x_b side
+    g = InvoluteFlank(**_FLANKS["gear2"], **STEEL)
+    z = g.profile(np.array([-g.d_end_tip_m - eps, g.d_end_root_m + eps, 0.0]), np.zeros(3))
+    assert z[0] == z[1] == -InvoluteFlank.SAG_PAST_END and z[2] == 0.0
+
+
+@pytest.mark.parametrize("change, match", [
+    (dict(rb=0.0), "rb must be positive"),
+    (dict(rho_t=0.0), "rho_t must be non-zero"),
+    (dict(beta_b=math.pi / 2), "beta_b"),
+    (dict(r_root=30.0 * MM), "end radii must be >= rb"),
+    (dict(r_tip=33.9 * MM, r_root=41.23 * MM), "needs r_tip > r_root"),
+    (dict(rho_t=30.0 * MM), "off the flank"),
+])
+def test_involute_flank_refuses(change, match):
+    with pytest.raises(ValueError, match=match):
+        InvoluteFlank(**{**_FLANKS["gear1"], **change}, **STEEL)
+
+
 # ---- FZG C40 on the bridge (validation/gears/fzg_geometry_ph) -------------------------------------
 
 @pytest.fixture
@@ -1822,7 +2004,7 @@ def test_layer_order_of_the_contact_package():
 def test_public_names_import_from_the_package():
     import slippy_bridge.contact as pkg
     for name in ("Body", "SweptCircleBody", "Contact", "Kinematics", "BearingContact", "DeepGrooveBallContact",
-                 "AngularContactBallContact", "CylindricalRollerContact", "GearContact", "ToothContact",
+                 "AngularContactBallContact", "CylindricalRollerContact", "InvoluteFlank", "GearContact", "ToothContact",
                  "gear_contacts", "path_diameters", "Grid",
                  "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"):
         assert name in pkg.__all__ and getattr(pkg, name) is not None

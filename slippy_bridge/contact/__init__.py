@@ -1,7 +1,7 @@
 """Dry normal contact of two elastic bodies, in four levels imported in this order (D-0034):
 
     core       the problem, no SlipPY: Body (abstract), SweptCircleBody, Contact (checks, relative curvatures, psi, E*),
-               Kinematics (sub-model data); machine_elements: bearings and gears from AxisForge
+               Kinematics (sub-model data); machine_elements: bearings and gears (InvoluteFlank) from AxisForge
     mesh       the grid around a contact and the arguments of the SlipPY step
     results    data only: HertzResult, StaticResult
     solvers    computation with SlipPY: hertz, surface_pair, solve
@@ -14,7 +14,7 @@ grid x, which is bridge x when ``Grid.angle = 0`` (the default).
 from .core.contact import Body, Contact, SweptCircleBody
 from .core.machine_elements.bearings import (AngularContactBallContact, BearingContact, CylindricalRollerContact,
                                              DeepGrooveBallContact)
-from .core.machine_elements.gears import GearContact, ToothContact, gear_contacts, path_diameters
+from .core.machine_elements.gears import GearContact, InvoluteFlank, ToothContact, gear_contacts, path_diameters
 from .core.submodels import Kinematics
 from .mesh.grid import SPAN_X_0, Grid
 from .results.hertz import HertzResult
@@ -25,5 +25,5 @@ from .solvers.surfaces import surface_pair
 
 __all__ = ["Body", "SweptCircleBody", "Contact", "Kinematics",
            "BearingContact", "DeepGrooveBallContact", "AngularContactBallContact", "CylindricalRollerContact",
-           "GearContact", "ToothContact", "gear_contacts", "path_diameters",
+           "InvoluteFlank", "GearContact", "ToothContact", "gear_contacts", "path_diameters",
            "Grid", "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"]
