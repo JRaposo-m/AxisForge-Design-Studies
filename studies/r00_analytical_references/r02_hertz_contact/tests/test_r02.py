@@ -1,11 +1,13 @@
-"""r02_hertz_contact: the judge alone, against Hamrock-Brewe 1983 Tables 1-2, closed forms and identities."""
+"""r02_hertz_contact (SlipPY ``hertz_full``) against the exact Hertz solution of this file, Hamrock-Brewe 1983
+Tables 1-2, closed forms and identities."""
 import csv
 import math
 from pathlib import Path
 
 import pytest
 from scipy.integrate import dblquad
-from scipy.special import ellipe, ellipk
+from scipy.optimize import brentq
+from scipy.special import ellipe, ellipk, elliprd
 
 from studies.r00_analytical_references.r02_hertz_contact import Validity, hamrock_brewe_fit, hertz_line, hertz_point
 
@@ -30,6 +32,66 @@ def _e_star(E1, nu1, E2, nu2):
 def _ball(r2, material, F_N):
     """The ball (body 1) against the raceway ``r2 = (R_x, R_y)`` (body 2)."""
     return hertz_point(R_BALL, R_BALL, *r2, *material, F_N)
+
+
+# ---- the check of hertz_full: the exact Hertz solution (R1b), a test helper, not public API ------
+
+def _exact_point(k_x, k_y, e_star, F_N):
+    """Exact elliptical Hertz contact, ``(a, b, p0, delta)`` with ``b`` along ``x`` and ``a`` along ``y``.
+
+    With ``A >= B`` the semi-axes (Johnson's ``a >= b``), ``m = e^2 = 1 - (B/A)^2`` and ``K(m)``,
+    ``E(m)`` the complete elliptic integrals, the ellipsoidal pressure displaces the surfaces by
+    ``u = (L - M s^2 - N t^2) / (pi E*)``, ``s`` along ``A`` (Johnson 1985, Sec. 3.5(b), Eqs (3.61)-(3.63);
+    Sec. 4.2(b), Eqs (4.25)-(4.28))::
+
+        M = pi p0 B (K - E) / (m A^2)
+        N = pi p0 B ((A/B)^2 E - K) / (m A^2)
+        L = pi p0 B K
+
+    Contact requires ``u = delta - h`` inside the ellipse, hence ``M = pi E* k_min / 2``,
+    ``N = pi E* k_max / 2`` and ``delta = L / (pi E*) = p0 B K / E*``. ``N / M = k_max / k_min``
+    fixes ``m`` (one scalar root; Hamrock-Brewe Eqs (8)-(12) solve the same equation by iteration)
+    and the load ``F = (2/3) pi A B p0`` closes the system. ``(K - E) / m`` and
+    ``(E - (1 - m) K) / m`` are 0/0 at ``m = 0``, so they are Carlson's ``R_D`` (DLMF 19.25.1),
+    regular there (both tend to ``pi / 4``: the circle is the root ``m = 0``)::
+
+        (K - E) / m                     = R_D(0, 1 - m, 1) / 3
+        (E - (1 - m) K) / (m (1 - m))   = R_D(0, 1, 1 - m) / 3
+    """
+    k_min, k_max = min(k_x, k_y), max(k_x, k_y)
+    # left minus right is <= 0 at m = 0 and grows as 1/(1 - m) towards m = 1 (K infinite): A/B up to 1e6
+    m = brentq(lambda m: k_min * elliprd(0.0, 1.0, 1.0 - m) - k_max * elliprd(0.0, 1.0 - m, 1.0),
+               0.0, 1.0 - 1e-12, xtol=1e-16)
+    D = float(elliprd(0.0, 1.0 - m, 1.0)) / 3.0                          # (K - E) / m
+    A = (3.0 * F_N * D / (math.pi * k_min * e_star)) ** (1.0 / 3.0)    # major semi-axis, from M and F
+    B = A * math.sqrt(1.0 - m)
+    p0 = 3.0 * F_N / (2.0 * math.pi * A * B)
+    b, a = (A, B) if k_x <= k_y else (B, A)                            # A along the flatter gap
+    return a, b, p0, p0 * B * float(ellipk(m)) / e_star
+
+
+HF_VS_EXACT_REL = 1e-10      # reached: 6.0e-12 (a, crossed_45) on these 12 and the 26 Table 2 alphas (R1c)
+EXACT_CASES = {               # (R1x, R1y, R2x, R2y) [m], material, F [N]
+    "ball_inner": ((R_BALL, R_BALL, *INNER), STEEL, 2436.0),
+    "ball_outer_mixed": ((R_BALL, R_BALL, *OUTER), MIXED, 800.0),
+    "ball_flat_mixed": ((R_BALL, R_BALL, math.inf, math.inf), MIXED, 500.0),
+    "crossed_45": ((10e-3 / (1.0 + math.sqrt(0.5)), 10e-3 / (1.0 - math.sqrt(0.5)), math.inf, math.inf),
+                   STEEL, 100.0),
+    "y_flatter": ((5e-3, 2e-3, math.inf, math.inf), STEEL, 50.0),
+    **{f"alpha_{alpha:g}": ((1e-2, alpha * 1e-2, math.inf, math.inf), STEEL, 4.448)
+       for alpha in (1.0001, 1.25, 3.0, 10.0, 100.0, 1e3, 1e4)},
+}
+
+
+@pytest.mark.parametrize("name", EXACT_CASES)
+def test_hertz_full_matches_the_exact_solution(name):
+    """r02 (hertz_full) against the exact solution: a, b, p0, delta, and E* from the raw inputs."""
+    radii, material, F_N = EXACT_CASES[name]
+    R1x, R1y, R2x, R2y = radii
+    r = hertz_point(*radii, *material, F_N)
+    exact = _exact_point(1.0 / R1x + 1.0 / R2x, 1.0 / R1y + 1.0 / R2y, _e_star(*material), F_N)
+    assert (r.a_m, r.b_m, r.p0_Pa, r.delta_m) == pytest.approx(exact, rel=HF_VS_EXACT_REL)
+    assert r.E_star_Pa == pytest.approx(_e_star(*material), rel=1e-15)
 
 
 # ---- published: Hamrock-Brewe 1983, Tables 1-2 -------------------------------------------------
@@ -82,15 +144,15 @@ def _hb_eqs_13_17(k, E_int, F_int, alpha):
     return {"D_y": D_y, "D_x": D_x, "delta": delta, "sigma_max": 6.0 * F / (math.pi * D_x * D_y)}
 
 
-def _table2_judge(alpha):
+def _table2_r02(alpha):
     R_x, F, material, _ = _table2_body()
     return hertz_point(R_x, alpha * R_x, math.inf, math.inf, *material, F)
 
 
 @pytest.mark.parametrize("alpha", ALPHAS)
 def test_table_1_exact_columns(alpha):
-    """k = D_y / D_x of the judge and K(m), E(m) at m = 1 - 1/k^2, to the printed digits."""
-    r = _table2_judge(alpha)
+    """k = D_y / D_x of r02 and K(m), E(m) at m = 1 - 1/k^2, to the printed digits."""
+    r = _table2_r02(alpha)
     k = r.a_m / r.b_m
     m = 1.0 - 1.0 / k**2
     for symbol, value in (("k", k), ("F_int", float(ellipk(m))), ("E", float(ellipe(m)))):
@@ -109,7 +171,7 @@ def test_table_1_fit_columns(alpha):
 
 @pytest.mark.parametrize("alpha", ALPHAS)
 def test_table_2_exact_columns(alpha):
-    r = _table2_judge(alpha)
+    r = _table2_r02(alpha)
     for symbol, value in (("D_y", 2.0 * r.a_m), ("D_x", 2.0 * r.b_m), ("sigma_max", r.p0_Pa), ("delta", r.delta_m)):
         printed, half = _printed("Table 2", symbol, alpha)
         assert value == pytest.approx(printed, abs=half), symbol
@@ -126,9 +188,9 @@ def test_table_2_fit_columns(alpha):
 
 
 @pytest.mark.parametrize("alpha", [1.0, 1.25, 7.0, 100.0])
-def test_judge_satisfies_hamrock_brewe_eqs_13_17(alpha):
-    """Identity: Eqs (13)-(17) with the judge's own k, E, F give back its a, b, p0, delta."""
-    r = _table2_judge(alpha)
+def test_r02_satisfies_hamrock_brewe_eqs_13_17(alpha):
+    """Identity: Eqs (13)-(17) with r02's own k, E, F give back its a, b, p0, delta."""
+    r = _table2_r02(alpha)
     k = r.a_m / r.b_m
     m = 1.0 - 1.0 / k**2
     eqs = _hb_eqs_13_17(k, float(ellipe(m)), float(ellipk(m)), alpha)
@@ -210,13 +272,13 @@ def test_pressure_carries_the_load_and_the_derived_fields(r2, material):
 
 @pytest.mark.parametrize("r2, material, F_N", [(INNER, STEEL, 2436.0), (OUTER, MIXED, 800.0)])
 def test_hertz_pressure_closes_the_gap(r2, material, F_N):
-    """Boussinesq self-check: the judge's pressure deforms the surfaces into contact.
+    """Boussinesq self-check: r02's pressure deforms the surfaces into contact.
 
     A point load P on an elastic half-space lowers the surface by ``(1 - nu^2) P / (pi E r)`` at
     the distance r (Boussinesq; Johnson 1985, Sec. 3.2, Eq. (3.22b)). Summed over both bodies and over the pressure,
     ``u(x, y) = 1/(pi E*) * integral p / r dA``. Inside the contact the two surfaces coincide, so
     ``u = delta - k_x x^2/2 - k_y y^2/2`` (approach minus the initial gap). The curvatures and
-    ``E*`` are built here from the raw inputs, so the check does not depend on how the judge
+    ``E*`` are built here from the raw inputs, so the check does not depend on how r02
     computes them.
 
     The integral is taken in polar coordinates centred on the evaluation point, where

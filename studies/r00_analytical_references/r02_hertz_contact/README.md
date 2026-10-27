@@ -1,11 +1,15 @@
 # r02_hertz_contact: Hertz point and line contact
 
 ## 1. Reference
-The Hertz solution of two smooth elastic bodies in contact: elliptical point contact from the exact
-elliptic integrals, and line contact (plane strain). It is the independent judge of the bridge
-(`slippy_bridge.contact.solvers.hertz`, i.e. SlipPY `hertz_full`) and of the AxisForge ISO/TS 16281
-contact stiffness, so it re-implements the formulas and imports none of them (SQ-05, D-0036 amendment
-ruling 8). Judges: v101, v102, v103 (`K_n` for v002).
+The Hertz solution of two smooth elastic bodies in contact: elliptical point contact and line contact
+(plane strain), computed by SlipPY `hertz_full` (D-0036 amendment rule 13: the one library function an r
+may import, analytical formulas José verified against Johnson and Hamrock-Brewe on 2026-10-27; SQ-05
+reversed for Hertz). The own exact solution of R1b (Carlson `R_D`) is now a helper of
+`tests/test_r02.py`, the check of `hertz_full`. Reference of v101, v102, v103 (`K_n` for v002) and of
+the AxisForge ISO/TS 16281 contact stiffness. The v101 criterion "bridge hertz vs r02" is no longer a
+check: the bridge (`slippy_bridge.contact.solvers.hertz`) and r02 both run `hertz_full`. Not the same call:
+r02 passes `root_error = 1e-12`, the bridge keeps SlipPY's 1e-6, so the two differ by up to 6.5e-8 relative
+(OPEN RC-01); a v101 tolerance below about 1e-7 between them would test that setting, not Hertz.
 
 ## 2. Sources
 | Key | What | Equation / table | PDF page |
@@ -22,7 +26,8 @@ ruling 8). Judges: v101, v102, v103 (`K_n` for v002).
 | HamrockBrewe1983 | fits k_bar (29), E_bar (30), q = pi/2 - 1 (31), F_bar (32), alpha >= 1 | (29)-(32) | 4 |
 | HamrockBrewe1983 | Table 1: exact and fitted k, F, E, alpha 1-100 | Table 1 | 4 |
 | HamrockBrewe1983 | Table 2: exact and simplified D_y, D_x, sigma_max, delta | Table 2 | 5 |
-| (DLMF) | Carlson's R_D form of (K - E)/m and (E - k'^2 K)/(m k'^2) | DLMF 19.25.1 | not in the library |
+| (DLMF) | Carlson's R_D form of (K - E)/m and (E - k'^2 K)/(m k'^2) (test helper) | DLMF 19.25.1 | not in the library |
+| SlipPY `hertz_full` | the computation: Johnson Sec. 4.2, b/a from Deeg (1996); `slippy/contact/hertz.py`, branch `local-fixes`, commit `df5916c` | - | - |
 Every equation number and page checked on the scans (R1b librarian, `_evidence/R1b_librarian.md`); DLMF
 19.25.1 unverified (the identities hold numerically to about 1e-13).
 Book page = PDF page - 10; HamrockBrewe1983 journal page = PDF page + 170.
@@ -45,8 +50,16 @@ Book page = PDF page - 10; HamrockBrewe1983 journal page = PDF page + 170.
   (6.35 mm ball, groove 0.52 D_w: near 70 N; on the 6210 at 1000 N a/R_ball is 0.24, a/R_relative 0.009):
   whether the per-body ratio sets the range or is only reported is OPEN MG-08. Fits: `alpha <= 100` (`ALPHA_FIT_MAX`) soft;
   `alpha < 1` raises (branch of Table 4 not implemented). No clamp: `clamp_acted` is always False.
+- **Range of `hertz_point` (SlipPY):** a curvature ratio `k_max / k_min` above about 7.9e4 raises (the root
+  search of `hertz_full` for b/a is bracketed in [1e-5, 1] and loses the sign change, though the true b/a is
+  about 1.4e-3; OPEN RC-02, SlipPY), above 1e5 SlipPY calls it a line contact. The R1b solution reached
+  A/B 1e6; nothing within the Hamrock-Brewe range (alpha <= 100) is affected.
 
 ## 4. Public API
+Computed by `hertz_full` on the equivalent body against a flat (as the bridge calls it, `angle = 0`,
+`root_error = ROOT_ERROR = 1e-12`, OPEN RC-01); the mapping of its outputs is in the docstrings
+(`contact_radii` sorted to minor / major and put on `x` / `y` by the curvatures, `max_pressure`,
+`mean_pressure`, `total_deflection`, `e_star`: Johnson's E*, Q-15).
 ```python
 from studies.r00_analytical_references.r02_hertz_contact import hertz_point, hertz_line, hamrock_brewe_fit
 hertz_point(R1x_m, R1y_m, R2x_m, R2y_m, E1_Pa, nu1, E2_Pa, nu2, F_N) -> HertzPoint
@@ -78,19 +91,21 @@ Not held: Table 5 and the 0.01 <= alpha < 1 branch.
 | C2 | Table 1 fitted k, F, E from `hamrock_brewe_fit` | published | same |
 | C3 | Table 2 exact D_y, D_x, sigma_max, delta | published | same |
 | C4 | Table 2 simplified columns, Eqs (13)-(17) with the fits | published | same (one unit at C3's one cell, section 5) |
-| C5 | Eqs (13)-(17) with the judge's own k, E, F give its a, b, p0, delta | identity | rel 1e-10 |
-| C6 | crossed cylinders R 10 / 10 mm at 45 deg, steel, 100 N: p0 1178.488 MPa, b 0.112690 mm, delta 2.97689 um (cowork artifact A10) | judge | half a unit of the last printed digit |
-| C7 | line R 10 / 20 mm, 1e5 N/m: p0 742.240 MPa (A10) | judge | same |
+| C5 | Eqs (13)-(17) with r02's own k, E, F give its a, b, p0, delta | identity | rel 1e-10 |
+| C6 | crossed cylinders R 10 / 10 mm at 45 deg, steel, 100 N: p0 1178.488 MPa, b 0.112690 mm, delta 2.97689 um (cowork artifact A10) | reference | half a unit of the last printed digit |
+| C7 | line R 10 / 20 mm, 1e5 N/m: p0 742.240 MPa (A10) | reference | same |
 | C8 | alpha = 1: the sphere on a flat, a, p0, delta | closed form | rel 1e-12 |
 | C9 | x-y swap swaps a and b; body swap (concave raceway as body 1) gives the same contact; a concave radius is the equivalent convex body 1/R_ball - 1/abs(R) | identity | rel 1e-14 |
 | C10 | load tie F = (2/3) pi a b p0, pm, k_n against a finite difference | identity | rel 1e-12 / 1e-7 |
 | C11 | Boussinesq: the pressure closes the gap at four points | self-check | rel 1e-8 |
 | C12 | line: Johnson (4.43)-(4.45), both forms of p0 | closed form | rel 1e-12 |
 | C13 | domain errors raise; the size ratio is a record | validity | exact |
+| C14 | `hertz_point` (`hertz_full`) against the exact solution of the tests (Carlson `R_D`), a, b, p0, delta, 12 contacts | check of `hertz_full` | rel 1e-10 (reached 6.0e-12) |
 
 ## 7. Depends on
-SciPy (`ellipk`, `elliprd`, `brentq`) and the standard library; nothing in this repository, AxisForge, SlipPY or the
-bridge (checked by `tests/test_imports.py`). Blockers: none.
+SlipPY `slippy.contact.hertz.hertz_full` (branch `local-fixes`, `pip install -e ..\slippy`) and the standard
+library; the tests also use SciPy. Nothing in `studies/`, AxisForge or the bridge (rule 13, checked by
+`tests/test_imports.py` with its allow-list). Blockers: none.
 
 ## 8. How to run
 ```bat

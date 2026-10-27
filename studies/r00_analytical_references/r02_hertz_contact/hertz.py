@@ -1,23 +1,24 @@
-"""Hertz point and line contact, written from the theory: the independent judge (r02).
+"""Hertz point and line contact, computed by SlipPY ``hertz_full`` (r02).
 
-It judges AxisForge (``PointContactStiffness``, ISO/TS 16281), SlipPY (``hertz_full``) and the
-bridge (``slippy_bridge.contact.solvers.hertz``), so it shares no code with any of them: only
-SciPy and the standard library are imported (D-0036 amendment ruling 8, SQ-05). Sources: Johnson, Contact
-Mechanics (1985), ch. 4; Hamrock and Brewe (1983). Equation and page numbers: README section 2.
+r02 runs Hertz with SlipPY ``hertz_full`` (``slippy/contact/hertz.py``, branch ``local-fixes``), the one
+library function an r case may import (D-0036 amendment rule 13: analytical formulas José verified against
+Johnson and Hamrock-Brewe, 2026-10-27). This module checks the inputs, gives ``hertz_full`` the
+equivalent body and maps its outputs to the r02 records; the own exact solution (Carlson ``R_D``) is the
+check of ``hertz_full`` and lives in ``tests/test_r02.py``. Sources: Johnson, Contact Mechanics (1985),
+ch. 4; Hamrock and Brewe (1983); Deeg (1996) inside ``hertz_full``. README section 2.
 
 Axes and signs (README section 3): ``x`` is the rolling direction, ``y`` lies across it. A radius
 is positive for a convex surface, negative for a concave one, ``math.inf`` for a flat. The
 semi-axis ``b`` lies along ``x`` and ``a`` along ``y`` (Hamrock-Brewe: ``D_x = 2 b``,
-``D_y = 2 a``); either may be the larger one, unlike Johnson's ``a >= b`` (OPEN MG-05: the bridge's
-convention). SI units throughout.
+``D_y = 2 a``); either may be the larger one, unlike Johnson's and SlipPY's ``a >= b`` (OPEN MG-05: the
+bridge's convention). SI units throughout.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 
-from scipy.optimize import brentq
-from scipy.special import ellipk, elliprd
+from slippy.contact.hertz import hertz_full
 
 __all__ = ["Validity", "HertzPoint", "HertzLine", "hertz_point", "hertz_line", "hamrock_brewe_fit",
            "SIZE_RATIO_MAX", "ALPHA_FIT_MAX"]
@@ -25,6 +26,11 @@ __all__ = ["Validity", "HertzPoint", "HertzLine", "hertz_point", "hertz_line", "
 SIZE_RATIO_MAX = 0.1    # soft range: semi-axis / radius (P-02 policy; Johnson 1985 Sec. 4.2 only says 'much
                         # smaller than')
 ALPHA_FIT_MAX = 100.0   # upper end of the Hamrock-Brewe fits, alpha = R_y / R_x (Tables 1-2)
+# OPEN RC-01: relative tolerance of the root for b/a in hertz_full (SlipPY default 1e-6 leaves up to 6.5e-8 on
+# a, b, p0, delta against the exact solution; 1e-12 leaves 6e-12 up to k_max/k_min = 1e4, above it brentq's fixed
+# xtol 2e-12 on b/a governs, ~6e-11). integration_error stays at the SlipPY default: quad does far better than the
+# 1e-6 it is asked (measured, not guaranteed); below 1e-8 it warns of roundoff and the result does not change.
+ROOT_ERROR = 1e-12
 
 
 @dataclass(frozen=True)
@@ -108,15 +114,14 @@ def _curvature(R_m: float, name: str) -> float:
     return 1.0 / R_m
 
 
-def _e_star(E1_Pa: float, nu1: float, E2_Pa: float, nu2: float) -> float:
-    """Contact modulus ``1/E* = (1 - nu1^2)/E1 + (1 - nu2^2)/E2`` [Pa]; refuses non-physical E, nu."""
+def _check_material(E1_Pa: float, nu1: float, E2_Pa: float, nu2: float) -> None:
+    """Refuses non-physical E, nu (``hertz_full`` only refuses a zero modulus)."""
     for name, E in (("E1_Pa", E1_Pa), ("E2_Pa", E2_Pa)):
         if not (0.0 < E < math.inf):
             raise ValueError(f"{name} must be positive and finite, got {E}")
     for name, nu in (("nu1", nu1), ("nu2", nu2)):
         if not (-1.0 < nu < 0.5):
             raise ValueError(f"{name} must lie in (-1, 0.5), got {nu}")
-    return 1.0 / ((1.0 - nu1**2) / E1_Pa + (1.0 - nu2**2) / E2_Pa)
 
 
 def _size_validity(pairs) -> Validity:
@@ -162,7 +167,9 @@ def hertz_point(R1x_m, R1y_m, R2x_m, R2y_m, E1_Pa, nu1, E2_Pa, nu2, F_N) -> Hert
     ValueError
         Domain errors (P-02 class i): a zero radius, ``E <= 0``, ``nu`` outside (-1, 0.5),
         ``F_N <= 0``, or a relative curvature that is not positive (a line contact, ``k = 0``,
-        or a concave body tighter than the convex one, ``k < 0``).
+        or a concave body tighter than the convex one, ``k < 0``). From ``hertz_full``: a
+        curvature ratio ``k_max / k_min`` above about 7.9e4 (its root search for ``b/a`` in
+        [1e-5, 1] fails, OPEN RC-02) and above 1e5 (SlipPY treats it as a line contact).
 
     Notes
     -----
@@ -171,28 +178,24 @@ def hertz_point(R1x_m, R1y_m, R2x_m, R2y_m, E1_Pa, nu1, E2_Pa, nu2, F_N) -> Hert
     dimensions small against the radii: the ratio is returned in ``validity`` (soft range
     ``a/R <= 0.1``, P-02 class ii), not refused.
 
-    With ``A >= B`` the semi-axes (Johnson's ``a >= b``), ``m = e^2 = 1 - (B/A)^2`` and ``K(m)``,
-    ``E(m)`` the complete elliptic integrals, the ellipsoidal pressure displaces the surfaces by
-    ``u = (L - M s^2 - N t^2) / (pi E*)``, ``s`` along ``A`` (Johnson 1985, Sec. 3.5(b), Eqs (3.61)-(3.63);
-    Sec. 4.2(b), Eqs (4.25)-(4.28))::
+    Computed by SlipPY ``hertz_full`` (Johnson 1985 Sec. 4.2; the ratio of the semi-axes from
+    Deeg 1996), called as the bridge calls it (``slippy_bridge.contact.solvers.hertz``): the
+    equivalent body ``r1 = (1/k_max, 1/k_min)`` against a flat ``r2 = inf`` at ``angle = 0``, with
+    both materials. The gap, ``E*`` and the approach are those of the pair; giving the two bodies
+    themselves would send SlipPY's angle branch a body more curved across than along.
+    ``root_error = ROOT_ERROR``. Mapping of the outputs::
 
-        M = pi p0 B (K - E) / (m A^2)
-        N = pi p0 B ((A/B)^2 E - K) / (m A^2)
-        L = pi p0 B K
+        hertz_full            r02
+        contact_radii         sorted -> (B, A), minor and major semi-axis (SlipPY: [major, minor])
+                              A along the smaller relative curvature: b, a = (A, B) if k_x <= k_y
+                              else (B, A)  (MG-05: b along x, a along y)
+        max_pressure          p0_Pa
+        mean_pressure         pm_Pa      (F / (pi a b) = 2 p0 / 3)
+        total_deflection      delta_m    (sum of both bodies)
+        e_star                E_star_Pa  (Johnson's E*, not E' = 2 E*; Q-15)
+        -                     k_n_N_per_m = 3 F / (2 delta)  (from F ~ delta^(3/2))
 
-    Contact requires ``u = delta - h`` inside the ellipse, hence ``M = pi E* k_min / 2``,
-    ``N = pi E* k_max / 2`` and ``delta = L / (pi E*) = p0 B K / E*``. ``N / M = k_max / k_min``
-    fixes ``m`` (one scalar root; Hamrock-Brewe Eqs (8)-(12) solve the same equation by
-    iteration) and the load ``F = (2/3) pi A B p0`` closes the system.
-
-    ``(K - E) / m`` and ``(E - (1 - m) K) / m`` are 0/0 for a circular contact (``m = 0``), so
-    they are evaluated as Carlson's symmetric integral ``R_D`` (DLMF 19.25.1), regular there::
-
-        (K - E) / m                     = R_D(0, 1 - m, 1) / 3
-        (E - (1 - m) K) / (m (1 - m))   = R_D(0, 1, 1 - m) / 3
-
-    Both tend to ``pi / 4`` at ``m = 0``: the circular contact is the root ``m = 0`` of the same
-    equation and needs no special case.
+    The circular contact (``k_x == k_y``) is SlipPY's sphere branch, Johnson 1985 Sec. 4.2(a).
 
     Examples
     --------
@@ -204,31 +207,24 @@ def hertz_point(R1x_m, R1y_m, R2x_m, R2y_m, E1_Pa, nu1, E2_Pa, nu2, F_N) -> Hert
     """
     k_x = _curvature(R1x_m, "R1x_m") + _curvature(R2x_m, "R2x_m")      # relative curvatures [1/m]
     k_y = _curvature(R1y_m, "R1y_m") + _curvature(R2y_m, "R2y_m")
-    e_star = _e_star(E1_Pa, nu1, E2_Pa, nu2)
+    _check_material(E1_Pa, nu1, E2_Pa, nu2)
     if not F_N > 0.0:
         raise ValueError(f"F_N must be positive, got {F_N}")
     k_min, k_max = min(k_x, k_y), max(k_x, k_y)
     if not k_min > 0.0:
         raise ValueError(f"relative curvatures must be positive for a point contact, got {k_x}, {k_y}")
 
-    # m = e^2 from N/M = k_max/k_min in Carlson's form: k_min R_D(0, 1, 1-m) = k_max R_D(0, 1-m, 1).
-    # The left side minus the right is <= 0 at m = 0 (0 for a circle: the root) and grows as
-    # 1/(1 - m) towards m = 1, where K is infinite: the bracket stops at 1 - 1e-12 (A/B up to 1e6).
-    m = brentq(lambda m: k_min * elliprd(0.0, 1.0, 1.0 - m) - k_max * elliprd(0.0, 1.0 - m, 1.0),
-               0.0, 1.0 - 1e-12, xtol=1e-16)
-    K = float(ellipk(m))
-    D = float(elliprd(0.0, 1.0 - m, 1.0)) / 3.0                          # (K - E) / m
-
-    A = (3.0 * F_N * D / (math.pi * k_min * e_star)) ** (1.0 / 3.0)    # major semi-axis, from M and F
-    B = A * math.sqrt(1.0 - m)                                          # minor semi-axis
-    p0 = 3.0 * F_N / (2.0 * math.pi * A * B)                            # F = (2/3) pi A B p0
-    delta = p0 * B * K / e_star
+    sol = hertz_full(r1=(1.0 / k_max, 1.0 / k_min), r2=math.inf, moduli=(E1_Pa, E2_Pa), v=(nu1, nu2),
+                     load=F_N, angle=0.0, root_error=ROOT_ERROR)
+    B, A = sorted(float(r) for r in sol["contact_radii"])              # minor, major semi-axis
     # the major semi-axis lies along the direction of the smaller relative curvature (flatter gap)
     b, a = (A, B) if k_x <= k_y else (B, A)
+    delta = float(sol["total_deflection"])
     validity = _size_validity((("b/Rx_rel", b, 1.0 / k_x), ("a/Ry_rel", a, 1.0 / k_y),
                                ("b/R1x", b, R1x_m), ("b/R2x", b, R2x_m), ("a/R1y", a, R1y_m), ("a/R2y", a, R2y_m)))
-    return HertzPoint(a_m=a, b_m=b, p0_Pa=p0, pm_Pa=2.0 * p0 / 3.0, delta_m=delta,
-                      k_n_N_per_m=1.5 * F_N / delta, E_star_Pa=e_star, validity=validity)
+    return HertzPoint(a_m=a, b_m=b, p0_Pa=float(sol["max_pressure"]), pm_Pa=float(sol["mean_pressure"]),
+                      delta_m=delta, k_n_N_per_m=1.5 * F_N / delta, E_star_Pa=float(sol["e_star"]),
+                      validity=validity)
 
 
 def hertz_line(R1_m, R2_m, E1_Pa, nu1, E2_Pa, nu2, w_N_per_m) -> HertzLine:
@@ -265,11 +261,16 @@ def hertz_line(R1_m, R2_m, E1_Pa, nu1, E2_Pa, nu2, w_N_per_m) -> HertzLine:
 
     Notes
     -----
-    Plane strain, otherwise the assumptions of :func:`hertz_point`. Johnson 1985 Eqs
-    (4.43)-(4.45)::
+    Plane strain, otherwise the assumptions of :func:`hertz_point`. Computed by SlipPY
+    ``hertz_full`` with ``line=True``, Johnson 1985 Eqs (4.43)-(4.45)::
 
         b  = (4 w R / (pi E*))^(1/2)
         p0 = 2 w / (pi b) = (w E* / (pi R))^(1/2)
+
+    called as the bridge calls it: the equivalent cylinder ``r1 = (R, inf)``, straight along ``y``,
+    against a flat ``r2 = inf``, with both materials. Mapping: the finite entry of
+    ``contact_radii`` (SlipPY: ``[b, inf]``) -> ``b_m``; ``max_pressure`` -> ``p0_Pa``. SlipPY's
+    ``mean_pressure`` (``w / (2 b)``) and ``e_star`` are not part of :class:`HertzLine`.
 
     Examples
     --------
@@ -280,14 +281,15 @@ def hertz_line(R1_m, R2_m, E1_Pa, nu1, E2_Pa, nu2, w_N_per_m) -> HertzLine:
     (48.63, 654.6)
     """
     k_x = _curvature(R1_m, "R1_m") + _curvature(R2_m, "R2_m")          # relative curvature 1/R [1/m]
-    e_star = _e_star(E1_Pa, nu1, E2_Pa, nu2)
+    _check_material(E1_Pa, nu1, E2_Pa, nu2)
     if not k_x > 0.0:
         raise ValueError(f"relative curvature must be positive, got {k_x}")
     if not w_N_per_m > 0.0:
         raise ValueError(f"w_N_per_m must be positive, got {w_N_per_m}")
-    b = math.sqrt(4.0 * w_N_per_m / (math.pi * k_x * e_star))          # Eq. (4.43)
-    p0 = 2.0 * w_N_per_m / (math.pi * b)                                # Eq. (4.45), w = (pi/2) b p0
-    return HertzLine(b_m=b, p0_Pa=p0, w_N_per_m=w_N_per_m,
+    sol = hertz_full(r1=(1.0 / k_x, math.inf), r2=math.inf, moduli=(E1_Pa, E2_Pa), v=(nu1, nu2),
+                     load=w_N_per_m, angle=0.0, line=True)
+    b = min(float(r) for r in sol["contact_radii"])                    # [b, inf]: the half-width
+    return HertzLine(b_m=b, p0_Pa=float(sol["max_pressure"]), w_N_per_m=w_N_per_m,
                      validity=_size_validity((("b/R_rel", b, 1.0 / k_x), ("b/R1", b, R1_m), ("b/R2", b, R2_m))))
 
 

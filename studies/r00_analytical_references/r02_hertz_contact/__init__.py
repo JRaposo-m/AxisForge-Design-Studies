@@ -1,4 +1,4 @@
-"""r02_hertz_contact: Hertz point and line contact, the independent judge (README)."""
+"""r02_hertz_contact: Hertz point and line contact, computed by SlipPY hertz_full (README)."""
 from .hertz import (ALPHA_FIT_MAX, SIZE_RATIO_MAX, HertzLine, HertzPoint, Validity, hamrock_brewe_fit,
                     hertz_line, hertz_point)
 

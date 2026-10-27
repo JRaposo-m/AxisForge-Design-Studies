@@ -31,7 +31,11 @@ xNNN_<name>/
   results/         generated, git-ignored (D-0020), read by no other case
 ```
 - **r:** one module of formulas with sources (a second past about 400 lines), `published/`, tests against the
-  printed tables; no `study.py`, no `results/`, no notebook; imports NumPy, SciPy and the standard library only.
+  printed tables; no `study.py`, no `results/`, no notebook.
+- **What an r imports (rule 13 of the D-0036 amendment):** nothing from `studies/` (no other case, no `outputs/`); NumPy, SciPy and the
+  standard library; from the libraries (AxisForge, SlipPY, `slippy_bridge`) only a function that is itself
+  analytical formulas José has verified, listed with the date in `R_VERIFIED` of `tests/test_imports.py`
+  (today r02 -> SlipPY `hertz_full`). Otherwise the r writes the formulas itself.
 - **v:** `check(system)` plus `literature/`; one Jupyter notebook (jupytext pair) that compares with the
   literature; its `check` calls the matching r.
 - **s:** validates its own system through `v.check(its_system)` at its own conditions; never calls an r directly.
