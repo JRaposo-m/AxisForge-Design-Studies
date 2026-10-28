@@ -57,7 +57,7 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
     Returns
     -------
     Path
-        ``<case>_contact_relative_errors[_<variant>].png``. Called by v101, v102, v104.
+        ``<case>_contact_relative_errors[_<variant>].png``. Called by v101, v102, v103, v104.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     quantities = list(dict.fromkeys(r["quantity"] for r in records))
@@ -121,7 +121,7 @@ def pressure_cut(records: list[dict], results_dir, case: str, *, variant: str = 
     Returns
     -------
     Path
-        ``<case>_contact_pressure_cut[_<variant>].png``. Called by v101, v102.
+        ``<case>_contact_pressure_cut[_<variant>].png``. Called by v101, v102, v103.
     """
     axes_ = list(dict.fromkeys(r["axis"] for r in records))
     with plt.style.context(PAPER):

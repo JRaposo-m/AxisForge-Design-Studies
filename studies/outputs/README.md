@@ -22,5 +22,5 @@ outputs/
 ## Index
 | function | file | what it shows | record fields | called by |
 |---|---|---|---|---|
-| `relative_errors` | `l100_dry_contact/plots/contact.py` | `abs(rel_err)` [%] of BEM quantities vs a swept parameter, one panel per series, tolerances dashed | `<x>`, `quantity`, `series`, `rel_err`, opt. `tol`, `verdict` | v101, v102, v104 |
-| `pressure_cut` | `l100_dry_contact/plots/contact.py` | BEM `p/p0_H` along cuts through the centre vs the Hertz profile `sqrt(1 - xi^2)` | `axis`, `xi`, `p_over_p0_ref` | v101, v102 |
+| `relative_errors` | `l100_dry_contact/plots/contact.py` | `abs(rel_err)` [%] of BEM quantities vs a swept parameter, one panel per series, tolerances dashed | `<x>`, `quantity`, `series`, `rel_err`, opt. `tol`, `verdict` | v101, v102, v103, v104 |
+| `pressure_cut` | `l100_dry_contact/plots/contact.py` | BEM `p/p0_H` along cuts through the centre vs the Hertz profile `sqrt(1 - xi^2)` | `axis`, `xi`, `p_over_p0_ref` | v101, v102, v103 |
