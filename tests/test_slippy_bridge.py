@@ -2108,7 +2108,7 @@ def test_hypothesis_R117_ph_at_A_half_load(fzg_c40):
 
 # ---- package: exports, sub-model data and the layer order ---------------------------------------------
 
-_LEVELS = ("core", "mesh", "results", "solvers", "outputs")   # import order (D-0034 item 1; outputs later)
+_LEVELS = ("core", "mesh", "results", "solvers", "roughness", "outputs")   # import order (D-0034 item 1; roughness R4)
 
 
 def _imports(path: Path, module: str) -> set[str]:
@@ -2145,7 +2145,7 @@ def test_layer_order_of_the_contact_package():
         forbidden = [f"slippy_bridge.contact.{name}" for name in later]
         for name in _imports(path, module):
             assert not any(name == f or name.startswith(f + ".") for f in forbidden), f"{module} imports {name}"
-            if level != "solvers":
+            if level not in ("solvers", "roughness"):          # the levels that compute with SlipPY
                 assert name.split(".")[0] != "slippy", f"{module} imports SlipPY ({name})"
         checked += 1
     assert checked == len(files) >= 14
