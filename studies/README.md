@@ -9,7 +9,7 @@ of D-0036 with its amendment of 2026-10-27; the reasons are in the vault (`01_De
 ```text
 studies/
   r00_analytical_references/      r cases sit directly below the level folder
-    r01_beams/  r02_hertz_contact/  r05_ehl_film_and_rheology/
+    r01_beams/  r02_hertz_contact/  r04_involute/  r05_ehl_film_and_rheology/
   v000_axisforge/  v100_dry_contact/  ...   v cases, by level (0 AxisForge, 1 dry contact, 2 rough, 3 EHL, ...)
   s000_axisforge/  s100_dry_contact/  ...   s cases, by level
   outputs/                        plot and report models (to come at run O1)
