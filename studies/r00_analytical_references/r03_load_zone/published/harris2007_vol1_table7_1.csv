@@ -1,0 +1,33 @@
+contact,eps_printed,J_r,source_key,location,pdf_page,read_from,note
+point,0,1/Z,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),1/Z: the one-element discrete limit; not the integral (OPEN R5-02)
+point,0.1,0.1156,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),only eps of Table 7.1 not in Table 7.4 (the other J_r repeat it: a check of the two printings)
+point,0.2,0.1590,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,0.3,0.1892,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,0.4,0.2117,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,0.5,0.2288,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,0.6,0.2416,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,0.7,0.2505,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,0.8,0.2559,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,0.9,0.2576,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,1.0,0.2546,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,1.25,0.2289,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,1.67,0.1871,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),printed 1.67: the value is that of eps = 5/3 (OPEN R5-03)
+point,2.5,0.1339,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,5.0,0.0711,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+point,inf,0,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),printed as the infinity sign
+line,0,1/Z,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),1/Z: the one-element discrete limit; not the integral (OPEN R5-02)
+line,0.1,0.1268,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),only eps of Table 7.1 not in Table 7.4 (the other J_r repeat it: a check of the two printings)
+line,0.2,0.1737,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,0.3,0.2055,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,0.4,0.2286,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,0.5,0.2453,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,0.6,0.2568,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,0.7,0.2636,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,0.8,0.2658,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,0.9,0.2628,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,1.0,0.2523,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,1.25,0.2078,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,1.67,0.1589,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),printed 1.67: the value is that of eps = 5/3 (OPEN R5-03)
+line,2.5,0.1075,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,5.0,0.0544,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),
+line,inf,0,Harris2007_vol1,Table 7.1,158,image (text layer interleaves the two halves),printed as the infinity sign
