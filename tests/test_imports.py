@@ -8,6 +8,9 @@ Every case package imports, and the layer law holds where an import test can see
   analytical formulas José verified, one entry per function with the date. Relative imports only inside the
   case. The case tests may import the case package itself.
 - ``slippy_bridge`` imports nothing from ``studies``.
+- ``slippy_bridge.contact.roughness`` (the fifth level of ``contact``) imports only NumPy, SciPy, SlipPY,
+  ``numerical_solvers``, the standard library and the rest of ``slippy_bridge``; no other bridge module imports
+  it; ``micro`` may import ``macro``, never the reverse.
 - ``numerical_solvers`` imports only NumPy, SciPy, the standard library and, relatively, its own subpackage
   (its tests also pytest and ``numerical_solvers``); its public names are unique, none a subpackage name;
   never ``studies``, ``slippy_bridge``, SlipPY or AxisForge (the port cross-checks reach AxisForge through
@@ -101,3 +104,35 @@ def test_the_bridge_imports_nothing_from_studies():
            for name, _, line, _ in _imports(p) if name == "studies"]
     assert not bad
 
+
+
+ROUGHNESS = ROOT / "slippy_bridge" / "contact" / "roughness"
+
+
+def _absolute(path: pathlib.Path, name: str | None, level: int) -> str:
+    """Dotted module an import of ``path`` names (a relative import resolved from the file's package)."""
+    if level == 0:
+        return name or ""
+    package = path.relative_to(ROOT).with_suffix("").parts[:-1]
+    base = package[:len(package) - (level - 1)]
+    return ".".join(base + ((name,) if name else ()))
+
+
+def test_roughness_imports_only_numpy_scipy_slippy_numerical_solvers_and_the_bridge():
+    ok = {"numpy", "scipy", "slippy", "numerical_solvers", "slippy_bridge", "__future__"} | set(sys.stdlib_module_names)
+    bad = []
+    for p in sorted(ROUGHNESS.rglob("*.py")):
+        for name, level, line, _ in _imports(p):
+            module = _absolute(p, name, level)
+            micro_from_macro = "roughness.macro" in ".".join(p.relative_to(ROOT).parts) and ".roughness.micro" in module
+            if module.split(".")[0] not in ok or micro_from_macro:
+                bad.append(f"{p.relative_to(ROOT).as_posix()}:{line}: {module}")
+    assert not bad, "roughness imports outside its layer (or macro imports micro): " + ", ".join(bad)
+
+
+def test_no_other_bridge_module_imports_roughness():
+    bad = [f"{p.relative_to(ROOT).as_posix()}:{line}" for p in sorted((ROOT / "slippy_bridge").rglob("*.py"))
+           if ROUGHNESS not in p.parents
+           for name, level, line, dotted in _imports(p)
+           if any("roughness" in m.split(".") for m in (_absolute(p, name, level), *dotted))]
+    assert not bad, f"roughness is the last level of slippy_bridge.contact: nothing imports it ({bad})"
