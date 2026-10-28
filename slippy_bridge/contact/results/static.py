@@ -21,6 +21,7 @@ from .hertz import HertzResult
 if TYPE_CHECKING:
     from ..core.contact import Contact
     from ..mesh.grid import Grid
+    from ..roughness.macro.surfaces import RoughHeights
 
 __all__ = ["StaticResult"]
 
@@ -39,9 +40,15 @@ class StaticResult:
     grid : Grid
         The grid of the solve (grid x = array axis 0, at ``grid.angle`` from bridge x).
     build : str
-        How the surfaces were built: ``"two_profiles"``, each body its exact profile.
+        How the surfaces were built: ``"two_profiles"``, each body its exact profile; ``"rough"``,
+        the exact profiles plus :attr:`heights` (``solvers.solve`` given ``heights``).
+    heights : (RoughHeights or None, RoughHeights or None)
+        Rough heights added to body 1 and body 2 (``(None, None)`` for ``"two_profiles"``); their
+        records (spec, Rq realised, lambda_s, seed, h, grid-rule flag and warnings) are in
+        :meth:`record`.
     z1, z2 : ndarray
-        Profiles of body 1 and body 2 on the grid [m] (SlipPY sign: ``-sag``, apex 0).
+        Profiles of body 1 and body 2 on the grid [m] (SlipPY sign: ``-sag``, apex 0; with
+        :attr:`heights` added).
     gap0 : ndarray
         Initial gap of the undeformed surfaces [m]: SlipPY ``just_touching_gap``, ``-(z1 + z2)``
         shifted to a minimum of 0, so >= 0.
@@ -85,12 +92,21 @@ class StaticResult:
         ``just_touching_gap + total_displacement_z`` over the loaded nodes. Its absolute level
         depends on the kernel's zero-frequency term and on the domain, so ``err_delta`` is
         meaningful for a point contact on a large enough domain; ``nan`` for a line (not defined
-        locally).
+        locally). Rough: from the first asperity touch (see :attr:`delta_mean_planes`).
+    delta_mean_planes : float
+        Rough only: approach of the mean planes (the smooth profiles; the heights' zero plane: their
+        mean on the lattice, or over the measurement for a measured surface) from their apex touch
+        [m], ``delta + min(-(z1 + z2))`` (``solvers.solve``), comparable with ``hertz.delta`` under
+        the caveats of ``delta`` (point contact, domain large enough) and as a mean over seeds (one
+        realisation's mean under the contact is a random offset, ``heights_mean_m`` of the record);
+        ``nan`` for ``"two_profiles"`` (there it is ``delta`` when the apex is on a node), for a line,
+        with an offset, and if SlipPY's gap is not ``-(z1 + z2)`` shifted (warned).
     p0 : float
-        Measured maximum pressure [Pa].
+        Measured maximum pressure [Pa] (rough: p_max, not a Hertz peak).
     a, b : float
         Measured semi-axes of the loaded region [m]: ``b`` along ``psi``, ``a`` across (``inf``
         for a line), whatever the grid angle (intrinsic); the edge is extrapolated below one node.
+        ``nan`` for a rough build (one smooth patch is not assumed), as ``apex_offset_nodes``.
     load : float
         Measured load [N]: SlipPY ``total_normal_load``, ``sum p h^2`` over the grid.
     apex_offset_nodes : float
@@ -103,11 +119,17 @@ class StaticResult:
     err_p0, err_a, err_b, err_delta, err_load : float
         Relative errors ``(measured - reference)/reference`` [-] against Hertz (``err_load``
         against ``load_applied``, so ``nan`` under ``interference`` or ``mean_gap``); ``nan`` when the
-        reference is not finite or zero.
+        reference is not finite or zero. Rough: all ``nan`` but ``err_load``.
     load_ok, edge_clear, margin_ok, resolution_ok, within_reference : bool
         Checks of the solve: load balance; no pressure on the domain edge; domain margin around
         the contact; nodes across the contact; errors within the reference tolerance. With
         ``converged`` and :attr:`hertz_valid` they are the checks of the record.
+        ``within_reference`` is None for a rough build (not applied, OPEN R4-17): a consumer that
+        aggregates the checks must skip None. Rough: ``margin_ok`` and ``resolution_ok`` are those
+        of the nominal Hertz contact (roughness spreads the load beyond ``a``, Johnson 1985 Fig.
+        13.13: only ``edge_clear`` sees it reach the domain edge); the checks of the roughness are
+        ``rough<k>_grid_rule_ok``. The heights' periodicity is checked for a line contact only
+        (``RoughHeights.periodic_y``), not for a point contact made periodic by the caller.
     commits : dict
         Provenance: ``{"axisforge", "slippy", "design_studies"} -> commit hash`` or ``"unknown"``.
     """
@@ -121,6 +143,7 @@ class StaticResult:
     z2: np.ndarray
     gap0: np.ndarray
     build: str = "two_profiles"
+    heights: tuple[RoughHeights | None, RoughHeights | None] = (None, None)
     # load
     load_applied: float
     period: float
@@ -139,6 +162,7 @@ class StaticResult:
     # fields
     p: np.ndarray
     delta: float
+    delta_mean_planes: float = math.nan
     total_displacement_z: np.ndarray | None = None
     surface_1_displacement_z: np.ndarray | None = None
     surface_2_displacement_z: np.ndarray | None = None
@@ -161,7 +185,7 @@ class StaticResult:
     edge_clear: bool
     margin_ok: bool
     resolution_ok: bool
-    within_reference: bool
+    within_reference: bool | None
     # provenance
     commits: dict = field(default_factory=dict)
 
@@ -206,7 +230,15 @@ class StaticResult:
           ``err_*`` belong to an edge contact and the mesh (OPEN SB-70: no check of the solve
           flags it);
         * errors ``err_*``, checks, and ``commit_axisforge``, ``commit_slippy``,
-          ``commit_design_studies``.
+          ``commit_design_studies``;
+        * rough build only (a ``"two_profiles"`` record is unchanged): ``delta_mean_planes_m``,
+          ``heights_mean_m`` (the mean of the summed heights over the grid: the offset of one
+          realisation in ``delta_mean_planes_m``), ``alpha_gt`` (Johnson's roughness parameter
+          ``sigma / delta_ref``, ``sigma`` the composite Rq of the grid heights, Johnson 1985 Eq.
+          13.54: Hertz holds within a few % for ``alpha_gt < 0.05``; nan for a line) and
+          :meth:`RoughHeights.record` of each body prefixed ``rough1_`` / ``rough2_`` (a body
+          without heights: ``rough<k>_kind`` None). There ``p0_Pa`` is p_max, an asperity pressure,
+          not the Hertz peak of ``p0_ref_Pa``.
         """
         c, g, hz = self.contact, self.grid, self.hertz
         ident = {"contact": type(c).__name__, "label": c.label, "line": c.line}
@@ -234,6 +266,16 @@ class StaticResult:
                 "span_x": span_x, "span_y": span_y}
         ref = {k: v for k, v in hz.record("_ref").items()
                if k not in ("psi_ref_rad", "E_star_ref_Pa", "line_ref", "valid_ref", "reason_ref")}
+        rough = {}
+        if self.build == "rough":                     # never silent about how the heights were made
+            given = [rh for rh in self.heights if rh is not None]
+            sigma = math.sqrt(sum(rh.rq_grid**2 for rh in given))       # independent surfaces add in quadrature
+            rough["delta_mean_planes_m"] = self.delta_mean_planes
+            rough["heights_mean_m"] = float(sum(rh.z.mean() for rh in given))
+            rough["alpha_gt"] = sigma / hz.delta if math.isfinite(hz.delta) and hz.delta > 0 else math.nan
+            for k, rh in enumerate(self.heights, start=1):
+                rough.update({f"rough{k}_{key}": v for key, v in rh.record().items()} if rh is not None
+                             else {f"rough{k}_kind": None})
         return {**ident, **geometry, **grid, "build": self.build,
                 "Q_N": math.nan if c.line else c.load, "w_N_per_m": c.load if c.line else math.nan,
                 "load_applied_N": self.load_applied, "period_m": self.period,
@@ -250,4 +292,5 @@ class StaticResult:
                 "load_ok": self.load_ok, "edge_clear": self.edge_clear, "margin_ok": self.margin_ok,
                 "resolution_ok": self.resolution_ok, "within_reference": self.within_reference,
                 "hertz_valid": self.hertz_valid, "hertz_reason": hz.reason,
-                **{f"commit_{k}": self.commits.get(k, "unknown") for k in ("axisforge", "slippy", "design_studies")}}
+                **{f"commit_{k}": self.commits.get(k, "unknown") for k in ("axisforge", "slippy", "design_studies")},
+                **rough}

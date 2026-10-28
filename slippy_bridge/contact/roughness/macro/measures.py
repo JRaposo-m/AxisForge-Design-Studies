@@ -1,9 +1,9 @@
 """Measures of a rough contact on a pressure field the caller gives (no solver here).
 
-The pressure field and the grid come from the caller's solve (SlipPY ``loads_z`` of a
-``StaticStep`` on the surfaces of :func:`surfaces.rough_surface_pair`); the bridge's ``solve`` does
-not take roughness yet. Its ``_measure`` assumes one Hertz-like patch (semi-axes through the peak);
-these measures do not.
+The pressure field and the grid come from the caller's solve (``StaticResult.p`` and
+``StaticResult.grid`` of ``solvers.solve`` given ``heights``). The solver's own measures assume one
+Hertz-like patch (semi-axes through the peak) and are not applied to a rough build; these do not
+assume it, and stay a record of their own (R4-06).
 """
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ import numpy as np
 from scipy import ndimage
 
 from ...core.contact import DC
-from ...solvers.static import _EDGE
 
 if TYPE_CHECKING:
     from ...mesh.grid import Grid
@@ -23,10 +22,11 @@ if TYPE_CHECKING:
 
 __all__ = ["RoughMeasures", "rough_measures"]
 
-# [-] a node is in contact when p > THRESHOLD_REL p_max: the numerical zero of the bridge's own measure
-# (solvers.static._EDGE, relative to the peak there too; one source); probe C2: p > 0 and p > 1e-3 p0 gave the
-# same area to 0.1 %
-THRESHOLD_REL = _EDGE
+# [-] a node is in contact when p > THRESHOLD_REL p_max: the numerical zero of the bridge's measures, here and
+# in solvers.static (_EDGE, imported from here: one source, roughness is the level below solvers); probe C2:
+# p > 0 and p > 1e-3 p0 gave the same area to 0.1 %. OPEN R4-18: it measures any pressure field, not only a rough
+# one; its home is mesh (next to SPAN_X_0, architect R4c), outside this run's scope
+THRESHOLD_REL = 1e-6
 
 
 @dataclass(**DC)
@@ -104,7 +104,7 @@ def rough_measures(p: np.ndarray, grid: Grid, *, area_reference: float, threshol
     connectivity : {4, 8}
         Patch connectivity (``scipy.ndimage.label`` with the cross or the full 3x3 structure).
     surfaces : tuple of (RoughHeights or None)
-        Recorded as given (``rough_surface_pair``'s last two returns).
+        Recorded as given (``StaticResult.heights``).
 
     Raises
     ------

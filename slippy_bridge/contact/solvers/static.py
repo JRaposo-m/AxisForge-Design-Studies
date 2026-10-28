@@ -1,9 +1,9 @@
 """SlipPY static (dry, normal) contact of a contact on its grid, measured and checked against Hertz.
 
-:func:`solve` builds the two surfaces (:func:`surfaces.surface_pair`), the SlipPY
-``ContactModel`` and one ``StaticStep``, solves, measures the pressure field and fills a
-:class:`StaticResult` with the Hertz reference, the relative errors, the checks and the commits of
-the three repositories.
+:func:`solve` builds the two surfaces (:func:`surfaces.surface_pair`, with rough heights when
+given), the SlipPY ``ContactModel`` and one ``StaticStep``, solves, measures the pressure field and
+fills a :class:`StaticResult` with the Hertz reference, the relative errors, the checks and the
+commits of the three repositories.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import itertools
 import math
 import subprocess
 import time
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +23,7 @@ import slippy.contact as c
 from scipy.ndimage import map_coordinates
 
 from ..mesh.grid import SPAN_X_0
+from ..roughness.macro.measures import THRESHOLD_REL
 from ..results.hertz import HertzResult
 from ..results.static import StaticResult
 from .hertz import hertz
@@ -30,11 +32,12 @@ from .surfaces import surface_pair
 if TYPE_CHECKING:
     from ..core.contact import Contact
     from ..mesh.grid import Grid
+    from ..roughness.macro.surfaces import RoughHeights
 
 __all__ = ["solve"]
 
 _ids = itertools.count()       # SlipPY model and material names are process-wide
-_EDGE = 1e-6                   # [-] loaded: p > _EDGE p0; below it the solver's numerical zero (measure and edge_clear)
+_EDGE = THRESHOLD_REL          # [-] loaded: p > _EDGE p0; below it the solver's numerical zero (measure and edge_clear)
 
 
 # OPEN SB-09: span_x_min, min_nodes, rtol_reference kept because the checks need them
@@ -42,11 +45,12 @@ _EDGE = 1e-6                   # [-] loaded: p > _EDGE p0; below it the solver's
 def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult | None = None,
           use_frequency_domain: bool = True, method: str = "pk", tolerance: float = 1e-9,
           span_x_min: float = SPAN_X_0, min_nodes: float = 8.0, rtol_reference: float = 0.03,
-          **step_kwargs) -> StaticResult:
+          heights: tuple[RoughHeights | None, RoughHeights | None] | None = None, **step_kwargs) -> StaticResult:
     """Solve the dry normal contact of ``contact`` on ``grid`` with the SlipPY BEM and measure it.
 
-    Both bodies are elastic half-spaces with their exact profiles. The pressure field is measured
-    and compared with Hertz. Load control (``Grid.step_args``), one of three:
+    Both bodies are elastic half-spaces with their exact profiles (plus their rough ``heights``
+    when given). The pressure field is measured and compared with Hertz. Load control
+    (``Grid.step_args``), one of three:
 
     * ``"normal_load"`` (nothing given): the load is ``contact.load`` (a line: load per unit
       length x period on a strip periodic along y); the Hertz reference is ``hertz_result``
@@ -73,6 +77,15 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
     default) SlipPY keeps only the overlap of the two surfaces (``_model_utils.py:137-150``), so
     a pressure field smaller than the grid comes back and is refused below;
     ``periodic_geometry=True`` keeps the grid (and wraps body 2 along both axes).
+
+    With rough ``heights`` (``build = "rough"``, also for heights all zero) the Hertz-shape
+    measures, which assume one smooth patch (:func:`_measure`), are not applied and Hertz is a
+    reference value only (field by field: :class:`StaticResult`). ``delta_mean_planes = delta +
+    m``, the approach of the mean planes (Johnson 1985, 13.5; probe C2), with ``m`` SlipPY's shift of
+    the gap to first touch read back from its own gap (``-(z1 + z2) - gap0``, a constant when SlipPY
+    solved these surfaces; otherwise nan with a warning). The interpolation mode must be
+    ``"nearest"`` (SlipPY's default; the others swap the axes of body 2, R-051). Real area, patches
+    and mean real pressure: ``roughness.macro.rough_measures`` on ``StaticResult.p``.
 
     Parameters
     ----------
@@ -104,7 +117,11 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
         resolve the Hertz profile near its edge.
     rtol_reference : float
         Limit of ``within_reference`` [-]: relative error of p0, a, b and the approach against
-        Hertz (meaningful for smooth surfaces only).
+        Hertz (meaningful for smooth surfaces only: not applied with ``heights``).
+    heights : (RoughHeights or None, RoughHeights or None), optional
+        Rough heights of body 1 and body 2 on ``grid`` (``roughness.macro.rough_heights``), passed
+        to :func:`surface_pair`. None (default): both bodies smooth, and the call and every number
+        are those of a solve without this argument.
 
     Returns
     -------
@@ -122,14 +139,17 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
         * ``edge_clear`` - the pressure on the domain boundary is at most 1e-6 p0 (the threshold
           of the measured edge); a line: only the two ends along grid x (y is periodic).
           Necessary, not sufficient;
-        * ``margin_ok``, ``resolution_ok``, ``within_reference`` - see the parameters;
+        * ``margin_ok``, ``resolution_ok``, ``within_reference`` - see the parameters (with
+          ``heights``, ``margin_ok`` and ``resolution_ok`` are those of the nominal Hertz
+          contact; the resolution of the roughness is ``RoughHeights.grid_rule_ok``);
         * ``hertz_valid`` - Hertz validity of the reference (``HertzResult.valid``).
 
     Raises
     ------
     ValueError
         From ``Grid.step_args`` (``normal_load`` given, a non-periodic or turned line),
-        :func:`surface_pair` and SlipPY (its options); if SlipPY returns a pressure field not of
+        :func:`surface_pair` (also heights not on ``grid``) and SlipPY (its options; with heights, an
+        interpolation mode other than ``"nearest"``); if SlipPY returns a pressure field not of
         the grid's shape (an offset on a non-periodic geometry); from :class:`Contact` if the
         load found under ``interference`` is not positive (no Hertz reference).
     TypeError
@@ -137,7 +157,13 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
         its results are never set (``_step_utils.py:190``; OPEN SB-62).
     """
     name = f"{contact.label or type(contact).__name__}_{next(_ids)}"
-    s1, s2 = surface_pair(contact, grid, name=name, use_frequency_domain=use_frequency_domain)
+    s1, s2 = surface_pair(contact, grid, name=name, use_frequency_domain=use_frequency_domain, heights=heights)
+    rough = heights is not None and any(rh is not None for rh in heights)
+    if rough and step_kwargs.get("profile_interpolation_mode", "nearest") != "nearest":
+        # SlipPY Surface.interpolate swaps the axes outside 'nearest' (Surface_class.py:1213-1224, R-051): body 2
+        # would be solved transposed, which a smooth axisymmetric profile hides and rough heights do not
+        raise ValueError("solve with heights needs profile_interpolation_mode='nearest' (R-051: SlipPY's other "
+                         "modes interpolate body 2 on swapped axes)")
     args = grid.step_args(contact, **step_kwargs)
     control = next((k for k in ("interference", "mean_gap") if args.get(k) is not None), "normal_load")
     load_applied = args.get("normal_load", math.nan)
@@ -166,15 +192,32 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
         hz = hertz(dataclasses.replace(contact, load=found))
     h = grid.h
     # psi is from bridge x; the cuts are on the grid, at psi - gamma from grid x (a, b stay intrinsic)
-    p0, b, a, apex_offset = _measure(p, h, contact.psi - grid.angle, contact.line)
+    if rough:                                                    # one smooth patch is not assumed
+        p0, b, a, apex_offset = float(p.max()), math.nan, math.nan, math.nan
+    else:
+        p0, b, a, apex_offset = _measure(p, h, contact.psi - grid.angle, contact.line)
     load = float(p.sum() * h**2)
     # SlipPY interference: the approach of the bodies; not defined locally for a line (Johnson 4.2(c))
     delta = math.nan if contact.line else float(sol["interference"])
+    z1, z2 = np.asarray(s1.profile), np.asarray(s2.profile)
+    gap0 = np.asarray(sol["just_touching_gap"], dtype=float)
+    delta_mean = math.nan
+    # rough: SlipPY shifted its gap -(z1 + z2) to first touch by a constant (_model_utils.py:173-177), read back
+    # from its own gap; with an offset body 2 is moved, so the smooth apex is not at 0 on these nodes (OPEN R4-17)
+    if rough and not contact.line and not any(args.get(k) for k in ("off_set_x", "off_set_y")):
+        shift = -(z1 + z2) - gap0
+        if np.ptp(shift) <= 1e-12 * max(float(np.abs(z1 + z2).max()), 1e-300):
+            delta_mean = float(delta + shift.mean())
+        else:
+            warnings.warn(f"solve: SlipPY's gap is not -(z1 + z2) shifted by a constant (spread {np.ptp(shift):.3g} "
+                          "m): it solved other surfaces than z1, z2; delta_mean_planes set to nan", stacklevel=2)
     displacements = {k: np.asarray(sol[k], dtype=float)
                      for k in ("total_displacement_z", "surface_1_displacement_z", "surface_2_displacement_z")}
 
     err = {"err_p0": _rel_err(p0, hz.p0), "err_a": _rel_err(a, hz.a), "err_b": _rel_err(b, hz.b),
            "err_delta": _rel_err(delta, hz.delta), "err_load": _rel_err(load, load_applied)}
+    if rough:                                                    # Hertz is a reference value only
+        err.update(err_p0=math.nan, err_a=math.nan, err_b=math.nan, err_delta=math.nan)
     refs = {"err_p0": hz.p0, "err_a": hz.a, "err_b": hz.b, "err_delta": hz.delta}
     edge = np.concatenate([p[0, :], p[-1, :]] + ([] if contact.line else [p[:, 0], p[:, -1]]))
     span_x, _ = grid.spans(hz)
@@ -185,11 +228,12 @@ def solve(contact: Contact, grid: Grid, output_dir, *, hertz_result: HertzResult
         "margin_ok": bool(span_x >= span_x_min),
         "resolution_ok": bool(hz.b / h >= min_nodes),
         # a missing measurement fails a finite reference; an infinite or nan reference is skipped
-        "within_reference": all(math.isfinite(err[k]) and abs(err[k]) <= rtol_reference
-                                for k, ref in refs.items() if math.isfinite(ref)),
+        "within_reference": None if rough else all(math.isfinite(err[k]) and abs(err[k]) <= rtol_reference
+                                                   for k, ref in refs.items() if math.isfinite(ref)),
     }
-    return StaticResult(contact=contact, grid=grid, z1=np.asarray(s1.profile), z2=np.asarray(s2.profile),
-                        gap0=np.asarray(sol["just_touching_gap"], dtype=float),
+    rough_fields = {"build": "rough", "heights": tuple(heights), "delta_mean_planes": delta_mean} if rough else {}
+    return StaticResult(contact=contact, grid=grid, z1=z1, z2=z2, **rough_fields,
+                        gap0=gap0,
                         load_applied=load_applied, period=grid.length_y_m if contact.line else math.nan,
                         load_control=control, load_found=load_found,
                         **{k: math.nan if args.get(k) is None else float(args[k])     # nan: not given

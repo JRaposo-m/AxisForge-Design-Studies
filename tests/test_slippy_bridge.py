@@ -2108,7 +2108,7 @@ def test_hypothesis_R117_ph_at_A_half_load(fzg_c40):
 
 # ---- package: exports, sub-model data and the layer order ---------------------------------------------
 
-_LEVELS = ("core", "mesh", "results", "solvers", "roughness", "outputs")   # import order (D-0034 item 1; roughness R4)
+_LEVELS = ("core", "mesh", "roughness", "results", "solvers", "outputs")   # import order (D-0034 item 1; roughness R4-01)
 
 
 def _imports(path: Path, module: str) -> set[str]:
@@ -2131,8 +2131,9 @@ def _imports(path: Path, module: str) -> set[str]:
 
 
 def test_layer_order_of_the_contact_package():
-    """core imports nothing of mesh/results/solvers and no SlipPY; mesh no results/solvers/SlipPY; results no
-    solvers/SlipPY. Imports under TYPE_CHECKING are held to the same rule (they name earlier levels only)."""
+    """core imports nothing of mesh/roughness/results/solvers and no SlipPY; mesh no later level and no SlipPY;
+    roughness (SlipPY allowed) no results/solvers; results no solvers/SlipPY. Imports under TYPE_CHECKING are held
+    to the same rule (they name earlier levels only)."""
     import slippy_bridge.contact as pkg
     root = Path(pkg.__file__).parent
     files = [p for p in sorted(root.rglob("*.py")) if len(p.relative_to(root).parts) > 1]

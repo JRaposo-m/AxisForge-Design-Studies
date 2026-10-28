@@ -1,4 +1,5 @@
-"""slippy_bridge.contact.roughness: rough surfaces on a grid (macro) and their measures."""
+"""slippy_bridge.contact.roughness: rough surfaces on a grid (macro), their measures, and the rough heights
+through solvers.surface_pair and solvers.solve (R4c)."""
 import itertools
 import math
 import warnings
@@ -10,8 +11,8 @@ pytest.importorskip("slippy")
 
 from slippy_bridge.contact.core.contact import Contact, SweptCircleBody  # noqa: E402
 from slippy_bridge.contact.mesh.grid import Grid  # noqa: E402
-from slippy_bridge.contact.roughness.macro import (RoughnessSpec, band_limit, rough_heights,  # noqa: E402
-                                                   rough_measures, rough_surface_pair)
+from slippy_bridge.contact.roughness.macro import RoughnessSpec, band_limit, rough_heights, rough_measures  # noqa: E402
+from slippy_bridge.contact.solvers.static import solve  # noqa: E402
 from slippy_bridge.contact.solvers.surfaces import surface_pair  # noqa: E402
 
 H = 2.0**-18                                     # 3.81 um [m]
@@ -157,37 +158,52 @@ def test_measured_surface_is_levelled_and_resampled():
     assert np.abs(rh.z - expected).max() < 2e-2 * 0.1 * UM
 
 
-# ---- rough_surface_pair -------------------------------------------------------------------------
+# ---- surface_pair with heights --------------------------------------------------------------------
 
-def _ball_on_flat():
+def _ball_on_flat(load=500.0):
     return _Point(body1=SweptCircleBody(r=6.35e-3, E=210e9, nu=0.3),
-                  body2=SweptCircleBody(r=math.inf, E=210e9, nu=0.3), load=500.0, label="ball")
+                  body2=SweptCircleBody(r=math.inf, E=210e9, nu=0.3), load=load, label="ball")
 
 
-@pytest.mark.parametrize("spec_2", [None, _acf(rq=0.0)], ids=["no_spec", "rq_0"])
-def test_zero_roughness_is_surface_pair(spec_2):
+def _heights(g, spec_1=None, spec_2=None, **kw):
+    """(heights of body 1, heights of body 2) on g, None where no spec (grid-rule warnings silenced)."""
+    return tuple(None if sp is None else _quiet(sp, g, **kw) for sp in (spec_1, spec_2))
+
+
+@pytest.mark.parametrize("heights", [(None, None), "rq_0"], ids=["none", "rq_0"])
+def test_zero_roughness_is_surface_pair(heights):
     contact, g = _ball_on_flat(), _grid(32, 32)
+    heights = _heights(g, None, _acf(rq=0.0)) if heights == "rq_0" else heights
     a1, a2 = surface_pair(contact, g, name=f"r4_smooth_a{next(_ids)}")
-    b1, b2, *rh = rough_surface_pair(contact, g, None, spec_2, name=f"r4_smooth_b{next(_ids)}")
+    b1, b2 = surface_pair(contact, g, name=f"r4_smooth_b{next(_ids)}", heights=heights)
     for a, b in ((a1, b1), (a2, b2)):
         assert np.array_equal(np.asarray(a.profile), np.asarray(b.profile)) and a.grid_spacing == b.grid_spacing
         assert (a.material.E, a.material.v) == (b.material.E, b.material.v)
-    assert rh[0] is None and (spec_2 is None) == (rh[1] is None)
 
 
 def test_rough_body_gets_profile_plus_heights():
     contact, g = _ball_on_flat(), _grid(32, 32)
     a1, a2 = surface_pair(contact, g, name=f"r4_rough_a{next(_ids)}")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")                  # the grid rule fails on this small grid
-        b1, b2, rh1, rh2 = rough_surface_pair(contact, g, spec_2=_acf(), name=f"r4_rough_b{next(_ids)}")
+    rh1, rh2 = _heights(g, None, _acf())
+    b1, b2 = surface_pair(contact, g, name=f"r4_rough_b{next(_ids)}", heights=(rh1, rh2))
     assert np.array_equal(np.asarray(b1.profile), np.asarray(a1.profile)) and rh1 is None
     assert np.array_equal(np.asarray(b2.profile), np.asarray(a2.profile) + rh2.z)
 
 
 def test_composite_spec_excludes_a_second_spec():
+    g = _grid(16, 16)
     with pytest.raises(ValueError, match="composite"):
-        rough_surface_pair(_ball_on_flat(), _grid(16, 16), _acf(composite=True), _acf(seed=2), name=f"r4_comp{next(_ids)}")
+        surface_pair(_ball_on_flat(), g, name=f"r4_comp{next(_ids)}",
+                     heights=_heights(g, _acf(composite=True), _acf(seed=2)))
+
+
+@pytest.mark.parametrize("other", [(32, 32, 2 * H), (16, 16, H)], ids=["spacing", "shape"])
+def test_heights_on_another_grid_are_refused(other):
+    g = _grid(32, 32)
+    with pytest.raises(ValueError, match="solve grid"):
+        surface_pair(_ball_on_flat(), g, name=f"r4_other{next(_ids)}", heights=_heights(_grid(*other), None, _acf()))
+    with pytest.raises(ValueError, match="heights must be"):
+        surface_pair(_ball_on_flat(), g, name=f"r4_one{next(_ids)}", heights=_heights(g, None, _acf())[1:])
 
 
 # ---- rough_measures -----------------------------------------------------------------------------
@@ -232,8 +248,8 @@ def test_psd_spectrum_has_the_hurst_slope_and_the_plateau():
 def test_two_independent_rough_bodies_add_in_the_gap():
     contact, g = _ball_on_flat(), _grid(128, 128)
     a1, a2 = surface_pair(contact, g, name=f"r4_two_a{next(_ids)}")
-    b1, b2, rh1, rh2 = rough_surface_pair(contact, g, _acf(beta=10 * H, lambda_s=8 * H, seed=1),
-                                          _acf(beta=10 * H, lambda_s=8 * H, seed=2), name=f"r4_two_b{next(_ids)}")
+    heights = _heights(g, _acf(beta=10 * H, lambda_s=8 * H, seed=1), _acf(beta=10 * H, lambda_s=8 * H, seed=2))
+    b1, b2 = surface_pair(contact, g, name=f"r4_two_b{next(_ids)}", heights=heights)
     rough_gap = (np.asarray(a1.profile) + np.asarray(a2.profile)) - (np.asarray(b1.profile) + np.asarray(b2.profile))
     assert rough_gap.std() == pytest.approx(math.sqrt(2) * 0.2 * UM, rel=0.03)
 
@@ -255,7 +271,7 @@ def test_band_limit_refuses_an_empty_band():
 
 
 def test_lattice_must_hold_the_grid_nodes():
-    with pytest.raises(ValueError, match="h / 2\^k"):
+    with pytest.raises(ValueError, match=r"h / 2\^k"):
         rough_heights(_acf(), _grid(16, 16, H), lattice=_grid(64, 64, 2 * H))
     with pytest.raises(ValueError, match="not nodes of the lattice"):
         rough_heights(_acf(), _grid(64, 64, H), lattice=_grid(32, 32, H / 2))
@@ -273,22 +289,33 @@ def test_non_square_psd_lattice_is_noted_and_refused_for_a_line():
     assert rh.z.shape == (64, 32) and any("not periodic" in w for w in rh.warnings)
     roller = _Line(body1=SweptCircleBody(r=(5e-3, math.inf), E=210e9, nu=0.3),
                    body2=SweptCircleBody(r=math.inf, E=210e9, nu=0.3), load=1e5, label="roller")
+    g = _grid(64, 32)
+    assert not rh.periodic_y and _quiet(_acf(), g).periodic_y
     with pytest.raises(ValueError, match="periodic along y"):
-        rough_surface_pair(roller, _grid(64, 32), None, _psd(), name=f"r4_line{next(_ids)}")
+        surface_pair(roller, g, name=f"r4_line{next(_ids)}", heights=(None, rh))
     measured = RoughnessSpec(kind="measured", heights=np.zeros((80, 40)), spacing=H)
     with pytest.raises(ValueError, match="periodic along y"):
-        rough_surface_pair(roller, _grid(64, 32), None, measured, name=f"r4_line{next(_ids)}")
+        surface_pair(roller, g, name=f"r4_line{next(_ids)}", heights=_heights(g, None, measured))
+    acf_on_longer = _quiet(_acf(), g, lattice=_grid(64, 64))       # lattice period along y 64 h, the grid's 32 h
+    with pytest.raises(ValueError, match="periodic along y"):
+        surface_pair(roller, g, name=f"r4_line{next(_ids)}", heights=(None, acf_on_longer))
 
 
-def test_a_rough_pair_runs_through_a_slippy_static_step(tmp_path):
-    """Smoke test: SlipPY ContactModel + StaticStep on the surfaces (spatial kernel, 32^2, 50 N)."""
+# ---- solve with heights (R4c) ------------------------------------------------------------------------
+
+def _smoke():
+    """50 N ball on a rough flat, 64^2 nodes at 7.63 um (domain about 1.9 a), spatial kernel."""
+    g = _grid(64, 64, 2.0**-17)
+    return _ball_on_flat(load=50.0), g, _heights(g, None, _acf(rq=0.05 * UM, beta=20e-6, lambda_s=16e-6))
+
+
+def test_a_rough_pair_through_solve_equals_the_pair_driven_by_hand(tmp_path):
+    """The same rough case through solve and through SlipPY ContactModel + StaticStep by hand: equal fields."""
     import slippy
     import slippy.contact as c
-    contact = _Point(body1=SweptCircleBody(r=6.35e-3, E=210e9, nu=0.3),
-                     body2=SweptCircleBody(r=math.inf, E=210e9, nu=0.3), load=50.0, label="smoke")
-    g, name = _grid(64, 64, 2.0**-17), f"r4_smoke{next(_ids)}"
-    s1, s2, _, rh = rough_surface_pair(contact, g, None, _acf(rq=0.05 * UM, beta=20e-6, lambda_s=16e-6),
-                                       name=name, use_frequency_domain=False)
+    contact, g, heights = _smoke()
+    name = f"r4_hand{next(_ids)}"
+    s1, s2 = surface_pair(contact, g, name=name, use_frequency_domain=False, heights=heights)
     saved = slippy.OUTPUT_DIR
     try:
         model = c.ContactModel(name, s1, s2, output_dir=str(tmp_path))
@@ -296,5 +323,73 @@ def test_a_rough_pair_runs_through_a_slippy_static_step(tmp_path):
         sol = model.solve()
     finally:
         slippy.OUTPUT_DIR = saved
-    m = rough_measures(np.asarray(sol["loads_z"]), g, area_reference=1.0, surfaces=(None, rh))
-    assert sol["converged"] and m.load == pytest.approx(50.0, rel=1e-3) and m.n_patches >= 1
+    r = solve(contact, g, tmp_path, use_frequency_domain=False, heights=heights)
+    assert sol["converged"] and r.converged
+    assert np.array_equal(r.p, np.asarray(sol["loads_z"])) and r.delta == pytest.approx(float(sol["interference"]))
+    assert np.array_equal(r.z2, np.asarray(s2.profile))
+    m = rough_measures(r.p, r.grid, area_reference=1.0, surfaces=r.heights)
+    assert m.load == pytest.approx(50.0, rel=1e-3) and m.n_patches >= 1 and m.p_max == r.p0
+
+
+def test_rough_solve_does_not_apply_the_hertz_shape_measures(tmp_path):
+    contact, g, heights = _smoke()
+    r = solve(contact, g, tmp_path, use_frequency_domain=False, heights=heights)
+    assert r.build == "rough" and r.heights == heights
+    assert all(math.isnan(v) for v in (r.a, r.b, r.apex_offset_nodes, r.err_p0, r.err_a, r.err_b, r.err_delta))
+    assert r.within_reference is None and r.load_ok and r.edge_clear and r.p0 == r.p.max()
+    # SlipPY's own shift of the gap to first touch: -(z1 + z2) - gap0 is one constant m on every node, and the
+    # mean-plane approach is delta + m (checks the _model_utils assumption, not the formula)
+    shift = -(r.z1 + r.z2) - r.gap0
+    assert np.ptp(shift) < 1e-15 and r.delta_mean_planes == pytest.approx(r.delta + shift.mean(), abs=1e-15)
+    assert r.delta_mean_planes < r.delta                       # an asperity rises above the apex datum
+    rec = r.record()
+    assert rec["build"] == "rough" and rec["rough1_kind"] is None and rec["rough2_kind"] == "acf"
+    assert rec["rough2_rq_grid_m"] == heights[1].rq_grid and rec["rough2_seed"] == 1
+    assert {"rough2_grid_rule_ok", "rough2_warnings", "rough2_lambda_s_over_h", "delta_mean_planes_m"} <= rec.keys()
+    assert rec["alpha_gt"] == pytest.approx(heights[1].rq_grid / r.hertz.delta)
+    assert rec["heights_mean_m"] == pytest.approx(heights[1].z.mean())
+
+
+def test_rough_solve_of_zero_heights_is_the_smooth_solve(tmp_path):
+    """Limit Rq -> 0: heights all zero give the smooth pressure field, and the mean-plane approach is the smooth
+    approach (apex on a node); the build is still "rough" (a spec was given)."""
+    contact, g, _ = _smoke()
+    r0 = solve(contact, g, tmp_path, use_frequency_domain=False)
+    r = solve(contact, g, tmp_path, use_frequency_domain=False, heights=_heights(g, None, _acf(rq=0.0)))
+    assert r.build == "rough" and np.array_equal(r.p, r0.p)
+    assert r.delta_mean_planes == r0.delta and math.isnan(r.a) and r.within_reference is None
+
+
+def test_smooth_solve_is_unchanged_by_the_heights_argument(tmp_path):
+    """heights None (the default) and (None, None): the fields, the measures and the record of a solve without it."""
+    contact, g, _ = _smoke()
+    r0 = solve(contact, g, tmp_path, use_frequency_domain=False)
+    for heights in (None, (None, None)):
+        r = solve(contact, g, tmp_path, use_frequency_domain=False, heights=heights)
+        assert r.build == "two_profiles" and r.heights == (None, None) and math.isnan(r.delta_mean_planes)
+        for k in ("p", "z1", "z2", "gap0", "total_displacement_z"):
+            assert np.array_equal(getattr(r, k), getattr(r0, k)), k
+        a, b = r0.record(), r.record()
+        a.pop("solve_time_s"), b.pop("solve_time_s")
+        assert a.keys() == b.keys() and all(a[k] == b[k] or (a[k] != a[k] and b[k] != b[k]) for k in a)
+        assert not any(k.startswith("rough") for k in b)
+
+
+def test_rough_solve_under_interference_control(tmp_path):
+    contact, g, heights = _smoke()
+    r = solve(contact, g, tmp_path, use_frequency_domain=False, heights=heights, interference=2e-6)
+    assert r.load_control == "interference" and r.build == "rough" and r.load_found > 0
+    assert r.load == pytest.approx(r.load_found, rel=1e-6) and r.within_reference is None
+    assert r.delta == pytest.approx(2e-6, rel=1e-6)
+
+
+def test_solve_refuses_interpolation_other_than_nearest_with_heights(tmp_path):
+    contact, g, heights = _smoke()
+    with pytest.raises(ValueError, match="R-051"):
+        solve(contact, g, tmp_path, use_frequency_domain=False, heights=heights, profile_interpolation_mode="linear")
+
+
+def test_solve_refuses_heights_on_another_grid(tmp_path):
+    contact, g, _ = _smoke()
+    with pytest.raises(ValueError, match="solve grid"):
+        solve(contact, g, tmp_path, use_frequency_domain=False, heights=_heights(_grid(32, 32, 2.0**-16), None, _acf()))

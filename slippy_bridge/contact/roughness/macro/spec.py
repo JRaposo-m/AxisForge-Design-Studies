@@ -46,7 +46,8 @@ _KINDS = ("acf", "psd", "measured")
 _ACF_SHAPES = ("exponential", "gaussian")
 
 
-# OPEN R4-05: no `body` field: the argument of rough_surface_pair says which body carries it;
+# OPEN R4-05: no `body` field: the place of its heights in `heights=(h1, h2)` of solvers.surface_pair / solve
+# says which body carries it;
 # `composite` states that its heights are the composite roughness of the pair
 @dataclass(**DC)
 class RoughnessSpec:

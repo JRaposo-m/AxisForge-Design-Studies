@@ -1,5 +1,5 @@
-"""Rough heights on a grid (:func:`rough_heights`) and the two SlipPY surfaces of a rough contact
-(:func:`rough_surface_pair`): the smooth surfaces of ``solvers.surface_pair`` plus the heights.
+"""Rough heights on a grid (:func:`rough_heights`), the ``heights`` that ``solvers.surface_pair`` and
+``solvers.solve`` add to the body profiles.
 
 Generation through SlipPY (D-0018), with the reason wherever SlipPY is not used (SlipPY
 local-fixes df5916c):
@@ -51,15 +51,12 @@ import slippy.surface as s
 from scipy.interpolate import RectBivariateSpline
 
 from ...core.contact import DC
-from ...solvers.surfaces import surface_pair
 from .spec import RoughnessSpec
 
 if TYPE_CHECKING:
-    from ...core.contact import Contact
     from ...mesh.grid import Grid
 
-__all__ = ["RoughHeights", "rough_heights", "rough_surface_pair", "band_limit",
-           "LAMBDA_S_OVER_H_MIN", "BETA_OVER_H_MIN"]
+__all__ = ["RoughHeights", "rough_heights", "band_limit", "LAMBDA_S_OVER_H_MIN", "BETA_OVER_H_MIN"]
 
 # Grid rule of a rough contact (R2-20, OPEN R4-04): a proposal from one case (probe C2: v101 ball, Rq 0.2 um,
 # lambda_s 16 um, three seeds), area changes -4.8 % and -1.6 % between lambda_s/h 2.1, 4.2 and 8.4; "within
@@ -100,6 +97,11 @@ class RoughHeights:
     grid_rule_ok : bool
         ``lambda_s / h >= LAMBDA_S_OVER_H_MIN`` and, for an ACF, ``beta* / h_lattice >=
         BETA_OVER_H_MIN`` (False for a measured surface without ``lambda_s``: not checkable).
+    periodic_y : bool
+        ``z`` repeats with the grid's length along grid y (``Grid.length_y_m``): a random surface
+        on a lattice of that length along y (an ``"acf"`` spec, or a ``"psd"`` spec on an even
+        square lattice); False for a measured surface. A line contact (periodic along y) needs it
+        (``solvers.surface_pair``).
     warnings : tuple of str
         The grid-rule messages (also issued with ``warnings.warn``) and the others of the build
         (SlipPY's filter fit, a cropped PSD square, a roll-off below the lattice).
@@ -115,6 +117,7 @@ class RoughHeights:
     lambda_s_over_h: float
     beta_over_h: float
     grid_rule_ok: bool
+    periodic_y: bool
     warnings: tuple[str, ...] = ()
 
     def record(self) -> dict:
@@ -122,7 +125,7 @@ class RoughHeights:
         return {**self.spec.record(), "h_m": self.h, "h_lattice_m": self.h_lattice, "rq_lattice_m": self.rq_lattice,
                 "rq_grid_m": self.rq_grid, "beta_star_realised_m": self.beta_star_realised,
                 "lambda_s_over_h": self.lambda_s_over_h, "beta_over_h_lattice": self.beta_over_h,
-                "grid_rule_ok": self.grid_rule_ok, "warnings": " | ".join(self.warnings)}
+                "grid_rule_ok": self.grid_rule_ok, "periodic_y": self.periodic_y, "warnings": " | ".join(self.warnings)}
 
 
 def band_limit(z: np.ndarray, h: float, lambda_s: float | None, lambda_c: float | None = None) -> np.ndarray:
@@ -224,72 +227,14 @@ def rough_heights(spec: RoughnessSpec, grid: Grid, *, lattice: Grid | None = Non
                         f"h_lattice {lattice.h:.4g} m): the ACF is not resolved (R2-20)")
     for msg in rule:
         warnings.warn(msg, stacklevel=2)
+    # OPEN R4-19: the even-square test repeats the one of _random (same predicate on the shape)
+    n0, n1 = lattice.X.shape
+    periodic_lattice = smooth or spec.kind == "acf" or (spec.kind == "psd" and n0 == n1 and n0 % 2 == 0)
+    periodic_y = periodic_lattice and math.isclose(lattice.length_y_m, grid.length_y_m)
     return RoughHeights(z=z, spec=spec, h=grid.h, h_lattice=lattice.h, rq_lattice=float(z_m.std()),
                         rq_grid=float(z.std()), beta_star_realised=beta_real, lambda_s_over_h=lam_h,
-                        beta_over_h=beta_h, grid_rule_ok=not rule, warnings=tuple(notes + rule))
-
-
-def rough_surface_pair(contact: Contact, grid: Grid, spec_1: RoughnessSpec | None = None,
-                       spec_2: RoughnessSpec | None = None, *, name: str, use_frequency_domain: bool = True,
-                       lattice: Grid | None = None):
-    """The two SlipPY surfaces of ``contact`` on ``grid`` with roughness: :func:`surface_pair` (each
-    body's exact profile and its ``Elastic`` material) plus the heights of ``spec_k`` added to the
-    profile of body ``k``.
-
-    Without a spec, or with a random spec of ``Rq = 0``, a body's surface is exactly that of
-    :func:`surface_pair` (its profile is not touched). The undeformed gap is ``-(z1 + z2)``, so a
-    height adds to its body and the two roughnesses add in the gap. Two random specs with the same
-    statistics and the same seed are the same heights on both bodies (fully correlated): give
-    different seeds for independent surfaces. SlipPY shifts the gap to a minimum of 0 (first
-    touch, ``_model_utils.py:173-175``): an approach it reports is measured from the first asperity
-    touch, not from the smooth apex (compare with Hertz through the mean planes, probe C2).
-
-    Parameters
-    ----------
-    contact, grid, name, use_frequency_domain
-        As :func:`surface_pair` (``name`` unique in the process).
-    spec_1, spec_2 : RoughnessSpec, optional
-        Roughness of body 1 and body 2. A ``composite`` spec carries the roughness of both bodies:
-        the other spec must then be None.
-    lattice : Grid, optional
-        Generation lattice of both (see :func:`rough_heights`).
-
-    Returns
-    -------
-    surface_1, surface_2 : slippy Surface
-    heights_1, heights_2 : RoughHeights or None
-        The record of each body's heights (None without a spec).
-
-    Raises
-    ------
-    ValueError
-        From :func:`surface_pair` and :func:`rough_heights`; if a composite spec is given with a
-        spec for the other body; for a line contact whose lattice is not periodic along y with the
-        grid's period, or whose spec cannot be periodic along y (a measured surface; a ``"psd"`` spec
-        on a lattice that is not an even square): the strip is one period of an infinite contact.
-    """
-    if spec_1 is not None and spec_2 is not None and (spec_1.composite or spec_2.composite):
-        raise ValueError("rough_surface_pair: a composite spec carries the roughness of both bodies; "
-                         "the other body must have no spec")
-    if contact.line:
-        # one period of an infinite strip: the heights must repeat with the grid's period along y
-        lat = grid if lattice is None else lattice
-        if not math.isclose(lat.length_y_m, grid.length_y_m):
-            raise ValueError(f"rough_surface_pair: a line contact is periodic along y; the lattice period "
-                             f"{lat.length_y_m} m must equal the grid's {grid.length_y_m} m")
-        n0, n1 = lat.X.shape
-        if any(sp is not None and (sp.kind == "measured" or (sp.kind == "psd" and (n0 != n1 or n0 % 2)))
-               for sp in (spec_1, spec_2)):
-            raise ValueError("rough_surface_pair: a line contact needs heights periodic along y: an 'acf' spec, "
-                             "or a 'psd' spec on an even square lattice (a measured surface is not periodic)")
-    s1, s2 = surface_pair(contact, grid, name=name, use_frequency_domain=use_frequency_domain)
-    heights = []
-    for surface, spec in ((s1, spec_1), (s2, spec_2)):
-        rh = None if spec is None else rough_heights(spec, grid, lattice=lattice)
-        if rh is not None and np.any(rh.z):
-            surface.profile = np.asarray(surface.profile) + rh.z      # material and spacing kept
-        heights.append(rh)
-    return s1, s2, heights[0], heights[1]
+                        beta_over_h=beta_h, grid_rule_ok=not rule, periodic_y=periodic_y,
+                        warnings=tuple(notes + rule))
 
 
 def _nodes_on(grid: Grid, lattice: Grid) -> tuple[np.ndarray, np.ndarray]:
