@@ -27,7 +27,8 @@ R_VERIFIED = {   # r case -> {library function it may import: date José verifie
     "r02_hertz_contact": {"slippy.contact.hertz.hertz_full": "2026-10-27"},   # against Johnson / Hamrock-Brewe
 }
 
-CASES = sorted(p.parent for p in STUDIES.glob("*/*/__init__.py"))
+# cases sit in the r / v / s level folders; studies/outputs holds plot and report models, not cases
+CASES = sorted(p.parent for p in STUDIES.glob("*/*/__init__.py") if p.parents[1].name != "outputs")
 
 
 def _imports(path: pathlib.Path):
