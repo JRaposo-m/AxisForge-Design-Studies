@@ -17,7 +17,7 @@ from numerical_solvers import RichardsonOptions, richardson
 from studies.outputs.l000_axisforge.plots import shaft as plots
 
 from . import literature
-from .check import TOL_NODAL, along_shaft, check, literature_record, reference, section
+from .check import TOL_NODAL, along_shaft, check, literature_record, node_value, reference, richardson_verdict, section
 from .construction import LENGTH_MM, N_ELEMENTS, SUPPORTS_MM, THEORIES, uniform_nodes, uniform_shaft
 
 RESULTS = Path(__file__).resolve().parent / "results"
@@ -30,6 +30,7 @@ N_FINE = N_ELEMENTS[-1]
 # values are exact, so the series is flat); 2-node linear Timoshenko O(h^2) (kga_reduced_integration)
 ORDER = {"euler_bernoulli": 4.0, "timoshenko/cowper/single_point": 2.0, "timoshenko/hutchinson/single_point": 2.0,
          "timoshenko/cowper/exact": 2.0}
+FLAT_RTOL = 1e-8                # [-] Richardson "flat": level differences <= 1e-8 |f| (numerical_solvers default)
 CAPTION = ("uniform shaft L 200 mm, d 20 mm, E 210 GPa, nu 0.3; pins at 25 / 175 mm; F1 500 N at 75 mm (-Z), "
            "F2 200 N at 200 mm (+Y); no convention tag (forces only)")
 
@@ -38,12 +39,6 @@ def solve(system, settings, n_elements: int, *, kGA_override: float | None = Non
     """``RigidSupportFEMSolver`` on a uniform mesh of ``n_elements`` over the whole shaft."""
     return RigidSupportFEMSolver(settings, kGA_override=kGA_override).solve(
         system, extra_mandatory=uniform_nodes(n_elements, system.shaft.total_length))
-
-
-def _node(result, x_mm: float, key: str = "v_xz") -> float:
-    """Nodal value of a ShaftResults field at the node at ``x_mm``."""
-    i = int(np.argmin(np.abs(np.asarray(result.x_nodes) - x_mm)))
-    return float(np.asarray(getattr(result, key))[i])
 
 
 def mesh_series(system) -> tuple[list[dict], list[dict], dict]:
@@ -55,35 +50,22 @@ def mesh_series(system) -> tuple[list[dict], list[dict], dict]:
             checks.extend(check(system, r, settings))
             if int(n) == N_ELEMENTS[0]:
                 coarse[name] = r
-            return {"v_probe_mm": _node(r, X_PROBE_MM)}
+            return {"v_probe_mm": node_value(r, X_PROBE_MM, "v_xz")}
         # flat_atol = 0: the deflection is ~1e-2 mm, the AxisForge default 1e-9 absolute would call any
         # series flat (R3-10); stop_when_converged False: every level, for the figure
-        res = richardson(evaluate, N_ELEMENTS, options=RichardsonOptions(kind="count", flat_atol=0.0, max_p=ORDER[name],
-                                                                         stop_when_converged=False),
+        res = richardson(evaluate, N_ELEMENTS, options=RichardsonOptions(kind="count", flat_atol=0.0, flat_rtol=FLAT_RTOL,
+                                                                         max_p=ORDER[name], stop_when_converged=False),
                          name="v001_mesh", label=name)
-        EI, kGA = section(system, settings)
-        exact = float(reference(system, EI, kGA)["XZ"].v(X_PROBE_MM))
+        exact = float(reference(system, settings)["XZ"].v(X_PROBE_MM))
         for rec in res.records():
             conv.append({**rec, "theory": name, "r01_v_probe_mm": exact})
-        checks.append(_richardson_verdict(name, res.final["v_probe_mm"], exact))
+        # C5 tol = the flat_rtol of the run (RichardsonOptions default 1e-8, kept: physics review of v002)
+        checks.append(richardson_verdict(name, res.final["v_probe_mm"], exact, case="v001", plane="XZ",
+                                         quantity="v_probe extrapolated", n_elements=N_ELEMENTS[-1],
+                                         h_mm=LENGTH_MM / N_ELEMENTS[-1],
+                                         single_point=settings.integration_method == "single_point",
+                                         flat_rtol=FLAT_RTOL))
     return checks, conv, coarse
-
-
-def _richardson_verdict(name: str, fin, exact: float) -> dict:
-    """C5: the Euler-Bernoulli series is flat (nodally exact); C6: the one-point Timoshenko series extrapolates
-    to r01 within TOL_NODAL (its error is exactly c h^2, kga_reduced_integration); full integration RECORD."""
-    err = fin.f_extrapolated / exact - 1.0
-    if name == "euler_bernoulli":
-        cid, tol, ok = "C5", 0.0, fin.status == "flat"
-    elif THEORIES[name].integration_method == "single_point":
-        cid, tol, ok = "C6", TOL_NODAL, fin.status == "monotonic" and abs(err) <= TOL_NODAL
-    else:
-        cid, tol, ok = "T2", float("nan"), None
-    return {"case": "v001", "label": "richardson", "theory": name, "plane": "XZ", "n_elements": N_ELEMENTS[-1],
-            "h_mm": LENGTH_MM / N_ELEMENTS[-1], "uniform_mesh": True, "id": cid, "quantity": "v_probe extrapolated",
-            "unit": "mm", "max_abs_diff": abs(fin.f_extrapolated - exact), "ref_scale": abs(exact), "rel_err": err,
-            "tol": tol, "verdict": "RECORD" if ok is None else ("PASS" if ok else "MISS"),
-            "reference": f"r01, Richardson {fin.status}, p {fin.p:.6g}, GCI_fm {fin.gci_fine_medium:.3g}", "kGA_N": float("nan")}
 
 
 def shear_sweep(l_over_d=L_OVER_D, *, fem: bool = True) -> list[dict]:
@@ -92,11 +74,11 @@ def shear_sweep(l_over_d=L_OVER_D, *, fem: bool = True) -> list[dict]:
     out = []
     for lod in l_over_d:
         system = uniform_shaft(diameter_mm=LENGTH_MM / lod)
-        refs = [float(reference(system, *section(system, s))["XZ"].v(X_PROBE_MM)) for s in (eb, tim)]
+        refs = [float(reference(system, s)["XZ"].v(X_PROBE_MM)) for s in (eb, tim)]
         row = {"L_over_d": float(lod), "d_mm": LENGTH_MM / lod, "r01_v_eb_mm": refs[0], "r01_v_timoshenko_mm": refs[1],
                "ratio_r01": refs[1] / refs[0]}
         if fem:
-            v_eb, v_t = (_node(solve(system, s, N_FINE), X_PROBE_MM) for s in (eb, tim))
+            v_eb, v_t = (node_value(solve(system, s, N_FINE), X_PROBE_MM, "v_xz") for s in (eb, tim))
             row.update({"n_elements": N_FINE, "v_eb_mm": v_eb, "v_timoshenko_mm": v_t, "ratio_fem": v_t / v_eb,
                         "rel_err_ratio": (v_t / v_eb) / row["ratio_r01"] - 1.0})
         out.append(row)
@@ -117,7 +99,7 @@ def literature_series() -> tuple[list[dict], list[dict]]:
     w_eb = -P * L**3 / (3.0 * EI)                       # along -Z: negative, as the FEM's v_xz
     for row in t21.published:
         n = int(row["n_elements_printed"])
-        r_w = _node(solve(system, ri, 2 * n, kGA_override=k_slender), L) / w_eb
+        r_w = node_value(solve(system, ri, 2 * n, kGA_override=k_slender), L, "v_xz") / w_eb
         rows.append(literature_record("L1", "r_w", "-", r_w, row["value"], row["resolution"], source=t21.source,
                                       table="Table 2.1", n_elements_printed=n, element="2-node Timoshenko one-point",
                                       closed_form=1.0 - 1.0 / (4.0 * n * n) + 3.0 * EI / (k_slender * L**2)))
@@ -130,9 +112,9 @@ def literature_series() -> tuple[list[dict], list[dict]]:
     for load in ("point", "udl"):
         system = t11.build(load)
         x_mid = 0.5 * literature.ONATE_LENGTH_MM
-        exact = float(reference(system, *section(system, eb))["XZ"].v(x_mid))
+        exact = float(reference(system, eb)["XZ"].v(x_mid))
         for n in sorted({int(r["n_elements_printed"]) for r in t11.published if r["table"] == "Table 1.1"}):
-            err = 100.0 * (_node(solve(system, eb, 2 * n), x_mid) / exact - 1.0)
+            err = 100.0 * (node_value(solve(system, eb, 2 * n), x_mid, "v_xz") / exact - 1.0)
             printed = {r["element"]: r["value"] for r in t11.published
                        if r["table"] == "Table 1.1" and r["load"] == load and int(r["n_elements_printed"]) == n}
             # L2 is C1 on Onate's SI system (the 0.0 is ours: Onate prints only the CCB / CVB errors); it covers
@@ -152,14 +134,14 @@ def literature_series() -> tuple[list[dict], list[dict]]:
         system = t23.build(hL)
         x_mid = 0.5 * literature.ONATE_LENGTH_MM
         if row["element"] == "slender solution":
-            w_m = _node(solve(system, eb, 4), x_mid) / literature.M_TO_MM
+            w_m = node_value(solve(system, eb, 4), x_mid, "v_xz") / literature.M_TO_MM
             rows.append(literature_record("L3", "w_c slender", "m", w_m, row["value"], row["resolution"],
                                           source=t23.source, table="Table 2.3", h_over_L=hL, n_elements_printed=2,
                                           element="AxisForge Euler-Bernoulli"))
         else:
             k = literature.kga_square(hL)
-            w_m = _node(solve(system, ri, 64, kGA_override=k), x_mid) / literature.M_TO_MM
-            r01_m = float(reference(system, section(system, eb)[0], k)["XZ"].v(x_mid)) / literature.M_TO_MM
+            w_m = node_value(solve(system, ri, 64, kGA_override=k), x_mid, "v_xz") / literature.M_TO_MM
+            r01_m = float(reference(system, ri, kGA_override=k)["XZ"].v(x_mid)) / literature.M_TO_MM
             rows.append(literature_record("L4", "w_c thick", "m", w_m, row["value"], row["resolution"],
                                           source=t23.source, judged=False, table="Table 2.3", h_over_L=hL,
                                           n_elements_printed=32, element="AxisForge Timoshenko one-point",

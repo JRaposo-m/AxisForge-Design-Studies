@@ -29,7 +29,7 @@ from axisforge.core.materials.base import IsotropicElastic, Material, StrengthPr
 from axisforge.core.mechanical_system import ShaftSystem
 from axisforge.mesh.shaft.beam_model_settings import BeamModelSettings
 
-__all__ = ["uniform_shaft", "uniform_nodes", "ensure_material", "THEORIES", "N_ELEMENTS", "LENGTH_MM",
+__all__ = ["uniform_shaft", "add_pins", "uniform_nodes", "ensure_material", "THEORIES", "N_ELEMENTS", "LENGTH_MM",
            "DIAMETER_MM", "SUPPORTS_MM", "E_MPA", "NU", "MATERIAL_ID"]
 
 # --- shaft and material: EN 10025-2 S355 (old case) ---------------------------------------------
@@ -120,16 +120,36 @@ def uniform_shaft(*, length_mm: float = LENGTH_MM, diameter_mm: float = DIAMETER
     shaft = Shaft(label=label)
     shaft.add_section(ShaftSection(length=length_mm, diameter=diameter_mm, material_id=material_id, label=label))
     system = ShaftSystem(shaft, name=label)
-    for x, arrangement in zip(supports_mm, ("locating", "non-locating")):
-        system.add_bearing(Bearing.assemble(
-            family=DeepGrooveBallFamily(),
-            catalog=BearingCatalog(**_PIN_CATALOG, position=x, arrangement=arrangement, label=f"pin_{x:g}"),
-            geometry=dict(_PIN_GEOMETRY)))
+    add_pins(system, supports_mm)
     if loads is None:
         loads = [RadialLoad(x, F, theta_deg=t, label=name) for x, F, t, name in _LOADS]
     for load in loads:
         system.add_load(load)
     system.validate_or_raise()
+    return system
+
+
+def add_pins(system: ShaftSystem, supports_mm: tuple[float, float], label: str = "pin") -> ShaftSystem:
+    """Add two ideal pins to ``system``: the first position locating, the second non-locating.
+
+    Each pin is a 6204 of zero width (``# OPEN R5-21``): ``RigidSupportFEMSolver`` reads only its
+    position and arrangement (v = 0, u = 0 at the locating one, rotation free) and b = 0 adds no
+    extent nodes. Used by v001 ``uniform_shaft`` and v002 ``gear_system``.
+
+    Parameters
+    ----------
+    system : ShaftSystem
+        The shaft system, changed in place and returned.
+    supports_mm : (float, float)
+        Positions of the locating and the non-locating pin [mm].
+    label : str
+        Prefix of the bearing labels (``<label>_<x>``).
+    """
+    for x, arrangement in zip(supports_mm, ("locating", "non-locating")):
+        system.add_bearing(Bearing.assemble(
+            family=DeepGrooveBallFamily(),
+            catalog=BearingCatalog(**_PIN_CATALOG, position=x, arrangement=arrangement, label=f"{label}_{x:g}"),
+            geometry=dict(_PIN_GEOMETRY)))
     return system
 
 

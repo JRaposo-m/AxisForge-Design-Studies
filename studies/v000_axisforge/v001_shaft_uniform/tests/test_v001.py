@@ -7,7 +7,8 @@ from axisforge.core.loads import LoadPlane
 
 from studies.v000_axisforge.v001_shaft_uniform import (THEORIES, check, kga_reduced_integration, literature, section,
                                                        uniform_shaft)
-from studies.v000_axisforge.v001_shaft_uniform.study import _node, solve
+from studies.v000_axisforge.v001_shaft_uniform.check import node_value
+from studies.v000_axisforge.v001_shaft_uniform.study import solve
 
 
 @pytest.fixture(scope="module")
@@ -60,14 +61,14 @@ def test_onate_table_2_1_two_elements():
     EI, _ = section(s, THEORIES["euler_bernoulli"])
     L, P = literature.HALF_LENGTH_MM, literature.TIP_FORCE_N
     r = solve(s, THEORIES["timoshenko/cowper/single_point"], 4, kGA_override=literature.SLENDER_KGA_FACTOR * EI / L**2)
-    assert _node(r, L) / (-P * L**3 / (3 * EI)) == pytest.approx(0.9375, abs=1e-5)
+    assert node_value(r, L, "v_xz") / (-P * L**3 / (3 * EI)) == pytest.approx(0.9375, abs=1e-5)
 
 
 def test_onate_fig_1_17_central_deflection_in_mm():
     """|P| L^3 / (48 EI) = 131.25 m with Onate's printed I (Fig. 1.17, PDF p. 65), on 2 elements."""
     s = literature.cases()[1].build("point")
     r = solve(s, THEORIES["euler_bernoulli"], 2)
-    assert _node(r, 2000.0) / literature.M_TO_MM == pytest.approx(-4.0**3 / (48 * 47619.05 * 2.133e-7), rel=1e-9)
+    assert node_value(r, 2000.0, "v_xz") / literature.M_TO_MM == pytest.approx(-4.0**3 / (48 * 47619.05 * 2.133e-7), rel=1e-9)
 
 
 def test_literature_rows_carry_their_pages():

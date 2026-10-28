@@ -49,17 +49,21 @@ convention tag (R-003, J-16 do not apply); the couple trap CW-01 is v002's.
 
 ## 4. Public API (`__init__.py`)
 ```python
-check(system, result, settings, *, kGA_override=None, case="v001", label="") -> list[dict]   # solved shaft vs r01
-reference(system, EI, kGA) -> {"XZ": PlaneSolution, "XY": PlaneSolution}                   # r01 of the system's loads
-section(system, settings, *, kGA_override=None) -> (EI [N.mm^2], kGA [N] or None)          # r01 section_stiffness
-along_shaft(system, result, settings, ...) -> records for plots.shaft.deflection_along_shaft
+check(system, result, settings, *, settlements_mm=None, kGA_override=None, case="v001", label="") -> list[dict]
+reference(system, settings, *, kGA_override=None, h_mm=None, couples=True) -> {"XZ": ..., "XY": ...}  # r01 of the loads
+segments(system, settings, *, kGA_override=None, h_mm=None) -> [Segment]; section(...) -> (EI, kGA) of one section
+plane_couples(system, plane) -> [(x, C)] (J-16);  rigid_body(x, x_A, x_B, delta_A, delta_B) -> (v, theta)
+along_shaft(system, result, settings, *, settlements_mm=None, ...) -> records for plots.shaft.deflection_along_shaft
+node_value(result, x_mm, key);  richardson_verdict(name, fin, exact, ...) -> C5 / C6 record
 kga_reduced_integration(kGA, EI, h) -> kGA_eff [N]
 literature.cases() -> [LiteratureCase(name, build, published, source)]   # Onate Tables 2.1, 1.1, 2.3
 uniform_shaft(*, length_mm, diameter_mm, supports_mm, loads, material_id, label) -> ShaftSystem (unsolved)
 uniform_nodes(n_elements, length_mm) -> list[float];   THEORIES                      # mesh, beam models
 ```
-`check` takes any uniform shaft on two pins (one section, solid or hollow for Euler-Bernoulli), so v002 / s004 /
-s006 can pass theirs. `LiteratureCase` is imported from v101 (`# OPEN R5-22`, as R2-02).
+`check.py` is the one shaft comparator of v001 and v002 (merged at the v002 review, R5): any shaft on two pins,
+uniform or stepped, with forces, distributed forces, couples (`ExternalMoment`, tagged J-16) and pin settlements
+(rigid-body field), plus C7 (axial reaction at the locating pin vs statics) when an axial load is present; v002, s004,
+s006 pass theirs. `add_pins(system, supports_mm)` (construction) places the two zero-width pins. `LiteratureCase` is imported from v101 (`# OPEN R5-22`, as R2-02).
 
 ## 5. Inputs
 Shaft L 200 mm, d 20 mm, S355 (E 210 GPa, nu 0.3); pins at 25 mm (locating) and 175 mm (non-locating), two
