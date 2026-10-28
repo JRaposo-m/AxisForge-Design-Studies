@@ -23,7 +23,7 @@ _FLOOR = 1e-17          # [-] errors below this (exact zeros) are drawn here on 
 
 
 def deflection_along_shaft(records: list[dict], results_dir, case: str, *, supports_mm=(), loads_mm=(),
-                           variant: str = "", caption: str = "") -> Path:
+                           steps_mm=(), variant: str = "", caption: str = "") -> Path:
     """Deflection and cross-section rotation along a shaft, the computed nodes on the reference curves.
 
     Shows: two panels sharing the axial coordinate x [mm]: the deflection v [mm] (top) and the
@@ -31,7 +31,8 @@ def deflection_along_shaft(records: list[dict], results_dir, case: str, *, suppo
     colour: the records whose ``source`` is "FEM" are filled markers at the nodes, every other source
     (r01, a closed form) is a line: the first solid (dashed from the second series on), any further
     source of the same series dotted. Supports are open triangles on v = 0 with a dotted vertical line,
-    loads dash-dotted vertical lines; v = 0 is drawn thin.
+    loads dash-dotted vertical lines, section steps (changes of diameter) thin solid grey vertical
+    lines; v = 0 is drawn thin.
 
     Parameters
     ----------
@@ -42,16 +43,16 @@ def deflection_along_shaft(records: list[dict], results_dir, case: str, *, suppo
         Folder of the figure (the case's git-ignored ``results/``).
     case : str
         Case id, first part of the file name.
-    supports_mm, loads_mm : sequence of float
-        Support and load positions [mm] to mark.
+    supports_mm, loads_mm, steps_mm : sequence of float
+        Support, load and section-step positions [mm] to mark.
     variant, caption : str, optional
         Last part of the file name; caption line under the axes.
 
     Returns
     -------
     Path
-        ``<case>_shaft_deflection_along_shaft[_<variant>].png``. Called by v001 (to be reused by v002,
-        s004, s006).
+        ``<case>_shaft_deflection_along_shaft[_<variant>].png``. Called by v001, v002, s006 (to be
+        reused by s004).
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     with plt.style.context(PAPER):
@@ -79,10 +80,14 @@ def deflection_along_shaft(records: list[dict], results_dir, case: str, *, suppo
                 ax.axvline(xs, color="k", linestyle=":", linewidth=0.6)
             for xl in loads_mm:
                 ax.axvline(xl, color="0.4", linestyle="-.", linewidth=0.6)
+            for xd in steps_mm:
+                ax.axvline(xd, color="0.75", linestyle="-", linewidth=0.5)
         ax_v.plot(list(supports_mm), [0.0] * len(supports_mm), linestyle="none", marker="^", markersize=7,
                   markerfacecolor="none", color="k", label="support")
         if loads_mm:
             ax_v.plot([], [], color="0.4", linestyle="-.", linewidth=0.6, label="load")
+        if steps_mm:
+            ax_v.plot([], [], color="0.75", linestyle="-", linewidth=0.5, label="section step")
         ax_v.set_ylabel(r"$v$ (mm)")
         ax_t.set_ylabel(r"$\theta$ (mrad)")
         ax_t.set_xlabel(r"$x$ (mm)")
@@ -114,7 +119,7 @@ def error_vs_elements(records: list[dict], results_dir, case: str, *, tol: float
     Returns
     -------
     Path
-        ``<case>_shaft_error_vs_elements[_<variant>].png``. Called by v001.
+        ``<case>_shaft_error_vs_elements[_<variant>].png``. Called by v001, v002.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     with plt.style.context(PAPER):
@@ -174,7 +179,8 @@ def ratio_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label:
     -------
     Path
         ``<case>_shaft_ratio_sweep[_<variant>].png``. Called by v001 (shear effect vs L/d; Onate's
-        r_w vs elements).
+        r_w vs elements), v002 (share of the helical couple in a reaction vs the helix angle), s006 (mesh misalignment vs span
+        and helix angle, pin slopes vs span; y in um / mrad).
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     residual = any("rel_err" in r for r in records if r["source"] == "FEM")

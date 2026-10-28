@@ -17,10 +17,10 @@ from matplotlib.lines import Line2D
 from ...common.figures import MARKERS, figure_path, save
 from ...common.style import PAPER
 
-__all__ = ["relative_errors", "pressure_cut"]
+__all__ = ["relative_errors", "pressure_cut", "load_approach"]
 
 def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_label: str, variant: str = "",
-                    log_x: bool = True) -> Path:
+                    log_x: bool = True, caption: str = "") -> Path:
     """Absolute relative error of BEM quantities against their reference, along a sweep.
 
     Shows: ``|rel_err|`` [%] (log axis) against the swept parameter ``x``; one colour and marker
@@ -44,11 +44,14 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
         Last part of the file name.
     log_x : bool, optional
         Logarithmic x axis (default).
+    caption : str, optional
+        Caption line under the axes (inputs, convention tags such as J-16).
 
     Returns
     -------
     Path
-        ``<case>_contact_relative_errors[_<variant>].png``. Called by v101, v102, v103, v104.
+        ``<case>_contact_relative_errors[_<variant>].png``. Called by v101, v102, v103, v104, v003, v105,
+        v002 (shaft errors vs settlement and helix angle; the file name keeps ``contact``).
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     quantities = list(dict.fromkeys(r["quantity"] for r in records))
@@ -87,7 +90,7 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
         if any_tol:
             handles["tolerance"] = Line2D([], [], color="k", linestyle="--", linewidth=0.6)
         fig.legend(handles.values(), handles.keys(), loc="outside right center")
-        return save(fig, figure_path(results_dir, case, "contact", "relative_errors", variant))
+        return save(fig, figure_path(results_dir, case, "contact", "relative_errors", variant), caption)
 
 
 def pressure_cut(records: list[dict], results_dir, case: str, *, variant: str = "") -> Path:
@@ -127,3 +130,59 @@ def pressure_cut(records: list[dict], results_dir, case: str, *, variant: str = 
         ax.set_ylabel(r"$p/p_{0,\mathrm{H}}$")
         ax.legend(loc="upper right", fontsize=7)
         return save(fig, figure_path(results_dir, case, "contact", "pressure_cut", variant))
+
+
+def load_approach(records: list[dict], results_dir, case: str, *, slope: float = 1.5, variant: str = "",
+                  caption: str = "") -> Path:
+    """Normal load against approach of contacts, log-log: BEM points on their Hertz laws, with a slope guide.
+
+    Shows: the load ``Q`` [N] against the approach ``delta`` [um], both logarithmic, one colour per ``series``
+    (a contact); records whose ``source`` is "BEM" are filled markers, any other source (the Hertz law
+    ``Q = K delta^1.5``) a line of the same colour. A thin dotted line of slope ``slope`` through the first
+    BEM point of the first series lets the exponent be read from the shape: a Hertz contact runs parallel to it,
+    a conforming one bends away at large approach.
+
+    Parameters
+    ----------
+    records : list of dict
+        Fields: ``series`` (str), ``source`` ("BEM" or the law's name), ``delta_m``, ``Q_N``.
+    results_dir, case, variant, caption
+        As :func:`relative_errors` (``caption`` a line under the axes).
+    slope : float, optional
+        Exponent of the guide line (1.5 for a point contact).
+
+    Returns
+    -------
+    Path
+        ``<case>_contact_load_approach[_<variant>].png``. Called by s101.
+    """
+    series = list(dict.fromkeys(r["series"] for r in records))
+    with plt.style.context(PAPER):
+        fig, ax = plt.subplots(figsize=(5.0, 3.6))
+        colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        for k, s in enumerate(series):
+            colour = colours[k % len(colours)]
+            for source in dict.fromkeys(r["source"] for r in records if r["series"] == s):
+                rows = sorted((r for r in records if r["series"] == s and r["source"] == source),
+                              key=lambda r: r["delta_m"])
+                d = [1e6 * r["delta_m"] for r in rows]
+                Q = [r["Q_N"] for r in rows]
+                if source == "BEM":
+                    ax.plot(d, Q, linestyle="none", marker=MARKERS[k % len(MARKERS)], markersize=4, color=colour,
+                            label=f"{s}, BEM")
+                else:
+                    ax.plot(d, Q, linestyle="-" if k == 0 else "--", linewidth=0.8, color=colour, label=f"{s}, {source}")
+        first = sorted((r for r in records if r["series"] == series[0] and r["source"] == "BEM"),
+                       key=lambda r: r["delta_m"])
+        if first:
+            d0, Q0 = 1e6 * first[0]["delta_m"], first[0]["Q_N"]
+            d = np.array([d0, 1e6 * first[-1]["delta_m"]])
+            ax.plot(d, Q0 * (d / d0) ** slope, color="0.5", linestyle=":", linewidth=0.7, label=f"slope {slope:g}")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel(r"approach $\delta$ [um]")
+        ax.set_ylabel(r"normal load $Q$ [N]")
+        ax.legend(fontsize=6, loc="upper left")
+        if caption:
+            fig.supxlabel(caption, fontsize=7)
+        return save(fig, figure_path(results_dir, case, "contact", "load_approach", variant))
