@@ -14,19 +14,10 @@ import matplotlib.ticker
 import numpy as np
 from matplotlib.lines import Line2D
 
+from ...common.figures import MARKERS, figure_path, save
 from ...common.style import PAPER
 
 __all__ = ["relative_errors", "pressure_cut"]
-
-_MARKERS = "osD^v<>"
-
-
-def _path(results_dir, case: str, function: str, variant: str) -> Path:
-    """``results_dir/<case>_contact_<function>[_<variant>].png``, the folder created."""
-    out = Path(results_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    return out / f"{case}_contact_{function}{'_' + variant if variant else ''}.png"
-
 
 def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_label: str, variant: str = "",
                     log_x: bool = True) -> Path:
@@ -76,7 +67,7 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
                     continue
                 colour = colours[k % len(colours)]
                 (handles[q],) = ax.plot([r[x] for r in rows], [100.0 * max(abs(r["rel_err"]), 1e-12) for r in rows],
-                                        marker=_MARKERS[k % len(_MARKERS)], color=colour, linestyle="-",
+                                        marker=MARKERS[k % len(MARKERS)], color=colour, linestyle="-",
                                         linewidth=0.5, label=q)
                 # nan > 0 is False: rows without a tolerance draw none
                 tol = [(r[x], 100.0 * r["tol"]) for r in rows
@@ -96,10 +87,7 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
         if any_tol:
             handles["tolerance"] = Line2D([], [], color="k", linestyle="--", linewidth=0.6)
         fig.legend(handles.values(), handles.keys(), loc="outside right center")
-        path = _path(results_dir, case, "relative_errors", variant)
-        fig.savefig(path, format="png")
-        plt.close(fig)
-    return path
+        return save(fig, figure_path(results_dir, case, "contact", "relative_errors", variant))
 
 
 def pressure_cut(records: list[dict], results_dir, case: str, *, variant: str = "") -> Path:
@@ -132,13 +120,10 @@ def pressure_cut(records: list[dict], results_dir, case: str, *, variant: str = 
             rows = [r for r in records if r["axis"] == name]
             # the first series larger: both stay visible where they coincide (a circle)
             ax.plot([r["xi"] for r in rows], [r["p_over_p0_ref"] for r in rows], linestyle="none",
-                    marker=_MARKERS[k % len(_MARKERS)], markersize=4.0 if k == 0 else 2.5, label=f"BEM, {name}")
+                    marker=MARKERS[k % len(MARKERS)], markersize=4.0 if k == 0 else 2.5, label=f"BEM, {name}")
         ax.set_xlim(-1.3, 1.3)
         ax.set_ylim(0.0, 1.1)
         ax.set_xlabel(r"$\xi$ = coordinate / Hertz semi-axis")
         ax.set_ylabel(r"$p/p_{0,\mathrm{H}}$")
         ax.legend(loc="upper right", fontsize=7)
-        path = _path(results_dir, case, "pressure_cut", variant)
-        fig.savefig(path, format="png")
-        plt.close(fig)
-    return path
+        return save(fig, figure_path(results_dir, case, "contact", "pressure_cut", variant))

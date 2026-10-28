@@ -8,6 +8,8 @@ only when a case needs more than that.
 ```text
 outputs/
   common/style/      paper.mplstyle (house paper style, ported from figures/paper-style 19cc689), PAPER
+  common/figures.py  figure_path, save, MARKERS: file naming and saving shared by every plot module
+  l000_axisforge/    plots/shaft.py
   l100_dry_contact/  plots/contact.py
   tests/             the index test below
 ```
@@ -22,5 +24,8 @@ outputs/
 ## Index
 | function | file | what it shows | record fields | called by |
 |---|---|---|---|---|
+| `deflection_along_shaft` | `l000_axisforge/plots/shaft.py` | deflection v [mm] and rotation theta [mrad] along x [mm] of one bending plane: FEM nodes (filled markers) on the reference curves (lines; a second reference of a series dotted), supports and loads marked | `series`, `source`, `x_mm`, `v_mm`, `theta_rad` | v001 |
+| `error_vs_elements` | `l000_axisforge/plots/shaft.py` | `abs(rel_err)` [-] vs number of elements (log-log), tolerance line with the pass band shaded, optional `n^-p` guides | `n_elements`, `series`, `rel_err` | v001 |
+| `ratio_sweep` | `l000_axisforge/plots/shaft.py` | a dimensionless ratio along a sweep: FEM (filled), published (open), closed form (line), limit line; residual panel when FEM rows carry `rel_err` | `<x>`, `y`, `series`, `source`, opt. `rel_err` | v001 |
 | `relative_errors` | `l100_dry_contact/plots/contact.py` | `abs(rel_err)` [%] of BEM quantities vs a swept parameter, one panel per series, tolerances dashed | `<x>`, `quantity`, `series`, `rel_err`, opt. `tol`, `verdict` | v101, v102, v103, v104 |
 | `pressure_cut` | `l100_dry_contact/plots/contact.py` | BEM `p/p0_H` along cuts through the centre vs the Hertz profile `sqrt(1 - xi^2)` | `axis`, `xi`, `p_over_p0_ref` | v101, v102, v103 |
