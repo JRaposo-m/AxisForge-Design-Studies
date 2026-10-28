@@ -1,0 +1,11 @@
+source_key,location,pdf_page,quantity,symbol,value,unit,read_from,note
+Hernot2000,sec. 2.3,3,number of balls,Z,16,-,image,218 angular contact ball bearing (Harris example 6.7 of an earlier edition)
+Hernot2000,sec. 2.3,3,load-deflection factor (both contacts),k,423000,N mm^-1.5,image,
+Hernot2000,sec. 2.3,3,exponent,n,1.5,-,image,
+Hernot2000,sec. 2.3,3,contact angle,alpha,40,deg,image,
+Hernot2000,sec. 2.3,3,radial load,F_r,178000,N,image,as printed; Q_max 6544 N and the displacements are those of 17800 N: hernot_218 applies 1/10 (FLAG; OPEN R5-13)
+Hernot2000,sec. 2.3,3,thrust load,F_a,178000,N,image,as printed; hernot_218 applies 1/10 (FLAG; OPEN R5-13)
+Hernot2000,sec. 2.3,3,maximum ball load,Q_max,6544,N,image,
+Hernot2000,Table 1 iteration 7,3,axial displacement,delta_a,-0.00926,mm,image,
+Hernot2000,Table 1 iteration 7,3,radial displacement,delta_r,0.08882,mm,image,
+Hernot2000,Table 1 iteration 7,3,load distribution factor,eps,0.45627,-,image,
