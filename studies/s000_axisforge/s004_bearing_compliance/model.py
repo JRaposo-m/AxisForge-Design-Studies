@@ -63,7 +63,8 @@ def support_force(result, k: int) -> np.ndarray:
     return np.array([float(result.R_xy[k]), float(result.R_xz[k])])
 
 
-def ring_displacement(bearing, R_yz, psi_yz, *, sign: float = DISPLACEMENT_SIGN) -> dict:
+def ring_displacement(bearing, R_yz, psi_yz, *, sign: float = DISPLACEMENT_SIGN, Fa_N: float = 0.0,
+                      tol: float | None = None) -> dict:
     """Shaft-centre displacement at one bearing from its ISO/TS 16281 solve at the FEM reaction and a tilt.
 
     Parameters
@@ -76,12 +77,17 @@ def ring_displacement(bearing, R_yz, psi_yz, *, sign: float = DISPLACEMENT_SIGN)
         Shaft slope at the bearing, (theta_xy, theta_xz) [rad].
     sign : float
         -1: the shaft centre moves along -R_hat (statics, default); +1 is unphysical, a sensitivity check only.
+    Fa_N : float
+        Axial load of the bearing [N], signed in the solver's axial sense (s005; s004 runs Fa = 0).
+    tol : float or None
+        Tolerance of the nested root (s001 ``solve_bearing``); None: AxisForge's default (s004).
 
     Returns
     -------
     dict
         ``d_yz`` [mm] (array), ``delta_r_mm``, ``psi_in_rad`` (fed to the solver: psi . R_hat, AxisForge's
-        projection), ``psi_n_rad`` (normal part, dropped by the solver), ``Q_max_N``, ``n_loaded``,
+        projection), ``psi_n_rad`` (normal part, dropped by the solver), ``Mz_Nmm`` (the moment on the rings of
+        ISO/TS 16281 Eq. (18) / (46), the solver's sign, s005), ``Q_max_N``, ``n_loaded``,
         ``ok``, ``balanced``, ``residual_N``, ``analysis`` (the AxisForge result), ``error``.
 
     Warnings
@@ -98,12 +104,12 @@ def ring_displacement(bearing, R_yz, psi_yz, *, sign: float = DISPLACEMENT_SIGN)
     psi_n = float(psi @ np.array([-r_hat[1], r_hat[0]]))
     # bearing-solver azimuth phi_Fr, measured from +Z toward +Y: Fr_xz = Fr cos(phi), Fr_xy = Fr sin(phi) (s001
     # load_node, contact_solver.py:194); the AxisForge README (D-0010) measures load angles from +Y toward +Z
-    node = load_node(bearing, Fr, phi_Fr_rad=math.atan2(R[0], R[1]))
-    analysis, post, error = solve_bearing(bearing, node, psi_rad=psi_in, postprocess=False)
+    node = load_node(bearing, Fr, Fa_N, phi_Fr_rad=math.atan2(R[0], R[1]))
+    analysis, post, error = solve_bearing(bearing, node, psi_rad=psi_in, postprocess=False, tol=tol)
     case, _ = records(bearing, analysis, postprocessed=post, error=error)
     delta_r = case.get("delta_r_mm", math.nan)
     return {"d_yz": sign * delta_r * r_hat, "delta_r_mm": delta_r, "psi_in_rad": psi_in, "psi_n_rad": psi_n,
-            "Q_max_N": case.get("Q_max_N", math.nan), "n_loaded": case.get("n_loaded", 0), "ok": case["ok"],
+            "Mz_Nmm": case.get("Mz_Nmm", math.nan), "Q_max_N": case.get("Q_max_N", math.nan), "n_loaded": case.get("n_loaded", 0), "ok": case["ok"],
             "balanced": case.get("balanced", False), "residual_N": case.get("residual_N", math.nan),
             "analysis": analysis, "error": error}
 

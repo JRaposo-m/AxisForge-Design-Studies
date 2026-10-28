@@ -71,7 +71,8 @@ def load_node(bearing, Fr_N: float, Fa_N: float = 0.0, *, phi_Fr_rad: float = 0.
                            Fr=Fr_N, Fa=Fa_N)
 
 
-def solve_bearing(bearing, node: BearingNodeData, *, psi_rad: float | None = 0.0, postprocess: bool = True):
+def solve_bearing(bearing, node: BearingNodeData, *, psi_rad: float | None = 0.0, postprocess: bool = True,
+                  tol: float | None = None):
     """ISO/TS 16281 load distribution of ONE bearing at the loads of its node (AxisForge solver).
 
     Parameters
@@ -85,6 +86,9 @@ def solve_bearing(bearing, node: BearingNodeData, *, psi_rad: float | None = 0.0
     postprocess : bool
         Also the secant stiffness and the ISO/TS 16281 reference life L10r. It fails on its own
         when no element is loaded; the solve is then repeated without it (old ``solve_bearing``).
+    tol : float or None
+        Tolerance of the solver's root find (``run_root``, a relative step for hybr) [-]; None keeps AxisForge's
+        ``SOLVER_TOLERANCE`` (1e-6). s005 passes 1e-12 for a clean finite-difference Jacobian of Mz.
 
     Returns
     -------
@@ -102,7 +106,8 @@ def solve_bearing(bearing, node: BearingNodeData, *, psi_rad: float | None = 0.0
     error = ""
     for post in ((True, False) if postprocess else (False,)):
         try:
-            analysis = cls(psi_input=psi_rad is not None, postprocess=post).solve(
+            kwargs = {} if tol is None else {"tol": tol}
+            analysis = cls(psi_input=psi_rad is not None, postprocess=post, **kwargs).solve(
                 None, {label: bearing}, nodes, psi_override=psi_override)[label]
             return analysis, post, error
         except Exception as exc:                                     # noqa: BLE001 -- recorded, not hidden

@@ -76,3 +76,13 @@ def test_guard_reference_is_fa_for_a_symmetric_groove():
     """R5-44: a deep groove bearing with clearance under Fa < 0 runs at alpha < 0 legitimately; no false SB-45."""
     case = _solve(deep_groove(0.02), 5000.0, -2500.0)[0]
     assert case["alpha_guard"] is True and case["alpha_max_deg"] < 0.0
+
+
+def test_solve_bearing_tol_keyword_keeps_the_default():
+    """s005 added ``tol`` (review of s005): None is AxisForge's default, so the s001 results need no re-run; a tight
+    tol lands on the same root to the default's accuracy."""
+    b, node = deep_groove(0.02), load_node(deep_groove(0.02), 5000.0, 1000.0)
+    default = records(b, solve_bearing(b, node)[0])[0]
+    assert records(b, solve_bearing(b, node, tol=None)[0])[0]["delta_r_mm"] == default["delta_r_mm"]
+    tight = records(b, solve_bearing(b, node, tol=1e-12)[0])[0]
+    assert tight["delta_r_mm"] == pytest.approx(default["delta_r_mm"], rel=1e-6) and tight["residual_N"] < 1e-8
