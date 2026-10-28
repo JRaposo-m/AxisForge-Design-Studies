@@ -16,7 +16,8 @@ __all__ = ["newton_history"]
 
 
 def newton_history(records: list[dict], results_dir, case: str, *, tol: float | None = None, variant: str = "",
-                   caption: str = "") -> Path:
+                   caption: str = "", x_label: str = r"Newton iteration $k$ [-]",
+                   y_label: str = r"$\|F / f_\mathrm{scale}\|$ [-]") -> Path:
     """Scaled residual norm against the Newton iteration, one line per solve, with the stopping tolerance.
 
     Shows: ``residual_norm`` (``||F / f_scale||``) [-] on a log axis against the iteration ``k`` [-], one colour
@@ -35,11 +36,14 @@ def newton_history(records: list[dict], results_dir, case: str, *, tol: float | 
         ``NewtonOptions.residual_abs`` of the solves [-].
     variant, caption : str, optional
         Last part of the file name; caption line under the axes.
+    x_label, y_label : str, optional
+        Axis labels; give them when the history is not a Newton residual (s004: fixed-point passes, max |delta
+        psi| [rad]).
 
     Returns
     -------
     Path
-        ``<case>_convergence_newton_history[_<variant>].png``. Called by s102.
+        ``<case>_convergence_newton_history[_<variant>].png``. Called by s102, v005, s004.
     """
     labels = list(dict.fromkeys(r["label"] for r in records))
     with plt.style.context(PAPER):
@@ -53,7 +57,7 @@ def newton_history(records: list[dict], results_dir, case: str, *, tol: float | 
         if tol is not None:
             ax.axhline(tol, color="k", linestyle="--", linewidth=0.6, label=f"tolerance {tol:g}")
         ax.set_yscale("log")
-        ax.set_xlabel(r"Newton iteration $k$ [-]")
-        ax.set_ylabel(r"$\|F / f_\mathrm{scale}\|$ [-]")
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
         ax.legend(fontsize=5, ncol=1, loc="lower left")
         return save(fig, figure_path(results_dir, case, "convergence", "newton_history", variant), caption)

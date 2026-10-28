@@ -151,7 +151,8 @@ def error_vs_elements(records: list[dict], results_dir, case: str, *, tol: float
 
 
 def ratio_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label: str, y_label: str,
-                limit: float | None = None, log_x: bool = True, variant: str = "", caption: str = "") -> Path:
+                limit: float | None = None, log_x: bool = True, legend_outside: bool = False, variant: str = "",
+                caption: str = "") -> Path:
     """A dimensionless result along a sweep: computed points, the closed-form curve, printed values.
 
     Shows: ``y`` [-] against the swept ``x``; per ``series`` one colour; ``source`` "FEM" = filled
@@ -172,6 +173,8 @@ def ratio_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label:
         Limit value of ``y``.
     log_x : bool, optional
         Logarithmic x axis (default).
+    legend_outside : bool, optional
+        Legend to the right of the axes (many series; s004), instead of the best place inside.
     results_dir, case, variant, caption
         As :func:`deflection_along_shaft`.
 
@@ -218,5 +221,8 @@ def ratio_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label:
         else:
             ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        ax.legend(fontsize=7, loc="best")
+        if legend_outside:
+            ax.legend(fontsize=5, loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
+        else:
+            ax.legend(fontsize=7, loc="best")
         return save(fig, figure_path(results_dir, case, "shaft", "ratio_sweep", variant), caption)
