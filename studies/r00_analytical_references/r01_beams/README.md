@@ -1,4 +1,4 @@
-# r01_beams: Euler-Bernoulli and Timoshenko beams on two pins or one fixed end
+# r01_beams: Euler-Bernoulli and Timoshenko beams on two pins, one fixed end, or several rigid or elastic supports
 
 ## 1. Reference
 Closed-form deflection, rotation, bending moment and shear force of a beam on two pin supports or
@@ -10,6 +10,10 @@ shaft FEM: v001 (uniform shaft) and v002 (stepped shaft with a gear load; the co
 helical mesh, CW-01, CW-02). The uniform solver is a special case of the stepped one, kept as an
 independent cross-check (C7, C15), except for the statics: both take the reactions from the shared
 `_reactions` (equilibrium is tested on its own, C8, C14, and the closed forms C3-C5, C10-C13 catch a sign).
+**Extension (R5, SW-03):** `supported_beam.solve_supported` solves the statically INDETERMINATE beam on any number of
+supports (rigid or linear radial springs, rotational springs up to a clamp, prescribed settlements and rotations,
+per-span EI through the segments) by the force method on the exact determinate solver: judge of v005 (shaft on three
+supports and springs).
 
 ## 2. Sources
 | Key | What | Equation / figure | PDF page |
@@ -27,17 +31,22 @@ library. The cantilever cases C11-C12 are printed in Onate (2.35)-(2.36) (tip fo
 EB and Timoshenko; tip moment: the flexibility entries L^2/(2 EI), L/EI); the clamp of C11-C13 is Onate (2.29). The
 couple on a simply supported span (C10), the mirrored and interior clamps and the cantilever under uniform q (C13)
 are derived in the test docstrings by Macaulay integration of EI v'' = M (no print held).
+| Harris2007_vol2 | sign senses of ch. 9: y and delta_r DOWN (along P), theta = dy/dx, F up on the shaft, M_1 CCW, M_2 CW; r01 map delta = -settlement, theta_H = -rotation, F = R, M_1 = C[0], M_2 = -C[1] (R5-141 answered) | Eqs 9.6-9.10, Fig. 9.4 | 278-279 |
+| Harris2007_vol2 | two-bearing slope-deflection equations: support forces and moments from prescribed end rotations and deflections | Eqs 9.24-9.27 | 281 |
+| Harris2007_vol2 | three-bearing shaft: the same per span, Eq. 9.30 prints 3 (delta_1 - delta_2)/l where Eq. 9.24 has 2 (FLAG: use 9.24) | Eqs 9.28-9.35 | 282-284 |
+| Harris2007_vol2 | three bearings, point load in span 1, rigid bearings (no moment loads, bearing deflection differences negligible, p. 284): F_1, F_2, F_3 | Eqs 9.42-9.44, Fig. 9.9 | 284-285 |
 | Cowper1966 | shear correction factor, solid circle, 6 (1 + nu) / (7 + 6 nu); J. Appl. Mech. 33(2) 335-340 | Table 1 (unverified) | MISSING (not in the library) |
 | Hutchinson2001 | shear correction factor, solid circle, 6 (1 + nu)^2 / (7 + 12 nu + 4 nu^2); J. Appl. Mech. 68(1) 87-92 | (to confirm) | MISSING |
 Onate2013_vol2: book page = PDF page - 31. The kappa formulas are kept as they were before R1; their
 equation numbers wait for the two papers.
 
 ## 3. Scope and validity
-Linear elastic, small slopes, statically determinate only: two ideal pins (v = 0, rotation free) at
+Linear elastic, small slopes. `solve_uniform` and `solve_stepped`: statically determinate only, two ideal pins (v = 0, rotation free) at
 `x_A < x_B`, or one ideal fixed end at `x_A`, at an end or inside the beam (`x_B=None`: v = 0 and theta = 0, theta the rotation of the
 cross-section, so the shear strain is free at the clamp: the Timoshenko cantilever gains P L / kGA). A third
 support, a pin with a fixed end or two fixed ends make the beam hyperstatic: out of scope, and the API has
-no argument for them (`# OPEN SW-03`). Section
+no argument for them in `solve_uniform` / `solve_stepped`; `solve_supported` (below) takes them (SW-03 answered
+by the R5 extension). Section
 constant per segment with abrupt steps (fillets do not change EI or kGA); kappa constant per
 segment; one bending plane (a circular shaft loaded in two planes is two calls, resultant by
 `hypot`). Point loads may lie outside the span (overhangs). Distributed loads: polynomial intensity
@@ -68,6 +77,9 @@ from studies.r00_analytical_references.r01_beams import (section_stiffness, solv
 section_stiffness(E, nu, d_o, d_i=0.0, kappa="cowper" | "hutchinson" | None) -> (EI [N.mm^2], kGA [N] or None)
 solve_uniform(loads, x_A, x_B, EI, kGA, *, couples=()) -> PlaneSolution
 solve_stepped(point_loads, distributed, x_A, x_B, segments, length, *, couples=()) -> SteppedPlaneSolution
+solve_supported(point_loads, distributed, supports, segments, length, *, couples=()) -> SupportedSolution
+Support(x, k_r=inf, k_theta=0.0, settlement=0.0, rotation=0.0)   # [mm], [N/mm], [N.mm/rad], [mm], [rad]
+# SupportedSolution: .v(x), .theta(x), .M(x), .V(x), .R [N] and .C [N.mm] per support (forces and couples on the beam)
 # loads: [(x [mm], F [N])]; couples: [(x [mm], C [N.mm])]; x_B=None: fixed end at x_A; kGA None: EB
 Segment(x_lo, x_hi, EI, kGA=None)          DistributedLoad(x_lo, x_hi, q)      # q(x) [N/mm]
 # both solutions: .v(x), .theta(x), .M(x), .V(x), .R_A, .R_B (None at a fixed end), .C_A (0 on two pins);
@@ -103,6 +115,18 @@ are MISSING). No `published/` until one is.
 | C14 | equilibrium of forces and couples, pins and fixed end, both solvers; M = V = 0 past the last load | identity | 1e-12 / 1e-9 |
 | C15 | uniform = stepped with forces, couples, pins or fixed end: v, theta, M, V, C_A | identity | 1e-12 of max v / 1e-10 |
 | C16 | EB = Timoshenko as kGA -> inf with couples, pins and fixed end (v, theta) | limit | rel 1e-12 |
+| C17 | three rigid supports, point load in span 1: F_1, F_2, F_3 of Harris2007_vol2 Eqs 9.42-9.44 (PDF p. 285); inputs l1 100, l2 150, a 40 mm, P 1000 N are this case's own (Harris prints no numbers) | printed equations | rel 1e-12 |
+| C18 | Clapeyron: M over the middle support -P a b (l1 + a) / (2 l1 (l1 + l2)) | closed form (three-moment equation) | rel 1e-10 |
+| C19 | two equal spans under q: reactions 3/8, 5/4, 3/8 q L, M = -q L^2/8 over the middle | closed form | rel 1e-12 / 1e-9 |
+| C20 | middle support settled by s: R = 6 EI s / L^3, ends -R/2, v = s there | closed form (pin-pin 2L) | rel 1e-12 |
+| C21 | spring limits: k_r = 1e15 equals rigid; k_r = 1e-9 equals the two-pin `solve_stepped` | limit | 1e-9 |
+| C22 | two radial springs (determinate): reactions of the pins, ends sink by R/k, M unchanged | identity | rel 1e-12 |
+| C23 | clamp (k_theta = inf) and pin under q: 5/8, 3/8 q L, clamp couple q L^2/8, theta(0) = 0 | closed form | rel 1e-12 |
+| C24 | clamped-clamped span, downward P, both ends settled and rotated: SIGNED F_1, M_1, F_2, M_2 of Harris Eqs 9.24-9.27 (PDF p. 281) with delta = -settlement, theta_H = -rotation, F = R, M_1 = C[0], M_2 = -C[1] (senses Eqs 9.6-9.10, Fig. 9.4, PDF p. 278-279); prescribed end state; equilibrium | printed equations (signed) | rel 1e-12 |
+| C25 | per-span EI keeps equilibrium; Timoshenko kGA -> inf equals EB; shear makes it softer | identity / limit | rel 1e-12 / 1e-7 |
+| C26 | clamp with a vanishing spring is the cantilever (P, P a) | limit | rel 1e-9 |
+| C27 | fewer than two supports, coincident, outside, k_r <= 0, k_theta < 0 raise | validity | exact |
+C17-C27 are in `tests/test_r01_supports.py`; `test_r01.py` is unchanged.
 Test values (C10-C16): steel shaft E 210 GPa, nu 0.3, d 30 mm (EI = 8.3498e9 N.mm^2, Cowper kGA = 5.0605e7 N),
 L = 200 mm, P = 1000 N, C0 = 5e4 N.mm at a = 60 mm, q = 5 N/mm.
 
@@ -112,6 +136,9 @@ NumPy only; nothing in this repository, AxisForge, SlipPY or the bridge (checked
 
 ## 8. How to run
 ```bat
-python -m pytest studies\r00_analytical_references\r01_beams
+python -m pytest studies\r00_analytical_references\r01_beams --doctest-modules
 ```
+`--doctest-modules` also runs the docstring examples of `uniform_beam`, `stepped_beam` and `supported_beam`; the
+default `python -m pytest` does not. `SupportedSolution.M` / `.V` return the right-hand side of a jump at a support
+(compare at x_s +/- eps).
 No `study.py` and no `results/` (SQ-08).
