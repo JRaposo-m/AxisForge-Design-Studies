@@ -175,7 +175,8 @@ def hertz_problem(system, settings, n_elements: int, *, K: float = K_HERTZ, n: f
     dict
         ``residual``, ``jacobian`` (callables of v [mm]), ``x0`` [mm], ``x_scale`` [mm], ``f_scale`` [N],
         ``positions`` [mm] (bearings in ``system.bearings`` order), ``force`` (v -> bearing forces on the shaft
-        [N]), ``expand`` (v -> ShaftResults of the full shaft).
+        [N]), ``expand`` (v -> ShaftResults of the full shaft), ``K_c`` [N/mm] and ``f_c`` [N] (the condensed
+        beam, for another bearing law: s003).
     """
     extra = uniform_nodes(n_elements, system.shaft.total_length)
     r = RigidSupportFEMSolver(settings).solve(system, extra_mandatory=extra)
@@ -216,7 +217,8 @@ def hertz_problem(system, settings, n_elements: int, *, K: float = K_HERTZ, n: f
         return _shaft_result(r, system, *((zero, d) if p == "xy" else (d, zero)))
 
     return {"residual": residual, "jacobian": jacobian, "x0": x0, "x_scale": np.full(len(m), d0),
-            "f_scale": np.full(len(m), P), "positions": positions, "force": force, "expand": expand}
+            "f_scale": np.full(len(m), P), "positions": positions, "force": force, "expand": expand,
+            "K_c": K_c, "f_c": f_c}
 
 
 def solve_hertz(system, settings, n_elements: int, *, K: float = K_HERTZ, n: float = N_HERTZ, label: str = ""):
