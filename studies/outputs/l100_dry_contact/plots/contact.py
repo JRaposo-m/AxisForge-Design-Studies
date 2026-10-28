@@ -54,7 +54,8 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
     -------
     Path
         ``<case>_contact_relative_errors[_<variant>].png``. Called by v101, v102, v103, v104, v003, v105,
-        v002 (shaft errors vs settlement and helix angle; the file name keeps ``contact``), s101, v005, s003.
+        v002 (shaft errors vs settlement and helix angle; the file name keeps ``contact``), s101, v005, s003,
+        s005 (v002.check errors vs span).
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     quantities = list(dict.fromkeys(r["quantity"] for r in records))

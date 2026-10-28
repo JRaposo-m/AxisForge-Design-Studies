@@ -147,7 +147,7 @@ def load_zone_sweep(records: list[dict], results_dir, case: str, *, x: str, x_la
     Returns
     -------
     Path
-        ``<case>_bearing_loads_load_zone_sweep[_<variant>].png``. Called by v003, s001, s002, v105, s104, s102.
+        ``<case>_bearing_loads_load_zone_sweep[_<variant>].png``. Called by v003, s001, s002, v105, s104, s102, s005.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     limits = limits or {}

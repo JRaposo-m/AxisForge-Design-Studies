@@ -43,7 +43,7 @@ def newton_history(records: list[dict], results_dir, case: str, *, tol: float | 
     Returns
     -------
     Path
-        ``<case>_convergence_newton_history[_<variant>].png``. Called by s102, v005, s004, s003.
+        ``<case>_convergence_newton_history[_<variant>].png``. Called by s102, v005, s004, s003, s005.
     """
     labels = list(dict.fromkeys(r["label"] for r in records))
     with plt.style.context(PAPER):
