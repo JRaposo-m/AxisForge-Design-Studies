@@ -45,7 +45,8 @@ Hamrock: PDF page = printed page + 5. Hernot: journal page = PDF page + 82. Valu
 from studies.v000_axisforge.v003_iso16281_load_zone import check, elements, r03_inputs, hertz_series_cp, literature
 check(bearing, result, *, case="v003", label="") -> list[dict]     # C1-C7 records
 elements(bearing, result, *, case="v003", label="") -> list[dict]  # Q_j per element, AxisForge and r03
-r03_inputs(bearing) -> dict      # kind, n, K_n [N/m^n], alpha_rad, clearance_m: the one SI conversion
+r03_inputs(bearing) -> dict      # kind, n, K_n [N/m^n], alpha_rad, clearance_m: the one SI conversion for r03
+r02_bodies(bearing, race) -> dict  # r1_m, r2_m, E_Pa, nu, r_g_m: the one SI conversion for r02 (also used by v105)
 hertz_series_cp(bearing) -> float  # c_p [N/mm^1.5] from r02 (each contact) and r03 Eq. 7.6
 deep_groove_6210(s_mm), angular_contact_7210(alpha_0_deg), cylindrical_nu210(s_mm), sign_check_shaft(theta_deg)
 literature.cases()               # Hamrock 1983 sec. 14.2 (AxisForge system), Hernot 2000 (r03 inputs only)

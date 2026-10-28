@@ -31,9 +31,11 @@ from studies.r00_analytical_references.r02_hertz_contact import hertz
 from studies.r00_analytical_references.r03_load_zone import (ball_deflection, ring_load_distribution,
                                                              solve_ring_displacement)
 
-__all__ = ["check", "elements", "r03_inputs", "hertz_series_cp", "TOL_LOAD_ZONE", "TOL_CP", "MM", "N_ROLLER"]
+__all__ = ["check", "elements", "r03_inputs", "hertz_series_cp", "r02_bodies", "TOL_LOAD_ZONE", "TOL_CP", "MM", "MPA",
+           "N_ROLLER"]
 
 MM = 1e-3                    # [m/mm]: the one conversion of lengths of this case
+MPA = 1e6                    # [Pa/MPa]
 N_ROLLER = 10.0 / 9.0        # AxisForge's line-contact exponent (ISO/TS 16281), not r03's N_LINE = 1.1
 # C1-C6: AxisForge solves its equilibrium with SciPy root (hybr) at SOLVER_TOLERANCE = 1e-6, a relative step
 # tolerance on (delta_r, delta_a) (iso_16281/numerics.py); Q ~ delta^1.5 carries 1.5x that into the loads. 1e-5
@@ -69,22 +71,38 @@ def r03_inputs(bearing) -> dict:
     raise ValueError(f"v003 has no r03 mapping for the family {family!r}")
 
 
+def r02_bodies(bearing, race: str) -> dict:
+    """r02 inputs of one ball-groove contact from AxisForge's own attributes (r02 README section 4), SI.
+
+    Returns ``r1_m`` (ball radius), ``r2_m`` (the groove's own principal radii ``(r_x, r_y)``: inner
+    ``(r_bx_inner, -ri)``, outer ``(-r_bx_outer, -re)``; AxisForge stores the outer rolling radius as a positive
+    magnitude, its concave sign is put here; radii at ``alpha_0``), ``E_Pa``, ``nu`` (ball, ring) and ``r_g_m``
+    (groove radius). The one place where a ball contact of AxisForge becomes SI for r02 (v003 C7, v105).
+    """
+    if race == "inner":
+        r2, r_g = (bearing.r_inner[0] * MM, bearing.r_inner[1] * MM), bearing.ri * MM
+    elif race == "outer":
+        r2, r_g = (-bearing.r_outer[0] * MM, bearing.r_outer[1] * MM), bearing.re * MM
+    else:
+        raise ValueError(f"race must be 'inner' or 'outer', got {race!r}")
+    return {"r1_m": bearing.r_rolling_el[0] * MM, "r2_m": r2, "E_Pa": (bearing.e1 * MPA, bearing.e2 * MPA),
+            "nu": (bearing.nu1, bearing.nu2), "r_g_m": r_g}
+
+
 # radii at alpha_0, as AxisForge's c_p; under F_a = 0 the deep-groove contacts run at alpha = 0: a c_p change
 # <= 0.03 % for s <= 60 um (6210, physics review of v003)
 def hertz_series_cp(bearing) -> float:
     """``c_p`` [N/mm^1.5] of a ball as the Hertz series of its two contacts, r02 (``hertz_full``) and r03 Eq. 7.6.
 
-    The ball (radius ``Dw/2``) against the inner groove ``(r_bx_inner, -ri)`` and the outer groove
-    ``(-r_bx_outer, -re)`` (the outer rolling radius is concave: AxisForge stores its magnitude, r02 README
-    section 4), radii at ``alpha_0``; ``K = F / delta^1.5`` of each contact (exact for Hertz, any ``F``), then
+    The ball against the inner and the outer groove as :func:`r02_bodies` builds them (radii at ``alpha_0``);
+    ``K = F / delta^1.5`` of each contact (exact for Hertz, any ``F``), then
     ``K_n = [(1/K_i)^(2/3) + (1/K_o)^(2/3)]^(-3/2)`` (r03 ``ball_deflection``).
     """
     F_N = 1000.0                                               # any load: delta ~ F^(2/3) exactly
-    E_Pa, nu = (bearing.e1 * 1e6, bearing.e2 * 1e6), (bearing.nu1, bearing.nu2)
-    ball = bearing.r_rolling_el[0] * MM
-    inner = (bearing.r_inner[0] * MM, bearing.r_inner[1] * MM)
-    outer = (-bearing.r_outer[0] * MM, bearing.r_outer[1] * MM)
-    K = [F_N / hertz(ball, race, E_Pa, nu, F_N).delta_m ** 1.5 for race in (inner, outer)]
+    K = []
+    for race in ("inner", "outer"):
+        b = r02_bodies(bearing, race)
+        K.append(F_N / hertz(b["r1_m"], b["r2_m"], b["E_Pa"], b["nu"], F_N).delta_m ** 1.5)
     K_n = ball_deflection(1.0, K_i=K[0], K_o=K[1])["K_n_N_per_m_pow_n"]
     return K_n * MM ** 1.5                                     # [N/m^1.5] -> [N/mm^1.5]
 
