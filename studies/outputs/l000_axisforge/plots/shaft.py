@@ -51,8 +51,8 @@ def deflection_along_shaft(records: list[dict], results_dir, case: str, *, suppo
     Returns
     -------
     Path
-        ``<case>_shaft_deflection_along_shaft[_<variant>].png``. Called by v001, v002, s006 (to be
-        reused by s004).
+        ``<case>_shaft_deflection_along_shaft[_<variant>].png``. Called by v001, v002, s006, v005, s004,
+        s003.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     with plt.style.context(PAPER):
@@ -152,7 +152,7 @@ def error_vs_elements(records: list[dict], results_dir, case: str, *, tol: float
 
 def ratio_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label: str, y_label: str,
                 limit: float | None = None, log_x: bool = True, legend_outside: bool = False, variant: str = "",
-                caption: str = "") -> Path:
+                caption: str = "", band: tuple[float, float] | None = None, open_sources=()) -> Path:
     """A dimensionless result along a sweep: computed points, the closed-form curve, printed values.
 
     Shows: ``y`` [-] against the swept ``x``; per ``series`` one colour; ``source`` "FEM" = filled
@@ -175,6 +175,10 @@ def ratio_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label:
         Logarithmic x axis (default).
     legend_outside : bool, optional
         Legend to the right of the axes (many series; s004), instead of the best place inside.
+    band : (float, float), optional
+        A range of ``y`` shaded grey (s003: the clearance band ``|d| < s/2``, i.e. -1 ... 1 of ``d / (s/2)``).
+    open_sources : sequence of str, optional
+        Sources drawn as open markers like "published" (s003: a closed-form point), labelled by their name.
     results_dir, case, variant, caption
         As :func:`deflection_along_shaft`.
 
@@ -183,7 +187,8 @@ def ratio_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label:
     Path
         ``<case>_shaft_ratio_sweep[_<variant>].png``. Called by v001 (shear effect vs L/d; Onate's
         r_w vs elements), v002 (share of the helical couple in a reaction vs the helix angle), s006 (mesh misalignment vs span
-        and helix angle, pin slopes vs span; y in um / mrad).
+        and helix angle, pin slopes vs span; y in um / mrad), v005, s004, s003 (reactions and ring displacement
+        over the seat offset).
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     residual = any("rel_err" in r for r in records if r["source"] == "FEM")
@@ -205,13 +210,15 @@ def ratio_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label:
                 if source == "FEM":
                     ax.plot(xs, ys, linestyle="none", marker=MARKERS[k % len(MARKERS)], markersize=4, color=colour,
                             label=f"{s}, FEM")
-                elif source == "published":
+                elif source == "published" or source in open_sources:
                     ax.plot(xs, ys, linestyle="none", marker="o", markersize=7, markerfacecolor="none", color=colour,
-                            label=f"{s}, published")
+                            label=f"{s}, {source}")
                 else:
                     ax.plot(xs, ys, linestyle="-" if k == 0 else "--", linewidth=0.8, color=colour, label=f"{s}, {source}")
         if limit is not None:
             ax.axhline(limit, color="0.5", linestyle=":", linewidth=0.6, label=f"limit {limit:g}")
+        if band is not None:
+            ax.axhspan(*band, color="0.9", zorder=0, label=f"band {band[0]:g} ... {band[1]:g}")
         if log_x:
             ax.set_xscale("log")
         if residual:

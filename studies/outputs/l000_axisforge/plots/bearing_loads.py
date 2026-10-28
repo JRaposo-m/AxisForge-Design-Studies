@@ -67,7 +67,7 @@ def element_loads(records: list[dict], results_dir, case: str, *, polar: bool = 
     Returns
     -------
     Path
-        ``<case>_bearing_loads_element_loads[_<variant>].png``. Called by v003, s001, s002, s102.
+        ``<case>_bearing_loads_element_loads[_<variant>].png``. Called by v003, s001, s002, s102, s003.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     with plt.style.context(PAPER):
