@@ -67,7 +67,7 @@ def element_loads(records: list[dict], results_dir, case: str, *, polar: bool = 
     Returns
     -------
     Path
-        ``<case>_bearing_loads_element_loads[_<variant>].png``. Called by v003, s001, s002.
+        ``<case>_bearing_loads_element_loads[_<variant>].png``. Called by v003, s001, s002, s102.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     with plt.style.context(PAPER):
@@ -143,7 +143,7 @@ def load_zone_sweep(records: list[dict], results_dir, case: str, *, x: str, x_la
     Returns
     -------
     Path
-        ``<case>_bearing_loads_load_zone_sweep[_<variant>].png``. Called by v003, s001, s002, v105, s104.
+        ``<case>_bearing_loads_load_zone_sweep[_<variant>].png``. Called by v003, s001, s002, v105, s104, s102.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     limits = limits or {}
