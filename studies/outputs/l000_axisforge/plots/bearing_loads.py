@@ -108,8 +108,8 @@ def element_loads(records: list[dict], results_dir, case: str, *, polar: bool = 
 
 def load_zone_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label: str, panels: dict,
                     limits: dict | None = None, log_x: bool = False, x_marks: dict | None = None,
-                    open_sources: tuple = (), filled_sources: tuple = (), variant: str = "",
-                    caption: str = "") -> Path:
+                    x_spans: dict | None = None, open_sources: tuple = (), filled_sources: tuple = (),
+                    variant: str = "", caption: str = "") -> Path:
     """Load-zone quantities along a sweep: computed points on the judge's curves, with their limit values.
 
     Shows: one panel per ``quantity`` (e.g. the load distribution factor ``eps`` and Stribeck's
@@ -132,7 +132,11 @@ def load_zone_sweep(records: list[dict], results_dir, case: str, *, x: str, x_la
         Logarithmic x axis.
     x_marks : dict, optional
         ``label -> x``: dash-dotted vertical lines in every panel (a validity limit of the sweep, e.g. the
-        ISO/TS 16281 4' tilt), the label at the top of the first panel.
+        ISO/TS 16281 4' tilt), the label at the top of the first panel (staggered in three rows).
+    x_spans : dict, optional
+        ``label -> (x_start, x_end)``: grey hatched bands in every panel (a part of the sweep outside a validity
+        range whose points are kept, e.g. gears a rack cutter does not make, s103), the label inside the band at
+        the bottom of the last panel.
     open_sources : tuple of str, optional
         Further sources drawn as open markers, like "published" (a point of another case, e.g. s001 at psi = 0).
     filled_sources : tuple of str, optional
@@ -162,11 +166,16 @@ def load_zone_sweep(records: list[dict], results_dir, case: str, *, x: str, x_la
                     if source not in (_COMPUTED, _PUBLISHED, *open_sources, *filled_sources):
                         refs += 1
                     ax.plot([r[x] for r in rows], [r["y"] for r in rows], label=f"{s}, {source}", **style)
-            for name, xm in (x_marks or {}).items():
+            for i, (name, xm) in enumerate((x_marks or {}).items()):
                 ax.axvline(xm, color="k", linestyle="-.", linewidth=0.6)
                 if ax is axes[0, 0]:
-                    ax.annotate(name, (xm, 1.0), xycoords=("data", "axes fraction"), fontsize=6, ha="center",
-                                va="bottom")
+                    ax.annotate(name, (xm, 1.0 + 0.07 * (i % 3)), xycoords=("data", "axes fraction"), fontsize=6,
+                                ha="center", va="bottom")
+            for name, (x0, x1) in (x_spans or {}).items():
+                ax.axvspan(x0, x1, facecolor="0.85", edgecolor="0.6", hatch="//", linewidth=0.0, zorder=0)
+                if ax is axes[-1, 0]:
+                    ax.annotate(name, (0.5 * (x0 + x1), 0.02), xycoords=("data", "axes fraction"), fontsize=5,
+                                ha="center", va="bottom", rotation=90)
             if quantity in limits:
                 ax.axhline(limits[quantity], color="k", linestyle=":", linewidth=0.6)
                 ax.annotate(f"{limits[quantity]:g}", (1.0, limits[quantity]), xycoords=("axes fraction", "data"),
