@@ -23,10 +23,10 @@ _COMPUTED = "AxisForge"     # the source drawn as filled markers
 _PUBLISHED = "published"    # the source drawn as open markers
 
 
-def _style(source: str, k: int, refs: int, colour, open_sources=()) -> dict:
-    """Marker / line style of one (series, source): computed filled, published (or ``open_sources``) open,
-    formulas lines."""
-    if source == _COMPUTED:
+def _style(source: str, k: int, refs: int, colour, open_sources=(), filled_sources=()) -> dict:
+    """Marker / line style of one (series, source): computed (or ``filled_sources``) filled, published (or
+    ``open_sources``) open, formulas lines."""
+    if source == _COMPUTED or source in filled_sources:
         return dict(linestyle="none", marker=MARKERS[k % len(MARKERS)], markersize=4, color=colour)
     if source == _PUBLISHED or source in open_sources:
         return dict(linestyle="none", marker=MARKERS[k % len(MARKERS)], markersize=6, markerfacecolor="none",
@@ -108,7 +108,8 @@ def element_loads(records: list[dict], results_dir, case: str, *, polar: bool = 
 
 def load_zone_sweep(records: list[dict], results_dir, case: str, *, x: str, x_label: str, panels: dict,
                     limits: dict | None = None, log_x: bool = False, x_marks: dict | None = None,
-                    open_sources: tuple = (), variant: str = "", caption: str = "") -> Path:
+                    open_sources: tuple = (), filled_sources: tuple = (), variant: str = "",
+                    caption: str = "") -> Path:
     """Load-zone quantities along a sweep: computed points on the judge's curves, with their limit values.
 
     Shows: one panel per ``quantity`` (e.g. the load distribution factor ``eps`` and Stribeck's
@@ -134,13 +135,15 @@ def load_zone_sweep(records: list[dict], results_dir, case: str, *, x: str, x_la
         ISO/TS 16281 4' tilt), the label at the top of the first panel.
     open_sources : tuple of str, optional
         Further sources drawn as open markers, like "published" (a point of another case, e.g. s001 at psi = 0).
+    filled_sources : tuple of str, optional
+        Further computed sources drawn as filled markers, like "AxisForge" (e.g. "BEM" of a SlipPY solve, s104).
     results_dir, case, variant, caption
         As :func:`element_loads`.
 
     Returns
     -------
     Path
-        ``<case>_bearing_loads_load_zone_sweep[_<variant>].png``. Called by v003, s001, s002.
+        ``<case>_bearing_loads_load_zone_sweep[_<variant>].png``. Called by v003, s001, s002, v105, s104.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     limits = limits or {}
@@ -155,8 +158,8 @@ def load_zone_sweep(records: list[dict], results_dir, case: str, *, x: str, x_la
                                    and r["quantity"] == quantity), key=lambda r: r[x])
                     if not rows:
                         continue
-                    style = _style(source, k, refs, colour, open_sources)
-                    if source not in (_COMPUTED, _PUBLISHED, *open_sources):
+                    style = _style(source, k, refs, colour, open_sources, filled_sources)
+                    if source not in (_COMPUTED, _PUBLISHED, *open_sources, *filled_sources):
                         refs += 1
                     ax.plot([r[x] for r in rows], [r["y"] for r in rows], label=f"{s}, {source}", **style)
             for name, xm in (x_marks or {}).items():

@@ -20,14 +20,15 @@ from ...common.style import PAPER
 __all__ = ["relative_errors", "pressure_cut", "load_approach"]
 
 def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_label: str, variant: str = "",
-                    log_x: bool = True, caption: str = "") -> Path:
+                    log_x: bool = True, caption: str = "", slope: float | None = None) -> Path:
     """Absolute relative error of BEM quantities against their reference, along a sweep.
 
     Shows: ``|rel_err|`` [%] (log axis) against the swept parameter ``x``; one colour and marker
     per ``quantity`` (delta, p0, b, load, ...), one panel per ``series`` (kernel, control, ...),
     tagged (a), (b), ... under its x axis; filled markers joined by thin lines in sweep order, x
     ticks at the swept values. The tolerance of a judged record (``tol`` > 0 and ``verdict`` not
-    ``RECORD``) is drawn along the sweep as a dashed line of the quantity's colour.
+    ``RECORD``) is drawn along the sweep as a dashed line of the quantity's colour. ``slope`` draws, in each
+    panel, a thin dotted guide ``x^slope`` through the first point of the first quantity (an expected scaling).
 
     Parameters
     ----------
@@ -46,12 +47,14 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
         Logarithmic x axis (default).
     caption : str, optional
         Caption line under the axes (inputs, convention tags such as J-16).
+    slope : float, optional
+        Exponent of the guide line (log-log).
 
     Returns
     -------
     Path
         ``<case>_contact_relative_errors[_<variant>].png``. Called by v101, v102, v103, v104, v003, v105,
-        v002 (shaft errors vs settlement and helix angle; the file name keeps ``contact``).
+        v002 (shaft errors vs settlement and helix angle; the file name keeps ``contact``), s101.
     """
     series = list(dict.fromkeys(r["series"] for r in records))
     quantities = list(dict.fromkeys(r["quantity"] for r in records))
@@ -78,6 +81,13 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
                 if tol:
                     any_tol = True
                     ax.plot(*zip(*tol), color=colour, linestyle="--", linewidth=0.6)
+            first = sorted((r for r in records if r["series"] == s and r["quantity"] == quantities[0]),
+                           key=lambda r: r[x])
+            if slope is not None and first:
+                xs = np.array([first[0][x], first[-1][x]], dtype=float)
+                y0 = 100.0 * max(abs(first[0]["rel_err"]), 1e-12)
+                ax.plot(xs, y0 * (xs / xs[0]) ** slope, color="0.5", linestyle=":", linewidth=0.7)
+                handles[f"slope {slope:g}"] = Line2D([], [], color="0.5", linestyle=":", linewidth=0.7)
             ax.set_yscale("log")
             if log_x:
                 ax.set_xscale("log")
@@ -145,7 +155,8 @@ def load_approach(records: list[dict], results_dir, case: str, *, slope: float =
     Parameters
     ----------
     records : list of dict
-        Fields: ``series`` (str), ``source`` ("BEM" or the law's name), ``delta_m``, ``Q_N``.
+        Fields: ``series`` (str), ``source`` ("BEM" or the law's name), ``delta_m`` [m] (drawn in um: x 1e6, the
+        one conversion), ``Q_N``.
     results_dir, case, variant, caption
         As :func:`relative_errors` (``caption`` a line under the axes).
     slope : float, optional
@@ -183,6 +194,4 @@ def load_approach(records: list[dict], results_dir, case: str, *, slope: float =
         ax.set_xlabel(r"approach $\delta$ [um]")
         ax.set_ylabel(r"normal load $Q$ [N]")
         ax.legend(fontsize=6, loc="upper left")
-        if caption:
-            fig.supxlabel(caption, fontsize=7)
-        return save(fig, figure_path(results_dir, case, "contact", "load_approach", variant))
+        return save(fig, figure_path(results_dir, case, "contact", "load_approach", variant), caption)
