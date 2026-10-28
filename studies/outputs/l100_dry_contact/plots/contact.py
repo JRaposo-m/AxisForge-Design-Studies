@@ -83,7 +83,7 @@ def relative_errors(records: list[dict], results_dir, case: str, *, x: str, x_la
             ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
             ax.set_xlabel(f"{x_label}\n({chr(97 + n)}) {s}")
         for row in axes:
-            row[0].set_ylabel(r"$|\varepsilon|$ (%)")
+            row[0].set_ylabel("|relative error| (%)")      # not eps: v003 plots the load-distribution factor eps too
         if any_tol:
             handles["tolerance"] = Line2D([], [], color="k", linestyle="--", linewidth=0.6)
         fig.legend(handles.values(), handles.keys(), loc="outside right center")
