@@ -8,6 +8,11 @@ Every case package imports, and the layer law holds where an import test can see
   analytical formulas José verified, one entry per function with the date. Relative imports only inside the
   case. The case tests may import the case package itself.
 - ``slippy_bridge`` imports nothing from ``studies``.
+- ``numerical_solvers`` imports only NumPy, SciPy, the standard library and, relatively, its own subpackage
+  (its tests also pytest and ``numerical_solvers``); its public names are unique, none a subpackage name;
+  never ``studies``, ``slippy_bridge``, SlipPY or AxisForge (the port cross-checks reach AxisForge through
+  ``pytest.importorskip``, not an import statement). ``studies`` and ``slippy_bridge`` may import it; an r
+  may not (rule 13: ``numerical_solvers`` is neither in ``ALLOWED_IN_R`` nor in ``R_VERIFIED``).
 """
 from __future__ import annotations
 
@@ -69,6 +74,26 @@ def test_r_module_imports_only_numpy_scipy_stdlib_and_verified_functions(path):
            and not (name in LIBRARIES and all(d in verified for d in dotted))]
     assert not bad, (f"{path.name} imports {bad}: an r case writes the analytical formula itself, or José "
                      f"verifies the library function and it is added to R_VERIFIED with the date")
+
+
+def test_numerical_solvers_import_only_numpy_scipy_stdlib():
+    allowed = {"numpy", "scipy", "__future__"} | set(sys.stdlib_module_names)
+    bad = []
+    for p in sorted((ROOT / "numerical_solvers").rglob("*.py")):
+        rel = p.relative_to(ROOT)
+        ok = allowed | ({"pytest", "numerical_solvers"} if "tests" in rel.parts else set())
+        bad += [f"{rel.as_posix()}:{line}: {'.' * level}{name or ''}"
+                for name, level, line, _ in _imports(p) if (level == 0 and name not in ok) or level > 1]
+    assert not bad, ("numerical_solvers imports only numpy, scipy, the standard library and, relatively, its "
+                     "own subpackage (tests also pytest and numerical_solvers): " + ", ".join(bad))
+
+
+def test_numerical_solvers_public_names_unique_and_not_subpackage_names():
+    import numerical_solvers
+    names = list(numerical_solvers.__all__)
+    subs = {p.parent.name for p in (ROOT / "numerical_solvers").glob("*/__init__.py")}
+    assert len(names) == len(set(names)) and not set(names) & subs, (
+        f"numerical_solvers.__all__ {names}: names unique and none equal to a subpackage {sorted(subs)}")
 
 
 def test_the_bridge_imports_nothing_from_studies():
