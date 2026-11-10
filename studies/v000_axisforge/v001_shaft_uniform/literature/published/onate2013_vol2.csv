@@ -1,0 +1,39 @@
+table,kind,load,element,n_elements_printed,h_over_L,quantity,symbol,value,unit,resolution,source_key,location,pdf_page,read_from,note
+Fig. 1.17,parameter,,,,,beam length,L,4,m,,Onate2013_vol2,Fig. 1.17,65,image,simply supported; units are in the International System (caption)
+Fig. 1.17,parameter,,,,,central point load,P,-1,N,,Onate2013_vol2,Fig. 1.17,65,image,
+Fig. 1.17,parameter,,,,,uniformly distributed load,Q,-1,N/m,,Onate2013_vol2,Fig. 1.17,65,image,printed Q; drawn q
+Fig. 1.17,parameter,,,,,Young's modulus,E,47619.05,Pa,,Onate2013_vol2,Fig. 1.17,65,image,
+Fig. 1.17,parameter,,,,,second moment of area,I,2.133e-7,m^4,,Onate2013_vol2,Fig. 1.17,65,image,printed 2.133 10^-7; equals h^4/12 with h = 0.04 m (Table 2.3 h/L = 0.01)
+Table 1.1,published,point,CCB,4,,central deflection error (uniform mesh),err,12.50,%,0.01,Onate2013_vol2,Table 1.1,66,image,simply supported; elements in half beam; rotation-free element (not AxisForge's)
+Table 1.1,published,point,CCB,8,,central deflection error (uniform mesh),err,3.12,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,point,CCB,16,,central deflection error (uniform mesh),err,0.78,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,point,CCB,32,,central deflection error (uniform mesh),err,0.19,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,udl,CCB,4,,central deflection error (uniform mesh),err,5.00,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,udl,CCB,8,,central deflection error (uniform mesh),err,1.25,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,udl,CCB,16,,central deflection error (uniform mesh),err,0.32,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,udl,CCB,32,,central deflection error (uniform mesh),err,0.08,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,point,CVB,4,,central deflection error (uniform mesh),err,3.12,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,point,CVB,8,,central deflection error (uniform mesh),err,0.78,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,point,CVB,16,,central deflection error (uniform mesh),err,0.19,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,point,CVB,32,,central deflection error (uniform mesh),err,0.05,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,udl,CVB,4,,central deflection error (uniform mesh),err,1.25,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,udl,CVB,8,,central deflection error (uniform mesh),err,0.31,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,udl,CVB,16,,central deflection error (uniform mesh),err,0.08,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 1.1,published,udl,CVB,32,,central deflection error (uniform mesh),err,0.02,%,0.01,Onate2013_vol2,Table 1.1,66,image,
+Table 2.1,published,point,2-node Timoshenko one-point,1,,limit end deflection ratio w/w_EB (lambda -> inf),r_w,0.750,-,0.001,Onate2013_vol2,Table 2.1,84,image,cantilever under end point load; AxisForge's element (Eq. (2.38)-(2.39))
+Table 2.1,published,point,2-node Timoshenko one-point,2,,limit end deflection ratio w/w_EB (lambda -> inf),r_w,0.938,-,0.001,Onate2013_vol2,Table 2.1,84,image,
+Table 2.1,published,point,2-node Timoshenko one-point,4,,limit end deflection ratio w/w_EB (lambda -> inf),r_w,0.984,-,0.001,Onate2013_vol2,Table 2.1,84,image,
+Table 2.1,published,point,2-node Timoshenko one-point,8,,limit end deflection ratio w/w_EB (lambda -> inf),r_w,0.996,-,0.001,Onate2013_vol2,Table 2.1,84,image,
+Table 2.1,published,point,2-node Timoshenko one-point,16,,limit end deflection ratio w/w_EB (lambda -> inf),r_w,0.999,-,0.001,Onate2013_vol2,Table 2.1,84,image,
+Fig. 2.17,parameter,,,,,beam length,L,4,m,,Onate2013_vol2,Fig. 2.17,124,image,simply supported; square cross section
+Fig. 2.17,parameter,,,,,uniform load,q,1.0,N/m,,Onate2013_vol2,Fig. 2.17,124,image,drawn downward; Table 2.3 prints negative deflections
+Table 2.3,published,udl,slender solution,,0.01,central deflection,w_c,-3.28E+02,m,1,Onate2013_vol2,Table 2.3,126,image,E and nu not printed for this table
+Table 2.3,published,udl,thick solution,,0.01,central deflection,w_c,-3.28E+02,m,1,Onate2013_vol2,Table 2.3,126,image,
+Table 2.3,published,udl,slender solution,,0.05,central deflection,w_c,-5.25E-01,m,0.001,Onate2013_vol2,Table 2.3,126,image,
+Table 2.3,published,udl,thick solution,,0.05,central deflection,w_c,-5.28E-01,m,0.001,Onate2013_vol2,Table 2.3,126,image,
+Table 2.3,published,udl,slender solution,,0.10,central deflection,w_c,-3.28E-02,m,0.0001,Onate2013_vol2,Table 2.3,126,image,
+Table 2.3,published,udl,thick solution,,0.10,central deflection,w_c,-3.35E-02,m,0.0001,Onate2013_vol2,Table 2.3,126,image,
+Table 2.3,published,udl,slender solution,,0.20,central deflection,w_c,-2.05E-03,m,0.00001,Onate2013_vol2,Table 2.3,126,image,
+Table 2.3,published,udl,thick solution,,0.20,central deflection,w_c,-2.22E-03,m,0.00001,Onate2013_vol2,Table 2.3,126,image,
+Text Eq. (2.33),parameter,,,,,Poisson's ratio of Onate's rectangular example,nu,0.25,-,,Onate2013_vol2,text after Eq. (2.33),80,text,"with k_z = 5/6; not stated for Table 2.3, used there as RECORD (OPEN R5-24)"
+Fig. 2.3,parameter,,,,,shear correction of a rectangle,k_z,0.8333333333,-,,Onate2013_vol2,Fig. 2.3,73,image,printed 5/6

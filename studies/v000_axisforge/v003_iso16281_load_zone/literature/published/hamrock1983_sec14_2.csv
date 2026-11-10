@@ -1,0 +1,18 @@
+source_key,location,pdf_page,quantity,symbol,value,unit,read_from,note
+Hamrock1983,sec. 14.2 inputs,44,inner-race diameter,d_i,0.052291,m,text,
+Hamrock1983,sec. 14.2 inputs,44,outer-race diameter,d_o,0.077706,m,text,
+Hamrock1983,sec. 14.2 inputs,44,ball diameter,d,0.012700,m,text,
+Hamrock1983,sec. 14.2 inputs,44,number of balls,n,9,-,text,
+Hamrock1983,sec. 14.2 inputs,44,inner-groove radius,r_i,0.006604,m,text,f_i = 0.52
+Hamrock1983,sec. 14.2 inputs,44,outer-groove radius,r_o,0.006604,m,text,f_o = 0.52
+Hamrock1983,sec. 14.2 inputs,44,contact angle,beta,0,deg,text,
+Hamrock1983,sec. 14.2 inputs,44,radial load,F_r,8900,N,text,
+Hamrock1983,sec. 14.2 inputs,44,modulus of elasticity (balls and races),E,2e11,N/m^2,text,
+Hamrock1983,sec. 14.2 inputs,44,Poisson's ratio,nu,0.3,-,text,
+Hamrock1983,sec. 14.2 Eq. (1),44,pitch diameter,d_e,0.065,m,text,printed 0.065 m
+Hamrock1983,sec. 14.2 Eq. (2),44,diametral clearance,P_d,1.5e-5,m,text,
+Hamrock1983,sec. 14.2 stage 4,46,load on the most heavily loaded ball,F_max,4513,N,image+text-agree,Z = 4.564 from the approximate Eq. (30); k_i E_i F_i E_o F_o not self-consistent (OPEN R5-09)
+Hamrock1983,sec. 14.2 stage 4,46,inner compression of that ball,delta_i,2.731e-5,m,image+text-agree,
+Hamrock1983,sec. 14.2 stage 4,46,outer compression of that ball,delta_o,2.707e-5,m,image+text-agree,
+Hamrock1983,sec. 14.2 stage 4,46,total compression of that ball,delta,5.438e-5,m,image+text-agree,
+Hamrock1983,sec. 14.2 stage 4,46,Stribeck factor F_max n / F_r,Z,4.564,-,image+text-agree,

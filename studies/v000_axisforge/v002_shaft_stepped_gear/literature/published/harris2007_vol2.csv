@@ -1,0 +1,17 @@
+item,kind,quantity,printed,used,unit,source_key,location,pdf_page,read_from,note
+Fig. 9.3,system,two-bearing shaft: bearings at x = 0 and x = l; P^k and T^k at a^k; F_1 F_2 and bearing moments M_1 M_2,,,,Harris2007_vol2,sec. 9.2.2 Fig. 9.3,278,image,no numbers printed; unit column below is the case's (Harris states no units: consistent units)
+Fig. 9.4,system,section left of the load (0 <= x <= a): Eqs 9.10-9.14,,,,Harris2007_vol2,sec. 9.2.2 Fig. 9.4,279,image,
+Fig. 9.5,system,section right of the load (a <= x <= l): Eqs 9.15-9.19,,,,Harris2007_vol2,sec. 9.2.2 Fig. 9.5,280,image,
+Eq. 9.8,equation,bending,EI d2y/dx2 = -M,EI d2y/dx2 = -M,,Harris2007_vol2,sec. 9.2.2,278,image,not printed: the case reads y positive along P (from Eqs 9.8 and 9.10); Harris states no y direction
+Eq. 9.14,flag,deflection left of the load,EI y = -F_1 x^3/6 + M_1 x^3/2 + EI theta_1 x + EI delta_r1,EI y = -F_1 x^3/6 + M_1 x^2/2 + EI theta_1 x + EI delta_r1,,Harris2007_vol2,sec. 9.2.2,279,image,FLAG: x^3 printed for x^2 (integral of Eq. 9.13); not used by v002
+Eq. 9.20,equation,F_1 one load,P (l-a)^2 (l+2a)/l^3 - 6 T a (l-a)/l^3 - 6 EI/l^2 [theta_1 + theta_2 + 2 (delta_r1 - delta_r2)/l],as printed,N,Harris2007_vol2,sec. 9.2.2,280,image,
+Eq. 9.21,equation,M_1 one load,P a (l-a)^2/l^2 + T (l-a)(l-3a)/l^2 - 2 EI/l [2 theta_1 + theta_2 + 3 (delta_r1 - delta_r2)/l],as printed,N.mm,Harris2007_vol2,sec. 9.2.2,280,image,
+Eq. 9.22,equation,F_2 one load,P a^2 (3l-2a)/l^3 + 6 T a (l-a)/l^3 + 6 EI/l^2 [theta_1 + theta_2 + 2 (delta_r1 - delta_r2)/l],as printed,N,Harris2007_vol2,sec. 9.2.2,280,image,
+Eq. 9.23,equation,M_2 one load,P a^2 (l-a)/l^2 + T a (2l-3a)/l^2 + 2 EI/l [theta_1 + 2 theta_2 + 3 (delta_r1 - delta_r2)/l],as printed,N.mm,Harris2007_vol2,sec. 9.2.2,280,image,
+Eq. 9.24,equation,F_1 n loads,sum P^k (l-a^k)^2 (l+2a^k)/l^3 - 6/l^3 sum T^k a^k (l-a^k) - 6 EI/l^2 [...],as printed,N,Harris2007_vol2,sec. 9.2.2,281,image,
+Eq. 9.25,flag,M_1 n loads,1/l^3 sum P^k a^k (l-a^k)^2 + 1/l^2 sum T^k (l-a^k)(l-3a^k) - 2 EI/l [...],1/l^2 on the P^k sum (as Eq. 9.21),N.mm,Harris2007_vol2,sec. 9.2.2,281,image,FLAG: 1/l^3 printed for 1/l^2 (dimension; Eq. 9.21); RECORD L6
+Eq. 9.26,equation,F_2 n loads,1/l^3 sum P^k (a^k)^2 (3l-2a^k) + 6/l^3 sum T^k a^k (l-a^k) + 6 EI/l^2 [...],as printed,N,Harris2007_vol2,sec. 9.2.2,281,image,
+Eq. 9.27,flag,M_2 n loads,1/l^3 sum P^k (a^k)^2 (l-a^k) + 1/l^2 sum T^k a^k (2l-3a^k) + 2 EI/l [...],1/l^2 on the P^k sum (as Eq. 9.23),N.mm,Harris2007_vol2,sec. 9.2.2,281,image,FLAG: 1/l^3 printed for 1/l^2 (dimension; Eq. 9.23); RECORD L6
+text p. 281,statement,pin supports,M_h = delta_rh = 0: Eqs 9.20 and 9.22 become the statically determinate reactions (vol. 1 Eqs 4.29-4.30),,,Harris2007_vol2,sec. 9.2.2,281,image,printed with delta_rh = 0; that the reactions stay unchanged WITH settlements is the case's derivation (not printed)
+Example 9.3,missing,worked numbers,See Example 9.3.,,,Harris2007_vol2,sec. 9.2.2,281,image,p. 281 prints only "See Example 9.3."; examples recorded as on the book CD-ROM (J-14; not checked on these pages): no printed digits to judge
+stepped shaft,missing,stepped shaft between supports,,,,Roark / Pilkey,,,,not in the library: no published stepped-shaft table; r01 is the only judge of the stepped case

@@ -13,7 +13,6 @@ dependencies = [
     "matplotlib",
     "pandas",
     "ipython",
-    "pyvista",
 ]
 # axisforge and slippy are NOT listed: neither is on PyPI. Install both
 # separately with `pip install -e <repo>` (see README.md#setup).
@@ -21,12 +20,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "jupytext"]
 
-# Only the shared code is a package. Case and study folders are not: each
-# script imports its own construction.py as a sibling module.
+# The bridge, the numerical solvers and the studies are packages: a case is imported as
+# studies.<level>.<case> (D-0036).
 [tool.setuptools.packages.find]
-include = ["references*", "validation", "validation._support*", "slippy_bridge*", "viz*"]
+include = ["numerical_solvers*", "slippy_bridge*", "studies*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "numerical_solvers", "studies"]
 pythonpath = ["tests"]
 addopts = "-q --import-mode=importlib"
+markers = ["slow: a test that runs a solver at full size (deselect with -m 'not slow')"]

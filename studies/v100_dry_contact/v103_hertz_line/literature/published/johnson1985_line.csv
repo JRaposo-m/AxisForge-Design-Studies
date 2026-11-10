@@ -1,0 +1,8 @@
+case_id,kind,quantity,symbol,value,unit,condition,source_key,location,pdf_page,read_from,note
+V-DRY-03,parameter,load per unit length,P,,N/m,plane strain,Johnson1985,text Sec. 4.2(c),109,image,"Johnson: ""a force P per unit length""; contact strip of width 2a (Johnson uses a, not b, for the semi-width)"
+V-DRY-03,parameter,relative curvature radius,R,,m,,Johnson1985,Eq. (4.36),110,image,1/R = 1/R1 + 1/R2
+V-DRY-03,formula,pressure distribution,p(x),,Pa,|x|<=a,Johnson1985,Eq. (4.44),111,image,p(x) = (2P/(pi a^2))*(a^2-x^2)^(1/2)
+V-DRY-03,formula,semi-contact-width,a,,m,,Johnson1985,Eq. (4.43),111,image,a^2 = 4PR/(pi E*); Appendix 3(a) p. 427: a = (4PR/(pi E*))^(1/2)
+V-DRY-03,formula,maximum contact pressure,p0,,Pa,,Johnson1985,Eq. (4.45),111,image,p0 = 2P/(pi a) = (4/pi) p_m = (P E*/(pi R))^(1/2); p_m mean pressure
+V-DRY-03,reference,approach delta,delta,,m,,Johnson1985,text Sec. 4.2(c),110,image,"delta cannot be found from local contact stresses alone (depends on datum/bulk, see Sec. 5.6): do not compare"
+V-DRY-03,reference,max over mean pressure,p0/p_m,1.2732395,-,,Johnson1985,Eq. (4.45),111,image,"printed as p0 = (4/pi) p_m; value = 4/pi"

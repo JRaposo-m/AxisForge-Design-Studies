@@ -1,0 +1,22 @@
+case_id,kind,quantity,symbol,value,unit,condition,source_key,location,pdf_page,read_from,note
+V-GEAR-04,parameter,wheel torque,-,104.97,N·m,stage=K5,Martins2015,Table 4,4,image+text-agree,"column header ""Wheel torque""; shaft = WHEEL. Fernandes2015b rounds K5/K7/K9 to 105/199/323 Nm ""applied on wheel"""
+V-GEAR-04,reference,radial force,Fr,790,N,stage=K5;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,axial force,Fa,0,N,stage=K5;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,Hertzian contact pressure,p_H,498,MPa,stage=K5;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,contact point / load-sharing convention not stated
+V-GEAR-04,reference,radial force,Fr,777,N,stage=K5;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together
+V-GEAR-04,reference,axial force,Fa,518,N,stage=K5;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together
+V-GEAR-04,reference,Hertzian contact pressure,p_H,787,MPa,stage=K5;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together; convention not stated
+V-GEAR-04,parameter,wheel torque,-,198.68,N·m,stage=K7,Martins2015,Table 4,4,image+text-agree,"column header ""Wheel torque""; shaft = WHEEL. Fernandes2015b rounds K5/K7/K9 to 105/199/323 Nm ""applied on wheel"""
+V-GEAR-04,reference,radial force,Fr,1495,N,stage=K7;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,"printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,axial force,Fa,0,N,stage=K7;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,Hertzian contact pressure,p_H,685,MPa,stage=K7;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,contact point / load-sharing convention not stated
+V-GEAR-04,reference,radial force,Fr,1471,N,stage=K7;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,"one column for H501 and H951 together; printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,axial force,Fa,980,N,stage=K7;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together
+V-GEAR-04,reference,Hertzian contact pressure,p_H,1083,MPa,stage=K7;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,"one column for H501 and H951 together; convention not stated; printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,parameter,wheel torque,-,323.27,N·m,stage=K9,Martins2015,Table 4,4,image+text-agree,"column header ""Wheel torque""; shaft = WHEEL. Fernandes2015b rounds K5/K7/K9 to 105/199/323 Nm ""applied on wheel"""
+V-GEAR-04,reference,radial force,Fr,2432,N,stage=K9;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,"printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,axial force,Fa,0,N,stage=K9;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,Hertzian contact pressure,p_H,874,MPa,stage=K9;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,contact point / load-sharing convention not stated
+V-GEAR-04,reference,radial force,Fr,2393,N,stage=K9;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,"one column for H501 and H951 together; printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,axial force,Fa,1594,N,stage=K9;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,"one column for H501 and H951 together; printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,Hertzian contact pressure,p_H,1382,MPa,stage=K9;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,"one column for H501 and H951 together; convention not stated; printed with thousands separator (e.g. ""2,198""), separator removed only"

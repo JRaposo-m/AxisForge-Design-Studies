@@ -1,0 +1,14 @@
+source_key,location,pdf_page,quantity,symbol,value,unit,read_from,note
+Hamrock1983,sec. 14.2 Eq. (23),44,"equivalent radius along rolling, inner",R_x_i,0.00511,m,image,
+Hamrock1983,sec. 14.2 Eq. (25),44,"equivalent radius along rolling, outer",R_x_o,0.00759,m,image,
+Hamrock1983,sec. 14.2 Eq. (24),44,"equivalent radius across rolling, inner",R_y_i,0.165,m,image,
+Hamrock1983,sec. 14.2 Eq. (26),44,"equivalent radius across rolling, outer",R_y_o,0.165,m,image,
+Hamrock1983,sec. 14.2 Eq. (19),44,"curvature sum, inner",inv_R_i,201.76,1/m,image,
+Hamrock1983,sec. 14.2 Eq. (19),44,"curvature sum, outer",inv_R_o,137.81,1/m,image,
+Hamrock1983,sec. 14.2,44,"radius ratio R_y/R_x, inner",alpha_r_i,32.35,-,image,0.165/0.00511 = 32.29; 0.1651/0.0051093 = 32.31 (OPEN R5-09)
+Hamrock1983,sec. 14.2,44,"radius ratio R_y/R_x, outer",alpha_r_o,21.74,-,image,
+Hamrock1983,sec. 14.2 Eq. (37),44,"ellipticity fit, inner",k_i,9.42,-,image,"Hamrock's fit k = alpha_r^(2/pi) (Eq. (37)): 32.35^(2/pi) = 9.15, printed 9.42 (FLAG; OPEN R5-09, R5-87); the same fit as r02 hamrock_brewe_fit (HamrockBrewe1983 Eq. (29))"
+Hamrock1983,sec. 14.2 Eq. (37),44,"ellipticity fit, outer",k_o,7.09,-,image,Hamrock's fit k = alpha_r^(2/pi) (Eq. (37)): 21.74^(2/pi) = 7.10 (consistent); the same fit as r02 hamrock_brewe_fit (HamrockBrewe1983 Eq. (29))
+Hamrock1983,sec. 14.2 stage 4,46,load on the most heavily loaded ball,F_max,4513,N,image+text-agree,
+Hamrock1983,sec. 14.2 stage 4,46,inner compression of that ball,delta_i,2.731e-5,m,image+text-agree,"Eq. (42) with Hamrock's fits; it inherits the printed k_i 9.42 (with 9.15 it gives 2.785e-5); printed E_bar_i 1.0188 and F_bar_i 3.6205 are also off Eqs (38)-(39) at alpha_r 32.35 (1.0176, 3.555) (OPEN R5-87; errata page unchecked)"
+Hamrock1983,sec. 14.2 stage 4,46,outer compression of that ball,delta_o,2.707e-5,m,image+text-agree,Eq. (42) with Hamrock's fits

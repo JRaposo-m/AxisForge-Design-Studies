@@ -1,0 +1,154 @@
+case_id,kind,quantity,symbol,value,unit,condition,source_key,location,pdf_page,read_from,note
+V-GEAR-01,reference,number of teeth,z,16,/,gear=C40;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,24,/,gear=C40;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,module,m,4.5,mm,gear=C40,Fernandes2015b,Table 1,4,image+text-agree,printed m without n/t subscript
+V-GEAR-01,reference,centre distance,a,91.5,mm,gear=C40,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,pressure angle,α,20,°,gear=C40,Fernandes2015b,Table 1,4,image+text-agree,normal or transverse not stated
+V-GEAR-01,reference,helix angle,β,0,°,gear=C40,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,face width,b,40,mm,gear=C40,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.1817,/,gear=C40;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.1715,/,gear=C40;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,82.64,mm,gear=C40;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,115.54,mm,gear=C40;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,"CONFLICT C-1: Martins2015 Table 3 prints 118.54; 115.54 checked on 300 dpi image; d2+2m(1+x2)=118.54 [computed in source note, not printed] so 115.54 is likely a typo"
+V-GEAR-01,reference,transverse contact ratio,ε_α,1.44,/,gear=C40,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,0,/,gear=C40,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,20,/,gear=H501;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,30,/,gear=H501;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,module,m,3.5,mm,gear=H501,Fernandes2015b,Table 1,4,image+text-agree,printed m without n/t subscript
+V-GEAR-01,reference,centre distance,a,91.5,mm,gear=H501,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,pressure angle,α,20,°,gear=H501,Fernandes2015b,Table 1,4,image+text-agree,normal or transverse not stated
+V-GEAR-01,reference,helix angle,β,15,°,gear=H501,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,face width,b,23,mm,gear=H501,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.1381,/,gear=H501;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.1319,/,gear=H501;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,80.37,mm,gear=H501;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,116.57,mm,gear=H501;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,transverse contact ratio,ε_α,1.45,/,gear=H501,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,0.54,/,gear=H501,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,38,/,gear=H951;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,57,/,gear=H951;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,module,m,1.75,mm,gear=H951,Fernandes2015b,Table 1,4,image+text-agree,printed m without n/t subscript
+V-GEAR-01,reference,centre distance,a,91.5,mm,gear=H951,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,pressure angle,α,20,°,gear=H951,Fernandes2015b,Table 1,4,image+text-agree,normal or transverse not stated
+V-GEAR-01,reference,helix angle,β,15,°,gear=H951,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,face width,b,23,mm,gear=H951,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+1.6915,/,gear=H951;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+2.0003,/,gear=H951;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,76.23,mm,gear=H951;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,111.73,mm,gear=H951;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,transverse contact ratio,ε_α,0.93,/,gear=H951,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,1.08,/,gear=H951,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,32,/,gear=Transfer 1;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,23,/,gear=Transfer 1;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,module,m,3.5,mm,gear=Transfer 1,Fernandes2015b,Table 1,4,image+text-agree,printed m without n/t subscript
+V-GEAR-01,reference,centre distance,a,105.0,mm,gear=Transfer 1,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,pressure angle,α,20,°,gear=Transfer 1,Fernandes2015b,Table 1,4,image+text-agree,normal or transverse not stated
+V-GEAR-01,reference,helix angle,β,20,°,gear=Transfer 1,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,face width,b,35,mm,gear=Transfer 1,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.3810,/,gear=Transfer 1;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.4150,/,gear=Transfer 1;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,128.45,mm,gear=Transfer 1;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,95.17,mm,gear=Transfer 1;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,transverse contact ratio,ε_α,1.32,/,gear=Transfer 1,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,1.09,/,gear=Transfer 1,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,28,/,gear=Transfer 2;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,17,/,gear=Transfer 2;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,module,m,4,mm,gear=Transfer 2,Fernandes2015b,Table 1,4,image+text-agree,printed m without n/t subscript
+V-GEAR-01,reference,centre distance,a,95.0,mm,gear=Transfer 2,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,pressure angle,α,20,°,gear=Transfer 2,Fernandes2015b,Table 1,4,image+text-agree,normal or transverse not stated
+V-GEAR-01,reference,helix angle,β,20,°,gear=Transfer 2,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,face width,b,33.5,mm,gear=Transfer 2,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,-0.2400,/,gear=Transfer 2;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,minus sign checked on image
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.0510,/,gear=Transfer 2;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,125.22,mm,gear=Transfer 2;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,80.73,mm,gear=Transfer 2;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,transverse contact ratio,ε_α,1.49,/,gear=Transfer 2,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,0.91,/,gear=Transfer 2,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,17,/,gear=m=8;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,69,/,gear=m=8;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,module,m,8,mm,gear=m=8,Fernandes2015b,Table 1,4,image+text-agree,printed m without n/t subscript
+V-GEAR-01,reference,centre distance,a,355,mm,gear=m=8,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,pressure angle,α,20,°,gear=m=8,Fernandes2015b,Table 1,4,image+text-agree,normal or transverse not stated
+V-GEAR-01,reference,helix angle,β,9,°,gear=m=8,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,face width,b,124,mm,gear=m=8,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.4965,/,gear=m=8;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.3985,/,gear=m=8;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,160.74,mm,gear=m=8;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,580.36,mm,gear=m=8;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,transverse contact ratio,ε_α,1.40,/,gear=m=8,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,0.77,/,gear=m=8,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,19,/,gear=m=10;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,77,/,gear=m=10;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,module,m,10,mm,gear=m=10,Fernandes2015b,Table 1,4,image+text-agree,printed m without n/t subscript
+V-GEAR-01,reference,centre distance,a,500,mm,gear=m=10,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,pressure angle,α,20,°,gear=m=10,Fernandes2015b,Table 1,4,image+text-agree,normal or transverse not stated
+V-GEAR-01,reference,helix angle,β,9,°,gear=m=10,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,face width,b,175,mm,gear=m=10,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.6500,/,gear=m=10;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x_z,+0.8877,/,gear=m=10;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,222.65,mm,gear=m=10;member=pinion,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,tip (addendum) diameter,d_a,814.63,mm,gear=m=10;member=gear (wheel),Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,transverse contact ratio,ε_α,1.32,/,gear=m=10,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,0.87,/,gear=m=10,Fernandes2015b,Table 1,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,16,/,gear=C40;member=pinion,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,24,/,gear=C40;member=wheel,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,module,m,4.5,mm,gear=C40,Martins2015,Table 3,4,image+text-agree,"""Module (mm)"""
+V-GEAR-01,reference,centre distance,a,91.5,mm,gear=C40,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,pressure angle,α,20,°,gear=C40,Martins2015,Table 3,4,image+text-agree,"""Pressure angle""; normal or transverse not stated"
+V-GEAR-01,reference,helix angle,β,0,°,gear=C40,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,face width,b,40,mm,gear=C40,Martins2015,Table 3,4,image+text-agree,"text p.3: ""type C gears having a face width of 40 mm"""
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x,+0.1817,/,gear=C40;member=pinion,Martins2015,Table 3,4,image+text-agree,"""Addendum modification (/)"""
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x,+0.1715,/,gear=C40;member=wheel,Martins2015,Table 3,4,image+text-agree,"""Addendum modification (/)"""
+V-GEAR-01,reference,tip (addendum) diameter,d_a,82.64,mm,gear=C40;member=pinion,Martins2015,Table 3,4,image+text-agree,"""Addendum diameter (mm)"""
+V-GEAR-01,reference,tip (addendum) diameter,d_a,118.54,mm,gear=C40;member=wheel,Martins2015,Table 3,4,image+text-agree,"""Addendum diameter (mm)""; CONFLICT C-1: Fernandes2015b Table 1 prints 115.54; 118.54 checked on 300 dpi image"
+V-GEAR-01,reference,transverse contact ratio,ε_α,1.44,/,gear=C40,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,0,/,gear=C40,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,total contact ratio,ε_γ,1.44,/,gear=C40,Martins2015,Table 3,4,image+text-agree,not printed in Fernandes2015b
+V-GEAR-01,reference,number of teeth,z,20,/,gear=H501;member=pinion,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,30,/,gear=H501;member=wheel,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,module,m,3.5,mm,gear=H501,Martins2015,Table 3,4,image+text-agree,"""Module (mm)"""
+V-GEAR-01,reference,centre distance,a,91.5,mm,gear=H501,Martins2015,Table 3,4,image+text-agree,printed once for H501 and H951 together (merged cell)
+V-GEAR-01,reference,pressure angle,α,20,°,gear=H501,Martins2015,Table 3,4,image+text-agree,"""Pressure angle""; normal or transverse not stated; printed once for H501 and H951 together (merged cell)"
+V-GEAR-01,reference,helix angle,β,15,°,gear=H501,Martins2015,Table 3,4,image+text-agree,printed once for H501 and H951 together (merged cell)
+V-GEAR-01,reference,face width,b,23,mm,gear=H501,Martins2015,Table 3,4,image+text-agree,printed once for H501 and H951 together (merged cell)
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x,+0.1381,/,gear=H501;member=pinion,Martins2015,Table 3,4,image+text-agree,"""Addendum modification (/)"""
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x,+0.1319,/,gear=H501;member=wheel,Martins2015,Table 3,4,image+text-agree,"""Addendum modification (/)"""
+V-GEAR-01,reference,tip (addendum) diameter,d_a,80.37,mm,gear=H501;member=pinion,Martins2015,Table 3,4,image+text-agree,"""Addendum diameter (mm)"""
+V-GEAR-01,reference,tip (addendum) diameter,d_a,116.57,mm,gear=H501;member=wheel,Martins2015,Table 3,4,image+text-agree,"""Addendum diameter (mm)"""
+V-GEAR-01,reference,transverse contact ratio,ε_α,1.45,/,gear=H501,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,0.54,/,gear=H501,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,total contact ratio,ε_γ,1.99,/,gear=H501,Martins2015,Table 3,4,image+text-agree,not printed in Fernandes2015b
+V-GEAR-01,reference,number of teeth,z,38,/,gear=H951;member=pinion,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,number of teeth,z,57,/,gear=H951;member=wheel,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,module,m,1.75,mm,gear=H951,Martins2015,Table 3,4,image+text-agree,"""Module (mm)"""
+V-GEAR-01,reference,centre distance,a,91.5,mm,gear=H951,Martins2015,Table 3,4,image+text-agree,printed once for H501 and H951 together (merged cell)
+V-GEAR-01,reference,pressure angle,α,20,°,gear=H951,Martins2015,Table 3,4,image+text-agree,"""Pressure angle""; normal or transverse not stated; printed once for H501 and H951 together (merged cell)"
+V-GEAR-01,reference,helix angle,β,15,°,gear=H951,Martins2015,Table 3,4,image+text-agree,printed once for H501 and H951 together (merged cell)
+V-GEAR-01,reference,face width,b,23,mm,gear=H951,Martins2015,Table 3,4,image+text-agree,printed once for H501 and H951 together (merged cell)
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x,+1.6915,/,gear=H951;member=pinion,Martins2015,Table 3,4,image+text-agree,"""Addendum modification (/)"""
+V-GEAR-01,reference,profile shift (addendum modification) coefficient,x,+2.0003,/,gear=H951;member=wheel,Martins2015,Table 3,4,image+text-agree,"""Addendum modification (/)"""
+V-GEAR-01,reference,tip (addendum) diameter,d_a,76.23,mm,gear=H951;member=pinion,Martins2015,Table 3,4,image+text-agree,"""Addendum diameter (mm)"""
+V-GEAR-01,reference,tip (addendum) diameter,d_a,111.73,mm,gear=H951;member=wheel,Martins2015,Table 3,4,image+text-agree,"""Addendum diameter (mm)"""
+V-GEAR-01,reference,transverse contact ratio,ε_α,0.93,/,gear=H951,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,overlap contact ratio,ε_β,1.08,/,gear=H951,Martins2015,Table 3,4,image+text-agree,
+V-GEAR-01,reference,total contact ratio,ε_γ,2.02,/,gear=H951,Martins2015,Table 3,4,image+text-agree,not printed in Fernandes2015b; printed 2.02 while ε_α+ε_β of the printed rounded values gives 2.01 (rounding)
+V-GEAR-04,parameter,wheel torque,-,4.95,N·m,stage=K1,Martins2015,Table 4,4,image+text-agree,"column header ""Wheel torque""; shaft = WHEEL"
+V-GEAR-04,reference,radial force,Fr,37,N,stage=K1;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,axial force,Fa,0,N,stage=K1;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,radial force,Fr,37,N,stage=K1;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together
+V-GEAR-04,reference,axial force,Fa,24,N,stage=K1;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together
+V-GEAR-04,parameter,wheel torque,-,104.97,N·m,stage=K5,Martins2015,Table 4,4,image+text-agree,"column header ""Wheel torque""; shaft = WHEEL. Fernandes2015b rounds K5/K7/K9 to 105/199/323 Nm ""applied on wheel"""
+V-GEAR-04,reference,radial force,Fr,790,N,stage=K5;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,axial force,Fa,0,N,stage=K5;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,radial force,Fr,777,N,stage=K5;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together
+V-GEAR-04,reference,axial force,Fa,518,N,stage=K5;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together
+V-GEAR-04,parameter,wheel torque,-,198.68,N·m,stage=K7,Martins2015,Table 4,4,image+text-agree,"column header ""Wheel torque""; shaft = WHEEL. Fernandes2015b rounds K5/K7/K9 to 105/199/323 Nm ""applied on wheel"""
+V-GEAR-04,reference,radial force,Fr,1495,N,stage=K7;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,"printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,axial force,Fa,0,N,stage=K7;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,radial force,Fr,1471,N,stage=K7;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,"one column for H501 and H951 together; printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,axial force,Fa,980,N,stage=K7;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,one column for H501 and H951 together
+V-GEAR-04,parameter,wheel torque,-,323.27,N·m,stage=K9,Martins2015,Table 4,4,image+text-agree,"column header ""Wheel torque""; shaft = WHEEL. Fernandes2015b rounds K5/K7/K9 to 105/199/323 Nm ""applied on wheel"""
+V-GEAR-04,reference,radial force,Fr,2432,N,stage=K9;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,"printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,axial force,Fa,0,N,stage=K9;gear=Spur C40,Martins2015,Table 4,4,image+text-agree,
+V-GEAR-04,reference,radial force,Fr,2393,N,stage=K9;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,"one column for H501 and H951 together; printed with thousands separator (e.g. ""2,198""), separator removed only"
+V-GEAR-04,reference,axial force,Fa,1594,N,stage=K9;gear=Helical H501/951,Martins2015,Table 4,4,image+text-agree,"one column for H501 and H951 together; printed with thousands separator (e.g. ""2,198""), separator removed only"

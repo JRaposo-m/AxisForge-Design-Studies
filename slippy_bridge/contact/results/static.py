@@ -1,0 +1,296 @@
+"""Result of one static (dry, normal) BEM solve of a contact: data only (filled by ``solvers.solve``).
+
+One flat dataclass with its fields grouped as D-0034 item 7 lists them (contact, grid, profile,
+load, solver, fields, measured, Hertz reference, errors, checks, provenance), and
+:meth:`StaticResult.record`, one flat dict of every scalar for a CSV row (written through
+``axisforge.outputs._format``, D-0008; a later ``outputs/`` may write the CSV).
+"""
+from __future__ import annotations
+
+import dataclasses
+import math
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+from ..core.contact import DC
+from ..core.submodels import Kinematics
+from .hertz import HertzResult
+
+if TYPE_CHECKING:
+    from ..core.contact import Contact
+    from ..mesh.grid import Grid
+    from ..roughness.macro.surfaces import RoughHeights
+
+__all__ = ["StaticResult"]
+
+# fields of a Contact that record() writes in its own groups, not as identification
+_CONTACT_GROUPED = {"body1", "body2", "load", "angle", "label", "kappa_max", "kappa_min", "psi", "E_star"}
+
+
+@dataclass(**DC)
+class StaticResult:
+    """Static BEM solution of one contact (SlipPY ``StaticStep``) with its Hertz reference and checks.
+
+    Parameters
+    ----------
+    contact : Contact
+        The contact solved.
+    grid : Grid
+        The grid of the solve (grid x = array axis 0, at ``grid.angle`` from bridge x).
+    build : str
+        How the surfaces were built: ``"two_profiles"``, each body its exact profile; ``"rough"``,
+        the exact profiles plus :attr:`heights` (``solvers.solve`` given ``heights``).
+    heights : (RoughHeights or None, RoughHeights or None)
+        Rough heights added to body 1 and body 2 (``(None, None)`` for ``"two_profiles"``); their
+        records (spec, Rq realised, lambda_s, seed, h, grid-rule flag and warnings) are in
+        :meth:`record`.
+    z1, z2 : ndarray
+        Profiles of body 1 and body 2 on the grid [m] (SlipPY sign: ``-sag``, apex 0; with
+        :attr:`heights` added).
+    gap0 : ndarray
+        Initial gap of the undeformed surfaces [m]: SlipPY ``just_touching_gap``, ``-(z1 + z2)``
+        shifted to a minimum of 0, so >= 0.
+    load_applied : float
+        Load given to the step [N] (a line: load per unit length x period); ``nan`` under
+        ``interference`` or ``mean_gap`` control (no load given).
+    period : float
+        Period of a line contact along grid y = bridge y [m]; ``nan`` for a point contact.
+    load_control : {"normal_load", "interference", "mean_gap"}
+        What the step was given: the load (``contact.load``), the rigid approach of the bodies, or
+        the mean gap (``Grid.step_args``).
+    load_found : float
+        Total normal load of the step [N], SlipPY ``total_normal_load`` (under every control; under
+        ``normal_load`` it equals ``load_applied`` within the solver tolerance; the same sum as
+        ``load``). A line: on one period, the load per unit length is ``load_found / period``
+        (``w_N_per_m`` of the record stays the contact's nominal load).
+    interference, mean_gap : float
+        The approach and the mean gap given to the step [m]; ``nan`` when not given.
+    off_set_x, off_set_y : float
+        Offsets of body 2 given to the step [m] (SlipPY ``off_set_x`` along array axis 0, grid x);
+        ``nan`` when not given (SlipPY's default is 0). See ``solvers.solve`` for what an offset
+        changes in the measurements.
+    use_frequency_domain : bool
+        How the SlipPY influence matrix is defined (``Elastic(use_frequency_domain=...)``): True in
+        the frequency domain, False in space. Periodicity comes from ``periodic_axes`` of the step.
+    method : str
+        SlipPY solution method of the step, as given (not used under ``interference``: BCCG).
+    tolerance : float
+        Convergence tolerance given to the step [-].
+    converged : bool
+        SlipPY's convergence flag of the step.
+    solve_time : float
+        Wall time of the step [s].
+    p : ndarray
+        Contact pressure on the grid [Pa] (SlipPY ``loads_z``).
+    total_displacement_z, surface_1_displacement_z, surface_2_displacement_z : ndarray or None
+        Normal surface displacements [m], SlipPY solution keys of the same names (always returned
+        with ``Elastic`` materials; None only if a key is absent).
+    delta : float
+        Approach of the two bodies [m]: SlipPY ``interference``, the mean of
+        ``just_touching_gap + total_displacement_z`` over the loaded nodes. Its absolute level
+        depends on the kernel's zero-frequency term and on the domain, so ``err_delta`` is
+        meaningful for a point contact on a large enough domain; ``nan`` for a line (not defined
+        locally). Rough: from the first asperity touch (see :attr:`delta_mean_planes`).
+    delta_mean_planes : float
+        Rough only: approach of the mean planes (the smooth profiles; the heights' zero plane: their
+        mean on the lattice, or over the measurement for a measured surface) from their apex touch
+        [m], ``delta + min(-(z1 + z2))`` (``solvers.solve``), comparable with ``hertz.delta`` under
+        the caveats of ``delta`` (point contact, domain large enough) and as a mean over seeds (one
+        realisation's mean under the contact is a random offset, ``heights_mean_m`` of the record);
+        ``nan`` for ``"two_profiles"`` (there it is ``delta`` when the apex is on a node), for a line,
+        with an offset, and if SlipPY's gap is not ``-(z1 + z2)`` shifted (warned).
+    p0 : float
+        Measured maximum pressure [Pa] (rough: p_max, not a Hertz peak).
+    a, b : float
+        Measured semi-axes of the loaded region [m]: ``b`` along ``psi``, ``a`` across (``inf``
+        for a line), whatever the grid angle (intrinsic); the edge is extrapolated below one node.
+        ``nan`` for a rough build (one smooth patch is not assumed), as ``apex_offset_nodes``.
+    load : float
+        Measured load [N]: SlipPY ``total_normal_load``, ``sum p h^2`` over the grid.
+    apex_offset_nodes : float
+        Distance of the pressure maximum from the grid centre node [nodes]: a node-level
+        indicator (on a flat top the maximum may fall one node off, e.g. on a true raceway whose
+        pressure centre moves a fraction of a node), not a measured shift.
+    hertz : HertzResult
+        Hertz reference of the contact, at ``contact.load`` under ``normal_load`` control and at the
+        load found (``load_found``, a line: over ``period``) under ``interference`` or ``mean_gap``.
+    err_p0, err_a, err_b, err_delta, err_load : float
+        Relative errors ``(measured - reference)/reference`` [-] against Hertz (``err_load``
+        against ``load_applied``, so ``nan`` under ``interference`` or ``mean_gap``); ``nan`` when the
+        reference is not finite or zero. Rough: all ``nan`` but ``err_load``.
+    load_ok, edge_clear, margin_ok, resolution_ok, within_reference : bool
+        Checks of the solve: load balance; no pressure on the domain edge; domain margin around
+        the contact; nodes across the contact; errors within the reference tolerance. With
+        ``converged`` and :attr:`hertz_valid` they are the checks of the record.
+        ``within_reference`` is None for a rough build (not applied, OPEN R4-17): a consumer that
+        aggregates the checks must skip None. Rough: ``margin_ok`` and ``resolution_ok`` are those
+        of the nominal Hertz contact (roughness spreads the load beyond ``a``, Johnson 1985 Fig.
+        13.13: only ``edge_clear`` sees it reach the domain edge); the checks of the roughness are
+        ``rough<k>_grid_rule_ok``. The heights' periodicity is checked for a line contact only
+        (``RoughHeights.periodic_y``), not for a point contact made periodic by the caller.
+    commits : dict
+        Provenance: ``{"axisforge", "slippy", "design_studies"} -> commit hash`` or ``"unknown"``.
+    """
+
+    # contact
+    contact: Contact
+    # grid
+    grid: Grid
+    # profile
+    z1: np.ndarray
+    z2: np.ndarray
+    gap0: np.ndarray
+    build: str = "two_profiles"
+    heights: tuple[RoughHeights | None, RoughHeights | None] = (None, None)
+    # load
+    load_applied: float
+    period: float
+    load_control: str
+    load_found: float
+    interference: float
+    mean_gap: float
+    off_set_x: float
+    off_set_y: float
+    # solver
+    use_frequency_domain: bool
+    method: str
+    tolerance: float
+    converged: bool
+    solve_time: float
+    # fields
+    p: np.ndarray
+    delta: float
+    delta_mean_planes: float = math.nan
+    total_displacement_z: np.ndarray | None = None
+    surface_1_displacement_z: np.ndarray | None = None
+    surface_2_displacement_z: np.ndarray | None = None
+    # measured
+    p0: float
+    a: float
+    b: float
+    load: float
+    apex_offset_nodes: float
+    # Hertz reference
+    hertz: HertzResult
+    # errors
+    err_p0: float
+    err_a: float
+    err_b: float
+    err_delta: float
+    err_load: float
+    # checks
+    load_ok: bool
+    edge_clear: bool
+    margin_ok: bool
+    resolution_ok: bool
+    within_reference: bool | None
+    # provenance
+    commits: dict = field(default_factory=dict)
+
+    @property
+    def hertz_valid(self) -> bool:
+        """Hertz validity of the reference (``hertz.valid``), a check of the record."""
+        return self.hertz.valid
+
+    def record(self) -> dict:
+        """One flat dict of every scalar of the result (no arrays), the unit in the key (OPEN SB-10).
+
+        Groups, in order:
+
+        * identification: ``contact`` (class name), ``label``, ``line`` and the contact's own scalar
+          fields under their names (bearing: ``race``, ``alpha_rad``, ``j``, ``phi_rad``, ...; gear:
+          ``g_y_mm``, ``zeta1``, ``d_end_tip_1_m``, ``entrainment_sign_x``, ...); a contact with a
+          ``kinematics`` field adds ``ue_m_per_s``, ``vg_m_per_s``, ``u1_m_per_s``, ``u2_m_per_s``
+          (nan when None or not known);
+        * geometry: ``body1_class``, ``body2_class`` (the Body subclasses: a local torus and a
+          true raceway have the same radii), ``r1_x_m``, ``r1_y_m``, ``r2_x_m``, ``r2_y_m`` (signed
+          body radii in the body frames), ``E1_Pa``, ``E2_Pa``, ``nu1``, ``nu2``, ``angle_rad``, ``kappa_max_per_m``,
+          ``kappa_min_per_m``, ``psi_rad``, ``R_x_m = 1/kappa_max`` and ``R_y_m = 1/kappa_min``
+          (principal relative radii along ``psi`` and across it; they are along bridge x and y
+          only when ``psi = 0``; ``R_y_m = inf`` for a line), ``E_star_Pa``;
+        * grid: ``h_m``, ``n_x``, ``n_y``, ``grid_angle_rad`` (gamma, grid x from bridge x),
+          ``x_min_m``, ``x_max_m``, ``y_min_m``, ``y_max_m`` (along the grid axes), ``span_x`` and
+          ``span_y`` (the shorter side of the domain in half-extents of the Hertz ellipse on the
+          grid axes, as ``Grid.around``; ``span_y`` nan for a line). ``psi_rad`` and the measured
+          ``a_m``, ``b_m`` do not depend on the grid angle;
+        * profile ``build``; load: ``Q_N`` (the load of a point contact, nan for a line) and
+          ``w_N_per_m`` (of a line contact, nan for a point; both the contact's nominal load),
+          ``load_applied_N``, ``period_m``, ``load_control``, ``interference_m``, ``mean_gap_m``,
+          ``off_set_x_m``, ``off_set_y_m`` (nan when not given), ``load_found_N``;
+        * solver: ``use_frequency_domain``, ``method``, ``tolerance``, ``converged``,
+          ``solve_time_s``;
+        * measured: ``p0_Pa``, ``a_m``, ``b_m``, ``load_N``, ``apex_offset_nodes``, ``delta_m``;
+        * Hertz reference: :meth:`HertzResult.record` with ``tag="_ref"`` (``p0_ref_Pa``, ``a_ref_m``,
+          ``b_ref_m``, ``delta_ref_m``, ``b_over_a_ref``, ``size_ratio_ref``, the flank ends
+          ``d_end_<...>_over_b_ref``), without the copies of the contact (psi, E_star, line), ``valid``
+          and ``reason`` (the check ``hertz_valid`` and ``hertz_reason``). When ``hertz_reason``
+          names an end (``d_end_*_over_b < 1``) the measured ``p0_Pa``, ``b_m``, ``delta_m`` and the
+          ``err_*`` belong to an edge contact and the mesh (OPEN SB-70: no check of the solve
+          flags it);
+        * errors ``err_*``, checks, and ``commit_axisforge``, ``commit_slippy``,
+          ``commit_design_studies``;
+        * rough build only (a ``"two_profiles"`` record is unchanged): ``delta_mean_planes_m``,
+          ``heights_mean_m`` (the mean of the summed heights over the grid: the offset of one
+          realisation in ``delta_mean_planes_m``), ``alpha_gt`` (Johnson's roughness parameter
+          ``sigma / delta_ref``, ``sigma`` the composite Rq of the grid heights, Johnson 1985 Eq.
+          13.54: Hertz holds within a few % for ``alpha_gt < 0.05``; nan for a line) and
+          :meth:`RoughHeights.record` of each body prefixed ``rough1_`` / ``rough2_`` (a body
+          without heights: ``rough<k>_kind`` None). There ``p0_Pa`` is p_max, an asperity pressure,
+          not the Hertz peak of ``p0_ref_Pa``.
+        """
+        c, g, hz = self.contact, self.grid, self.hertz
+        ident = {"contact": type(c).__name__, "label": c.label, "line": c.line}
+        for f in dataclasses.fields(c):
+            value = getattr(c, f.name)
+            if f.name not in _CONTACT_GROUPED and (value is None or isinstance(value, (bool, int, float, str))):
+                ident[f.name] = value
+        if hasattr(c, "kinematics"):
+            k = c.kinematics
+            for name in (f.name for f in dataclasses.fields(Kinematics)):
+                value = None if k is None else getattr(k, name)
+                ident[f"{name}_m_per_s"] = math.nan if value is None else value
+        (r1x, r1y), (r2x, r2y) = c.body1.r, c.body2.r
+        geometry = {"body1_class": type(c.body1).__name__, "body2_class": type(c.body2).__name__,
+                    "r1_x_m": r1x, "r1_y_m": r1y, "r2_x_m": r2x, "r2_y_m": r2y,
+                    "E1_Pa": c.body1.E, "E2_Pa": c.body2.E, "nu1": c.body1.nu, "nu2": c.body2.nu,
+                    "angle_rad": c.angle, "kappa_max_per_m": c.kappa_max, "kappa_min_per_m": c.kappa_min,
+                    "psi_rad": c.psi, "R_x_m": 1.0 / c.kappa_max,
+                    "R_y_m": math.inf if c.kappa_min == 0 else 1.0 / c.kappa_min, "E_star_Pa": c.E_star}
+        span_x, span_y = g.spans(hz)
+        x, y = g.X[:, 0], g.Y[0, :]
+        grid = {"h_m": g.h, "n_x": g.X.shape[0], "n_y": g.X.shape[1], "grid_angle_rad": g.angle,
+                "x_min_m": float(x.min()), "x_max_m": float(x.max()),
+                "y_min_m": float(y.min()), "y_max_m": float(y.max()),
+                "span_x": span_x, "span_y": span_y}
+        ref = {k: v for k, v in hz.record("_ref").items()
+               if k not in ("psi_ref_rad", "E_star_ref_Pa", "line_ref", "valid_ref", "reason_ref")}
+        rough = {}
+        if self.build == "rough":                     # never silent about how the heights were made
+            given = [rh for rh in self.heights if rh is not None]
+            sigma = math.sqrt(sum(rh.rq_grid**2 for rh in given))       # independent surfaces add in quadrature
+            rough["delta_mean_planes_m"] = self.delta_mean_planes
+            rough["heights_mean_m"] = float(sum(rh.z.mean() for rh in given))
+            rough["alpha_gt"] = sigma / hz.delta if math.isfinite(hz.delta) and hz.delta > 0 else math.nan
+            for k, rh in enumerate(self.heights, start=1):
+                rough.update({f"rough{k}_{key}": v for key, v in rh.record().items()} if rh is not None
+                             else {f"rough{k}_kind": None})
+        return {**ident, **geometry, **grid, "build": self.build,
+                "Q_N": math.nan if c.line else c.load, "w_N_per_m": c.load if c.line else math.nan,
+                "load_applied_N": self.load_applied, "period_m": self.period,
+                "load_control": self.load_control, "interference_m": self.interference,
+                "mean_gap_m": self.mean_gap, "off_set_x_m": self.off_set_x, "off_set_y_m": self.off_set_y,
+                "load_found_N": self.load_found,
+                "use_frequency_domain": self.use_frequency_domain, "method": self.method,
+                "tolerance": self.tolerance, "converged": self.converged, "solve_time_s": self.solve_time,
+                "p0_Pa": self.p0, "a_m": self.a, "b_m": self.b, "load_N": self.load,
+                "apex_offset_nodes": self.apex_offset_nodes, "delta_m": self.delta,
+                **ref,
+                "err_p0": self.err_p0, "err_a": self.err_a, "err_b": self.err_b, "err_delta": self.err_delta,
+                "err_load": self.err_load,
+                "load_ok": self.load_ok, "edge_clear": self.edge_clear, "margin_ok": self.margin_ok,
+                "resolution_ok": self.resolution_ok, "within_reference": self.within_reference,
+                "hertz_valid": self.hertz_valid, "hertz_reason": hz.reason,
+                **{f"commit_{k}": self.commits.get(k, "unknown") for k in ("axisforge", "slippy", "design_studies")},
+                **rough}

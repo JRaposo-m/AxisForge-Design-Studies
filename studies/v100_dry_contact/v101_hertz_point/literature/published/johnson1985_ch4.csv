@@ -1,0 +1,11 @@
+case_id,kind,quantity,symbol,value,unit,condition,source_key,location,pdf_page,read_from,note
+V-DRY-01,parameter,effective modulus,E*,,Pa,,Johnson1985,text (Sec. 4.2a),102,image,"formula: 1/E* = (1-nu1^2)/E1 + (1-nu2^2)/E2 (unnumbered, book p. 92); also Appendix 3 p. 427"
+V-DRY-01,parameter,relative curvature radius,R,,m,solids of revolution,Johnson1985,text below Eq. (4.17),102,image,formula: 1/R = 1/R1 + 1/R2
+V-DRY-01,formula,Hertz pressure distribution,p,,Pa,r<=a,Johnson1985,Eq. (3.39) quoted in Sec. 4.2(a),102,image,p = p0*{1-(r/a)^2}^(1/2)
+V-DRY-01,formula,contact radius vs p0,a,,m,,Johnson1985,Eq. (4.19),102,image,a = pi*p0*R/(2E*)
+V-DRY-01,formula,approach of distant points vs p0,delta,,m,,Johnson1985,Eq. (4.20),102,image,delta = pi*a*p0/(2E*)
+V-DRY-01,formula,total load,P,,N,,Johnson1985,Eq. (4.21),102,image,P = integral_0^a p(r)2*pi*r dr = (2/3)*p0*pi*a^2
+V-DRY-01,formula,max pressure vs mean pressure,p0/p_m,1.5,-,,Johnson1985,text after Eq. (4.21),103,image,"""the maximum pressure p0 is 3/2 times the mean pressure p_m"": p0 = (3/2) p_m, p_m = P/(pi a^2)"
+V-DRY-01,formula,contact radius,a,,m,,Johnson1985,Eq. (4.22),103,image,a = (3PR/(4E*))^(1/3); same in Appendix 3(b) p. 427
+V-DRY-01,formula,approach of distant points,delta,,m,,Johnson1985,Eq. (4.23),103,image,delta = a^2/R = (9P^2/(16 R E*^2))^(1/3); same in Appendix 3(b) p. 427
+V-DRY-01,formula,maximum contact pressure,p0,,Pa,,Johnson1985,Eq. (4.24),103,image,p0 = 3P/(2 pi a^2) = (6 P E*^2/(pi^3 R^2))^(1/3); same in Appendix 3(b) p. 427

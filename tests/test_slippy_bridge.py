@@ -1,31 +1,322 @@
-"""slippy_bridge.contact: AxisForge bearing -> Contact -> surfaces -> static step."""
+"""slippy_bridge.contact: bodies and contacts (core), then the FZG C40 checks that need no bridge."""
 import math
 from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 af_c = pytest.importorskip("axisforge.core")
-pytest.importorskip("slippy")
 
-from axisforge.core.machine_elements.bearings.contact_models.iso16281 import PointContactStiffness  # noqa: E402
-from axisforge.results import BallLoadDistributionResult, RollerLoadDistributionResult  # noqa: E402
+from axisforge.core.machine_elements.bearings.families import available_families  # noqa: E402
+from axisforge.core.machine_elements.gears.cylindrical import CylindricalFamily  # noqa: E402
+from axisforge.results import (BallBearingResult, BallLoadDistributionResult,  # noqa: E402
+                               BearingAnalysisResult, RollerLoadDistributionResult)
 from axisforge.solvers.machine_elements.bearings.load_distribution.iso_16281.contact_solver import (  # noqa: E402
     ISO16281BallSolver)
+from axisforge.solvers.machine_elements.gears.contact import contact_inputs, load_sharing  # noqa: E402
 
-from references.contact.hertz import hertz_point  # noqa: E402
-from slippy_bridge.contact import (BearingContacts, Contact, ContactCase, Grid, contact_case,  # noqa: E402
-                                   contacts, entrainment_speed, hertz, measure, pair, register,
-                                   registered, rough, semi_axes, static_step)
+from cases import ball_6210 as case_6210, fzg_gears  # noqa: E402  (tests/ is on the pytest pythonpath)
+from studies.r00_analytical_references.r02_hertz_contact import hertz_point  # noqa: E402
 
-CONTACT = dict(e1=210000.0, e2=210000.0, nu1=0.3, nu2=0.3)
+from slippy_bridge.contact.core.contact import Body, Contact, SweptCircleBody  # noqa: E402
+from slippy_bridge.contact.core.machine_elements.bearings import (AngularContactBallContact,  # noqa: E402
+                                                                  BearingContact, CylindricalRollerContact,
+                                                                  DeepGrooveBallContact)
+from slippy_bridge.contact.core.machine_elements.gears import CylindricalGearContact, InvoluteFlank  # noqa: E402
+from slippy_bridge.contact.mesh.grid import SPAN_X_0, Grid  # noqa: E402
+from slippy_bridge.contact.results.hertz import HertzResult  # noqa: E402
+from slippy_bridge.contact.results.static import StaticResult  # noqa: E402
+from slippy_bridge.contact.solvers.hertz import hertz  # noqa: E402
+from slippy_bridge.contact.solvers.static import _measure, solve  # noqa: E402
+from slippy_bridge.contact.solvers.surfaces import surface_pair  # noqa: E402
+from slippy.contact import hertz_full  # noqa: E402
+
+STEEL = dict(E=210e9, nu=0.3)                      # [Pa], [-]
+MM = 1e-3                                          # [m/mm]
 
 
-def _bearing(family, arrangement, **geometry):
-    catalog = af_c.BearingCatalog(d=20.0, D=42.0, b=12.0, designation="test", position=0.0,
-                                  arrangement=arrangement, label="b")
-    return af_c.Bearing.assemble(family=family, catalog=catalog,
-                                 geometry={**geometry, "contact": af_c.ContactAnalysis.ISO16281, **CONTACT})
+class _Point(Contact):
+    line = False
+
+
+class _Line(Contact):
+    line = True
+
+
+# ---- Body.profile against the closed forms ----------------------------------------------------
+
+# sample nodes [m]: X along axis 0, Y along axis 1, both sides of the apex
+_X, _Y = np.meshgrid(np.linspace(-2.0, 2.0, 5) * MM, np.linspace(-1.5, 1.5, 4) * MM, indexing="ij")
+_INNER, _OUTER = (28.65 * MM, -6.604 * MM), (-41.35 * MM, -6.604 * MM)       # 6210 raceways (BR1 section 5)
+
+
+@pytest.mark.parametrize("r, expected", [
+    (6.35 * MM, lambda x, y: -(6.35 * MM - np.sqrt((6.35 * MM)**2 - x**2 - y**2))),           # sphere
+    ((10 * MM, math.inf), lambda x, y: -(10 * MM - np.sqrt((10 * MM)**2 - x**2))),           # cylinder
+    ((math.inf, 10 * MM), lambda x, y: -(10 * MM - np.sqrt((10 * MM)**2 - y**2))),           # cylinder along x
+])
+def test_profile_matches_the_closed_form(r, expected):
+    body = SweptCircleBody(r=r, **STEEL)
+    np.testing.assert_allclose(body.profile(_X, _Y), expected(_X, _Y), rtol=1e-12, atol=1e-18)
+    assert body.profile(np.zeros((1, 1)), np.zeros((1, 1)))[0, 0] == 0.0                   # apex at 0
+
+
+@pytest.mark.parametrize("r", [_INNER, _OUTER, (20 * MM, 8 * MM)], ids=["inner", "outer", "convex"])
+def test_torus_profile_lies_on_the_implicit_torus(r):
+    """Implicit torus: depth w = -z; the axis of revolution is the line (w = r_x, parallel to y_b); the
+    signed distance to it s = sign(r_x) sqrt(x^2 + (w - r_x)^2) and y satisfy (s - (r_x - r_y))^2 + y^2 = r_y^2
+    (generating circle of radius |r_y| centred at r_x - r_y from the axis)."""
+    r_x, r_y = r
+    w = -SweptCircleBody(r=r, **STEEL).profile(_X, _Y)
+    s = math.copysign(1.0, r_x) * np.sqrt(_X**2 + (w - r_x)**2)
+    np.testing.assert_allclose((s - (r_x - r_y))**2 + _Y**2, r_y**2, rtol=1e-12)
+
+
+@pytest.mark.parametrize("r", [_INNER, _OUTER, (20 * MM, 8 * MM)], ids=["inner", "outer", "convex"])
+def test_torus_profile_is_the_hertz_paraboloid_near_the_apex(r):
+    """Johnson 1985 Eq. (4.2a): -z -> x^2/(2 r_x) + y^2/(2 r_y); relative error O((x/r)^2) < 1e-4 at 0.05 mm."""
+    r_x, r_y = r
+    x, y = _X / 40, _Y / 30                                                     # |x|, |y| <= 0.05 mm
+    np.testing.assert_allclose(-SweptCircleBody(r=r, **STEEL).profile(x, y), x**2 / (2 * r_x) + y**2 / (2 * r_y),
+                               rtol=1e-3, atol=1e-20)
+
+
+def test_profile_signs_convex_and_concave():
+    """Convex body falls away from the contact plane (-sag < 0), a concave one rises (> 0)."""
+    assert SweptCircleBody(r=5 * MM, **STEEL).profile(_X, _Y)[0, 0] < 0
+    assert SweptCircleBody(r=-50 * MM, **STEEL).profile(_X, _Y)[0, 0] > 0
+    assert SweptCircleBody(r=math.inf, **STEEL).profile(_X, _Y).tolist() == np.zeros_like(_X).tolist()
+
+
+@pytest.mark.parametrize("angle", [0.3, -1.1, math.pi / 2])
+def test_profile_rotation_is_the_body_frame(angle):
+    body = SweptCircleBody(r=_INNER, **STEEL)
+    x_b = _X * math.cos(angle) + _Y * math.sin(angle)
+    y_b = -_X * math.sin(angle) + _Y * math.cos(angle)
+    np.testing.assert_allclose(body.profile(_X, _Y, angle), body.profile(x_b, y_b), rtol=1e-12, atol=1e-18)
+
+
+def test_cylinder_turned_by_90_deg_lies_along_x():
+    turned = SweptCircleBody(r=(10 * MM, math.inf), **STEEL).profile(_X, _Y, math.pi / 2)
+    np.testing.assert_allclose(turned, SweptCircleBody(r=(math.inf, 10 * MM), **STEEL).profile(_X, _Y),
+                               rtol=1e-9, atol=1e-15)
+
+
+@pytest.mark.parametrize("r, x, y", [
+    (1.0 * MM, _X, _Y),                                  # |x| beyond the sphere (NaN)
+    ((-3.0 * MM, -1.6 * MM), _X, _Y),                    # |x_b| >= |rho|, outside the swept circle
+    # at y = 1.5 mm sag_y = -1.043 mm, so rho = r_x - sag_y = +0.043 mm has crossed the axis of
+    # revolution: the formula gives a finite but wrong height, only the sign check catches it
+    ((-1.0 * MM, -1.6 * MM), np.zeros((1, 1)), np.full((1, 1), 1.5 * MM)),
+])
+def test_grid_beyond_the_body_raises(r, x, y):
+    with pytest.raises(ValueError, match="beyond the body"):
+        SweptCircleBody(r=r, **STEEL).profile(x, y)
+
+
+# ---- relative curvatures, psi, E* (Johnson 1985 section 4.1) ----------------------------------
+
+def test_curvatures_of_the_6210_inner_contact():
+    """Ball 12.7 mm in the inner groove of a 6210 (Dpw 70, f_i 0.52), alpha 0 (BR1 section 5, printed to 5 digits
+    [1/mm]), and the unrounded hand sums 1/6.35 + 1/28.65, 1/6.35 - 1/6.604."""
+    c = _Point(body1=SweptCircleBody(r=6.35 * MM, **STEEL), body2=SweptCircleBody(r=_INNER, **STEEL), load=1000.0)
+    assert c.kappa_max == pytest.approx(0.19238 / MM, abs=0.000005 / MM)
+    assert c.kappa_min == pytest.approx(0.00606 / MM, abs=0.000005 / MM)
+    assert c.kappa_max == pytest.approx((1 / 6.35 + 1 / 28.65) / MM, rel=1e-12)
+    assert c.kappa_min == pytest.approx((1 / 6.35 - 1 / 6.604) / MM, rel=1e-12)
+    assert c.psi == 0.0
+
+
+def test_crossed_cylinders_at_90_deg_are_a_sphere():
+    R = 10 * MM
+    cyl = SweptCircleBody(r=(R, math.inf), **STEEL)
+    c = _Point(body1=cyl, body2=cyl, load=1.0, angle=math.pi / 2)
+    assert c.kappa_max == pytest.approx(1 / R, rel=1e-12)
+    assert c.kappa_min == pytest.approx(1 / R, rel=1e-12)
+
+
+@pytest.mark.parametrize("sign", [+1.0, -1.0])
+def test_crossed_cylinders_at_45_deg(sign):
+    """Johnson 1985 p. 86: A, B = (1 -+ 1/sqrt 2)/(2R), so kappa = 2A, 2B; kappa_max bisects the two axes."""
+    R = 10 * MM
+    cyl = SweptCircleBody(r=(R, math.inf), **STEEL)
+    c = _Point(body1=cyl, body2=cyl, load=1.0, angle=sign * math.pi / 4)
+    assert c.kappa_max == pytest.approx((1 + math.sqrt(2) / 2) / R, rel=1e-12)
+    assert c.kappa_min == pytest.approx((1 - math.sqrt(2) / 2) / R, rel=1e-12)
+    assert c.psi == pytest.approx(sign * math.radians(22.5), rel=1e-12)
+
+
+# two convex tori at 0.3 rad, both more curved along x_b than across (outside the SlipPY R-534 domain)
+_T1, _T2, _ANGLE = (5 * MM, 20 * MM), (8 * MM, 30 * MM), 0.3
+
+
+def test_two_tori_at_an_angle_match_johnson():
+    """Johnson 1985 Eqs. (4.4)-(4.5), p. 85: A + B and |B - A| from the body radii and alpha; kappa = 2A, 2B.
+    psi: the eigenvector of the largest eigenvalue of K = sum R diag(1/r_x, 1/r_y) R^T (numpy eigh)."""
+    c = _Point(body1=SweptCircleBody(r=_T1, **STEEL), body2=SweptCircleBody(r=_T2, **STEEL), load=1.0, angle=_ANGLE)
+    (k1x, k1y), (k2x, k2y) = (1 / r for r in _T1), (1 / r for r in _T2)
+    A_plus_B = 0.5 * (k1x + k1y + k2x + k2y)
+    B_minus_A = 0.5 * math.sqrt((k1x - k1y)**2 + (k2x - k2y)**2
+                                + 2 * (k1x - k1y) * (k2x - k2y) * math.cos(2 * _ANGLE))
+    assert c.kappa_max == pytest.approx(A_plus_B + B_minus_A, rel=1e-12)          # 2B = 1/R''
+    assert c.kappa_min == pytest.approx(A_plus_B - B_minus_A, rel=1e-12)          # 2A = 1/R'
+    rot = np.array([[math.cos(_ANGLE), -math.sin(_ANGLE)], [math.sin(_ANGLE), math.cos(_ANGLE)]])
+    w, v = np.linalg.eigh(np.diag([k1x, k1y]) + rot @ np.diag([k2x, k2y]) @ rot.T)
+    assert w[1] == pytest.approx(c.kappa_max, rel=1e-12)
+    # psi is a direction: compare mod pi with the eigenvector of the largest eigenvalue
+    assert abs(math.remainder(math.atan2(v[1, 1], v[0, 1]) - c.psi, math.pi)) < 1e-12
+
+
+_GAP_CASES = [((_T1, _T2), _ANGLE), ((_T1, _T2), -1.2), ((6.35 * MM, _INNER), 0.0),
+              (((10 * MM, math.inf), (10 * MM, math.inf)), math.pi / 4),
+              (((10 * MM, math.inf), (12 * MM, math.inf)), 0.3)]
+
+
+@pytest.mark.parametrize("radii, angle", _GAP_CASES)
+def test_profiles_give_the_gap_curvatures(radii, angle):
+    """The gap -(z1 + z2) of the exact profiles is kappa t^2 / 2 at a small distance t along psi (kappa_max) and
+    across it (kappa_min): profiles() and the curvature tensor describe the same two bodies."""
+    c = _Point(body1=SweptCircleBody(r=radii[0], **STEEL),
+               body2=SweptCircleBody(r=radii[1], **STEEL), load=1.0, angle=angle)
+    t = 1e-5                                                                      # [m], (t / r)^2 <= 1e-5
+    cp, sp = math.cos(c.psi), math.sin(c.psi)
+    grid = SimpleNamespace(X=np.array([[t * cp, -t * sp]]), Y=np.array([[t * sp, t * cp]]))
+    z1, z2 = c.profiles(grid)
+    gap = -(z1 + z2)[0]
+    assert gap[0] == pytest.approx(c.kappa_max * t**2 / 2, rel=1e-4)
+    assert gap[1] == pytest.approx(c.kappa_min * t**2 / 2, rel=1e-4)
+
+
+@pytest.mark.parametrize("radii, angle", _GAP_CASES)
+def test_contact_and_hertz_agree_with_hertz_full_on_the_raw_radii(radii, angle):
+    """SlipPY hertz_full on the per-body radii with its own angle: kappa_max, kappa_min = 1/relative_radii[0], [1];
+    psi = alpha (mod pi, no pi/2 shift); E* = e_star; and the bridge's hertz() (equivalent body at angle 0) gives
+    the same p0, sorted semi-axes and approach, so the psi rotation and SlipPY's angle agree. Needs SlipPY
+    local-fixes (the omega factor 2). Cases outside the SlipPY R-534 domain (both bodies more curved across than
+    along)."""
+    c = _Point(body1=SweptCircleBody(r=radii[0], **STEEL),
+               body2=SweptCircleBody(r=radii[1], **STEEL), load=100.0, angle=angle)
+    sol = hertz_full(r1=radii[0], r2=radii[1], moduli=(STEEL["E"],) * 2, v=(STEEL["nu"],) * 2, load=100.0,
+                     angle=angle)
+    assert c.kappa_max == pytest.approx(1 / sol["relative_radii"][0], rel=1e-12)
+    assert c.kappa_min == pytest.approx(1 / sol["relative_radii"][1], rel=1e-12)
+    assert abs(math.remainder(c.psi - sol["alpha"], math.pi)) < 1e-12
+    assert c.E_star == pytest.approx(sol["e_star"], rel=1e-14)
+    hz = hertz(c)
+    assert hz.p0 == pytest.approx(sol["max_pressure"], rel=1e-6)
+    assert [hz.b, hz.a] == pytest.approx(sorted(sol["contact_radii"]), rel=1e-6)
+    assert hz.delta == pytest.approx(sol["total_deflection"], rel=1e-6)
+
+
+def test_line_contact_has_zero_kappa_min_along_y():
+    c = _Line(body1=SweptCircleBody(r=(10 * MM, math.inf), **STEEL),
+              body2=SweptCircleBody(r=math.inf, **STEEL), load=1e5)
+    assert (c.kappa_max, c.kappa_min, c.psi) == (pytest.approx(100.0), 0.0, 0.0)
+
+
+def test_parallel_cylinders_turned_by_90_deg_are_a_line_along_y():
+    """Body 2 r = (inf, R) turned by pi/2 is the cylinder (R, inf): cos(pi/2) = 6e-17 must not tilt the line."""
+    R = 10 * MM
+    c = _Line(body1=SweptCircleBody(r=(R, math.inf), **STEEL),
+              body2=SweptCircleBody(r=(math.inf, R), **STEEL), load=1e5,
+              angle=math.pi / 2)
+    assert (c.kappa_max, c.kappa_min, c.psi) == (pytest.approx(2 / R, rel=1e-12), 0.0, 0.0)
+
+
+def test_E_star():
+    c = _Point(body1=SweptCircleBody(r=5 * MM, E=210e9, nu=0.3),
+               body2=SweptCircleBody(r=math.inf, E=70e9, nu=0.33), load=1.0)
+    assert c.E_star == pytest.approx(1 / ((1 - 0.3**2) / 210e9 + (1 - 0.33**2) / 70e9), rel=1e-14)
+
+
+# ---- input checks (D-0034 item 6) ---------------------------------------------------------------
+
+_BALL, _FLAT = dict(r=5 * MM, **STEEL), dict(r=math.inf, **STEEL)
+
+
+@pytest.mark.parametrize("body", [
+    dict(r=0.0, **STEEL),
+    dict(r=(math.nan, 5 * MM), **STEEL),
+    dict(r=(5 * MM, -math.inf), **STEEL),
+    dict(r=(1.0, 2.0, 3.0), **STEEL),
+    dict(**STEEL),                                                              # r missing
+])
+def test_bad_radius_raises(body):
+    with pytest.raises(ValueError, match="SweptCircleBody: r"):
+        SweptCircleBody(**body)
+
+
+def test_body_is_abstract():
+    """Body is the contract (E, nu, r, profile); only a subclass that gives r and profile is created."""
+    with pytest.raises(TypeError, match="abstract"):
+        Body(**STEEL)
+
+    class _NoProfile(Body):
+        r = (1.0, 1.0)
+    with pytest.raises(TypeError, match="abstract"):
+        _NoProfile(**STEEL)
+
+
+@pytest.mark.parametrize("E, nu, match", [
+    (0.0, 0.3, "E must be positive"), (-1.0, 0.3, "E must be positive"), (math.inf, 0.3, "E must be positive"),
+    (210e9, 0.0, r"nu must be in \(0, 0.5\)"), (210e9, 0.5, r"nu must be in \(0, 0.5\)"),
+])
+def test_bad_material_raises(E, nu, match):
+    with pytest.raises(ValueError, match=match):
+        SweptCircleBody(r=5 * MM, E=E, nu=nu)
+
+
+@pytest.mark.parametrize("cls, body1, body2, kwargs, match", [
+    (_Point, _BALL, _FLAT, dict(load=0.0), "load must be positive"),
+    (_Point, _BALL, _FLAT, dict(load=math.nan), "load must be positive"),
+    (_Point, _BALL, _FLAT, dict(load=1.0, angle=-math.pi / 2), r"angle must be in \(-pi/2, pi/2\]"),
+    (_Point, _BALL, _FLAT, dict(load=1.0, angle=2.0), r"angle must be in \(-pi/2, pi/2\]"),
+    (_Point, _BALL, dict(r=-4 * MM, **STEEL), dict(load=1.0), "not a Hertz contact"),       # ball in a smaller cup
+    (_Point, dict(r=(5 * MM, math.inf), **STEEL), dict(r=(math.inf, -5 * MM), **STEEL), dict(load=1.0),
+     "saddle"),                                                                              # kappa_min < 0
+    (_Point, dict(r=(5 * MM, math.inf), **STEEL), _FLAT, dict(load=1.0), "point contact needs kappa_min > 0"),
+    (_Line, _BALL, _FLAT, dict(load=1.0), "line contact needs kappa_min = 0"),
+    (_Line, dict(r=(math.inf, 5 * MM), **STEEL), _FLAT, dict(load=1.0), "along bridge y"),
+    (_Point, dict(r=(5 * MM, 5e3), **STEEL), _FLAT, dict(load=1.0), "neither a point"),      # ratio 1e-6
+    (_Point, dict(r=(5 * MM, 5 * MM / 1.2e-5), **STEEL), _FLAT, dict(load=1.0), "neither a point"),  # dead band
+    (_Line, dict(r=(5 * MM, 5 * MM / 1.2e-5), **STEEL), _FLAT, dict(load=1.0), "neither a point"),
+])
+def test_bad_contact_raises(cls, body1, body2, kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        cls(body1=SweptCircleBody(**body1), body2=SweptCircleBody(**body2), label="c1", **kwargs)
+
+
+def test_contact_names_its_label():
+    with pytest.raises(ValueError, match="Contact 'ball_7': load"):
+        _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=-1.0, label="ball_7")
+
+
+def test_contact_is_abstract():
+    with pytest.raises(TypeError, match="abstract"):
+        Contact(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
+
+
+def test_profiles_turn_body_2_only():
+    body1, body2 = SweptCircleBody(r=(10 * MM, math.inf), **STEEL), SweptCircleBody(r=(10 * MM, math.inf), **STEEL)
+    grid = SimpleNamespace(X=_X, Y=_Y)
+    z1, z2 = _Point(body1=body1, body2=body2, load=1.0, angle=0.4).profiles(grid)
+    np.testing.assert_array_equal(z1, body1.profile(_X, _Y))
+    np.testing.assert_array_equal(z2, body2.profile(_X, _Y, 0.4))
+
+
+# ---- bearings: AxisForge bearing -> BearingContact (core/machine_elements/bearings.py) ------------
+
+CONTACT = dict(e1=210000.0, e2=210000.0, nu1=0.3, nu2=0.3)          # AxisForge steel [MPa], [-]
+
+
+def _bearing(family, arrangement, contact: bool = True, catalog=dict(d=20.0, D=42.0, b=12.0), **geometry):
+    """Assembled AxisForge bearing; ``contact`` adds the ISO/TS 16281 contact constants (steel)."""
+    catalog = af_c.BearingCatalog(**catalog, designation="test", position=0.0, arrangement=arrangement, label="b")
+    if contact:
+        geometry = {**geometry, "contact": af_c.ContactAnalysis.ISO16281, **CONTACT}
+    return af_c.Bearing.assemble(family=family, catalog=catalog, geometry=geometry)
 
 
 @pytest.fixture(scope="module")
@@ -34,17 +325,24 @@ def ball():
 
 
 @pytest.fixture(params=[0.0, 0.015])
-def ball_6210(request, load_case):
-    """The 6210-like ball bearing of ``validation/bearings/iso16281_ball_contact`` (Dw 12.7,
+def ball_6210(request):
+    """The 6210-like ball bearing of ``tests/cases/ball_6210`` (Dw 12.7,
     Dpw 70 mm, Z 9, grooves 0.52 Dw), at radial clearance s = 0 (alpha_0 = 0) and s = 0.015 mm
     (alpha_0 = 9.86 deg). Built by the case, so these tests gate the bearing its README names."""
-    return load_case("iso16281_ball_contact").build_bearing(request.param)
+    return case_6210.build_bearing(request.param)
 
 
 @pytest.fixture(scope="module")
 def roller():
     return _bearing(af_c.CylindricalRollerFamily(), "non-locating",
                     Dwe=5.0, Lwe=5.0, Dpw=31.0, Z=14, n_s=50, s=0.010)
+
+
+@pytest.fixture(scope="module")
+def roller_10():
+    """Cylindrical roller 10 x 10 mm on Dpw 70 mm (BR1 section 5)."""
+    return _bearing(af_c.CylindricalRollerFamily(), "non-locating", catalog=dict(d=50.0, D=90.0, b=20.0),
+                    Dwe=10.0, Lwe=10.0, Dpw=70.0, Z=14, n_s=50, s=0.010)
 
 
 @pytest.fixture(scope="module")
@@ -66,345 +364,1853 @@ def roller_row():
                                         delta_jk=np.zeros((Z, n_s)), q_jk=q)
 
 
-# ---- registry ------------------------------------------------------------------------------
-
-def test_every_axisforge_bearing_family_is_registered():
-    from axisforge.core.machine_elements.bearings.families.family import _FAMILY_REGISTRY
-    reg = registered()
-    assert set(_FAMILY_REGISTRY) == set(reg["bearing"]) and len(reg["bearing"]) >= 8
-    assert "SpurHelicalGearMeshing" in reg["gear"]
+@pytest.fixture(scope="module")
+def ball_result(ball_row):
+    """Single-row AxisForge ``BallBearingResult`` of the ``ball`` fixture (label "b"), converged."""
+    return BallBearingResult.single(ball_row, label="b", delta_r=0.0, delta_a=0.0, psi=0.0, phi_Fr=0.5,
+                                    Fr_xz=0.0, Fr_xy=0.0, Fa=0.0, n_iter=1, residual=0.0, ok=True)
 
 
-def test_gear_adapter_not_written_yet_raises():
-    from axisforge.core.machine_elements.gears.parallel_axis import SpurHelicalGearMeshing
-    with pytest.raises(NotImplementedError):
-        contacts(SpurHelicalGearMeshing.__new__(SpurHelicalGearMeshing))
+def _key(c):
+    """Everything a bearing contact holds, for comparing two lists of contacts."""
+    return (type(c), c.label, c.load, c.body1.r, c.body2.r, c.body1.E, c.body2.nu, c.race, c.alpha_rad, c.row,
+            c.j, c.phi_rad, c.phi_global_rad)
 
 
-def test_unregistered_subtype_raises():
-    with pytest.raises(NotImplementedError, match="no SlipPY adapter"):
-        contacts(object())
+def _6210_contacts(**kw):
+    """Contacts of the 6210 of ``tests/cases/ball_6210`` at s = 0 (alpha_0 = 0), Q 1000 N given by hand."""
+    return DeepGrooveBallContact.from_bearing(case_6210.build_bearing(0.0), load=1000.0, **kw)
 
 
-def test_register_refuses_what_is_not_an_adapter():
-    class Dummy:
-        pass
+def test_6210_hand_check():
+    """BR1 section 5: 6210-like (Dw 12.7, Dpw 70, f 0.52, s = 0 so alpha_0 = 0), Q 1000 N given by hand.
+    R_x = 1/(1/6.35 + 1/28.65) = 5.198 mm inner, 1/(1/6.35 - 1/41.35) = 7.502 mm outer; R_y =
+    1/(1/6.35 - 1/6.604) = 165.1 mm both; printed to 4 digits."""
+    inner, outer = _6210_contacts()
+    assert all(isinstance(c, DeepGrooveBallContact) and c.load == 1000.0 and c.psi == 0.0 for c in (inner, outer))
+    assert (inner.race, outer.race, inner.label, outer.label) == ("inner", "outer", "6210_inner", "6210_outer")
+    assert 1 / inner.kappa_max / MM == pytest.approx(5.198, abs=0.0005)
+    assert 1 / outer.kappa_max / MM == pytest.approx(7.502, abs=0.0005)
+    for c in (inner, outer):
+        assert 1 / c.kappa_min / MM == pytest.approx(165.1, abs=0.05)
+    assert inner.body2.r[0] > 0 and outer.body2.r[0] < 0 and outer.body2.r[1] < 0          # concave outer race
+    assert inner.E_star == pytest.approx(210e9 / (2 * (1 - 0.3**2)), rel=1e-12)            # MPa -> Pa once
 
-    before = registered()
-    for not_an_adapter in (type("Plain", (), {}), lambda obj: []):
-        with pytest.raises(TypeError):
-            register(Dummy)(not_an_adapter)
-    assert registered() == before
-    with pytest.raises(NotImplementedError):
-        contacts(Dummy())
 
-
-# ---- bearing geometry ----------------------------------------------------------------------
-
-def _curvature_sum(case):
-    return sum(0.0 if math.isinf(r) else 1.0 / r for r in (*case.r1, *case.r2))
+def test_roller_hand_check(roller_10):
+    """Cylindrical roller 10 x 10 mm on Dpw 70 mm, Q 1000 N, inner race: line load Q/Lwe = 1000 N / 0.010 m =
+    100 000 N/m; R = 1/(1/5 + 1/30) = 4.2857 mm (raceway (Dpw - Dwe)/2 = 30 mm)."""
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    assert isinstance(c, CylindricalRollerContact) and c.line and (c.k, c.x_mm) == (None, None)
+    assert c.load == pytest.approx(1e5, rel=1e-12)
+    assert 1 / c.kappa_max / MM == pytest.approx(4.2857, abs=0.00005)
+    assert (c.kappa_min, c.psi) == (0.0, 0.0)
 
 
 @pytest.mark.parametrize("race, sign", [("inner", +1.0), ("outer", -1.0)])
 def test_ball_curvature_sum_matches_iso(ball, race, sign):
-    """Signs and units: sum of curvatures = (1/Dw)(4 - 1/f +/- 2 gamma/(1 -/+ gamma)) (ISO/TS 16281)."""
-    case = contact_case(ball, race, load=100.0)
+    """Signs and units: sum of curvatures = (1/Dw)(4 - 1/f +/- 2 gamma/(1 -/+ gamma)) (ISO/TS 16281); the
+    trace of the gap tensor is kappa_max + kappa_min."""
+    (c,) = DeepGrooveBallContact.from_bearing(ball, load=100.0, races=(race,))
     f = ball.ri / ball.Dw if race == "inner" else ball.re / ball.Dw
     g = ball.Dw * math.cos(ball.alpha_0) / ball.Dpw
-    iso = (4.0 - 1.0 / f + sign * 2.0 * g / (1.0 - sign * g)) / (ball.Dw * 1e-3)
-    assert _curvature_sum(case) == pytest.approx(iso, rel=1e-12)
-    assert case.r2[0] * sign > 0 and case.r2[1] < 0
+    iso = (4.0 - 1.0 / f + sign * 2.0 * g / (1.0 - sign * g)) / (ball.Dw * MM)
+    assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-12)
+    assert c.body2.r[0] * sign > 0 and c.body2.r[1] < 0
 
 
 def test_alpha_default_is_family_angle(ball):
-    assert contact_case(ball, "outer", 100.0, alpha=ball.alpha_0).r2 == contact_case(ball, "outer", 100.0).r2
+    (a0,), (given,) = (DeepGrooveBallContact.from_bearing(ball, load=100.0, races=("outer",), **kw)
+                       for kw in ({}, {"alpha": ball.alpha_0}))
+    assert given.body2.r == pytest.approx(a0.body2.r, rel=1e-12) and a0.alpha_rad == ball.alpha_0
 
 
-def test_alpha_j_changes_only_the_rolling_radius(ball):
-    a0, aj = contact_case(ball, "inner", 100.0), contact_case(ball, "inner", 100.0, alpha=0.4)
-    assert aj.r1 == a0.r1 and aj.r2[1] == a0.r2[1]
-    assert aj.r2[0] == pytest.approx((ball.Dpw - ball.Dw * math.cos(0.4)) / (2 * math.cos(0.4)) * 1e-3)
+def test_alpha_changes_only_the_rolling_radius(ball):
+    (a0,), (aj,) = (DeepGrooveBallContact.from_bearing(ball, load=100.0, races=("inner",), **kw)
+                    for kw in ({}, {"alpha": 0.4}))
+    assert aj.body1.r == a0.body1.r and aj.body2.r[1] == a0.body2.r[1] and aj.alpha_rad == 0.4
+    assert aj.body2.r[0] == pytest.approx((ball.Ri - ball.ri * math.cos(0.4)) / math.cos(0.4) * MM, rel=1e-12)
 
-
-def test_default_label_is_the_bearing_label(ball):
-    assert contact_case(ball, "inner", 1.0).label == f"{ball.label}_inner"
-
-
-@pytest.mark.parametrize("kwargs", [dict(race="middle", load=1.0), dict(race="inner", load=0.0),
-                                    dict(race="inner", load=1.0, alpha=math.pi / 2),
-                                    dict(race="inner", load=1.0, length=2.0)])
-def test_bad_input_raises(ball, kwargs):
-    with pytest.raises(ValueError):
-        contact_case(ball, **kwargs)
-
-
-# ---- bearing contacts from the ISO/TS 16281 result -----------------------------------------
 
 def test_ball_contacts_from_result(ball, ball_row):
-    cs = BearingContacts.contacts(ball, ball_row, races=("inner", "outer"), elements="loaded")
+    cs = DeepGrooveBallContact.from_bearing(ball, ball_row, races=("inner", "outer"), elements="loaded")
     assert len(cs) == 2 * 5                                         # 5 loaded balls x 2 races
     c0 = cs[0]
-    assert isinstance(c0, Contact) and (c0.element, c0.subtype) == ("bearing", "DeepGrooveBallFamily")
-    assert c0.location == {"race": "inner", "row": 0, "element_j": 0, "phi_local_rad": 0.0, "alpha_rad": 0.2}
-    assert c0.case.load == 300.0
-    assert c0.case.r2[0] == pytest.approx(contact_case(ball, "inner", 300.0, alpha=0.2).r2[0])
-    assert contacts(ball, ball_row, elements="max", races=("outer",))[0].location["element_j"] == 0
+    assert isinstance(c0, DeepGrooveBallContact) and c0.label == "b_inner_e0"
+    assert (c0.race, c0.alpha_rad, c0.row, c0.j, c0.phi_rad, c0.phi_global_rad) == ("inner", 0.2, 0, 0, 0.0, None)
+    assert c0.load == 300.0
+    (by_hand,) = DeepGrooveBallContact.from_bearing(ball, load=300.0, alpha=0.2, races=("inner",))
+    assert c0.body2.r == by_hand.body2.r
+    assert DeepGrooveBallContact.from_bearing(ball, ball_row, elements="max", races=("outer",))[0].j == 0
 
 
-def test_contacts_of_a_real_iso16281_solve(ball_6210, load_case):
+def test_contacts_of_a_real_iso16281_solve(ball_6210):
     """Solver -> bridge on a solved bearing: both raceways of an element carry its Q_j and alpha_j.
 
     AxisForge has no centrifugal term, so the inner and the outer contact of a ball share the load
     and the operating angle; they differ only in the raceway radii. The combined load of the
     case (radial + axial), so that alpha_j differs from element to element and from alpha_0.
     """
-    load = load_case("iso16281_ball_contact").LOADS["combined"]                                 # [N]
+    load = case_6210.LOADS["combined"]                                 # [N]
     result = ISO16281BallSolver().solve_contact(ball_6210, Fr_xz=load["Fr"], Fr_xy=0.0, Fa=load["Fa"],
                                                 delta_r_init=0.0, delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
     assert result.ok
     row = result.rows[0]
     loaded = np.flatnonzero(row.Q_j > 0.0)
-    cs = contacts(ball_6210, result)
+    cs = DeepGrooveBallContact.from_bearing(ball_6210, result)
     assert len(loaded) > 0 and len(cs) == 2 * len(loaded)
     assert not np.allclose(row.alpha_j[loaded], ball_6210.alpha_0, rtol=0.01)
     for j, inner, outer in zip(loaded, cs[0::2], cs[1::2]):
         for race, c in (("inner", inner), ("outer", outer)):
-            assert (c.location["race"], c.location["element_j"]) == (race, j)
-            assert c.case.load == row.Q_j[j] and c.location["alpha_rad"] == row.alpha_j[j]
+            assert (c.race, c.j) == (race, j)
+            assert c.load == row.Q_j[j] and c.alpha_rad == row.alpha_j[j]
+        # curvature sum at the operating angle, Eq. (5)-(6) form: (1/Dw)(4 - 1/f) + sign cos(alpha_j)/R_P, inner +,
+        # outer -, R_P from the solver's groove centres (SB-41); it reduces to Eq. (5)-(6) at alpha_0, where
+        # 2 g/(Dw (1 -/+ g)) = cos(alpha)/R_P with the ball centre on the pitch circle
+        for sign, c in ((+1.0, inner), (-1.0, outer)):
+            R_P = _solver_contact_point(ball_6210, c.race, row.alpha_j[j])                          # [mm]
+            iso = (4.0 - 1.0 / 0.52) / (ball_6210.Dw * MM) + sign * math.cos(row.alpha_j[j]) / (R_P * MM)   # [1/m]
+            assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-12)
+
+
+def test_phi_is_wrapped_as_the_axisforge_element_record(ball, ball_result):
+    """``phi_rad`` is AxisForge's own element record value: local angle wrapped to [-pi, pi)."""
+    from axisforge.outputs.solvers.bearings.load_distribution.load_distribution_results import element_records
+    by_j = {e["j"]: e["phi_rad"] for e in element_records(ball_result)}
+    cs = DeepGrooveBallContact.from_bearing(ball, ball_result, races=("inner",))
+    assert any(ball_result.rows[0].phi_j[c.j] >= math.pi for c in cs)                    # some angles do wrap
+    for c in cs:
+        assert -math.pi <= c.phi_rad < math.pi and c.phi_rad == by_j[c.j]
 
 
 def test_roller_laminae_from_result(roller, roller_row):
-    whole = contacts(roller, roller_row, races=("inner",))
-    assert [c.case.load for c in whole] == pytest.approx([500.0 / 5e-3, 200.0 / 5e-3])     # Q_j / Lwe
-    lam = contacts(roller, roller_row, races=("inner",), laminae=True, elements=[1])
-    assert len(lam) == 50 and lam[0].case.load == pytest.approx(4.0 / 0.1e-3)          # q_jk / (Lwe/n_s)
-    assert lam[3].location["lamina_k"] == 3 and lam[0].case.line
-    assert lam[3].location["x_k_mm"] == pytest.approx(roller_row.x_k[3])
+    whole = CylindricalRollerContact.from_bearing(roller, roller_row, races=("inner",))
+    assert [c.load for c in whole] == pytest.approx([500.0 / 5e-3, 200.0 / 5e-3])          # Q_j / Lwe
+    lam = CylindricalRollerContact.from_bearing(roller, roller_row, races=("inner",), laminae=True, elements=[1])
+    assert len(lam) == 50 and lam[0].load == pytest.approx(4.0 / 0.1e-3)                    # q_jk / (Lwe/n_s)
+    assert lam[3].k == 3 and lam[0].line and lam[3].label == "b_inner_e1_l3"
+    assert lam[3].x_mm == pytest.approx(roller_row.x_k[3])
+    assert whole[0].k is None and whole[0].x_mm is None
 
 
 def test_listed_unloaded_element_is_skipped_and_row_checked(ball, ball_row):
-    assert [c.location["element_j"] for c in contacts(ball, ball_row, races=("inner",), elements=[0, 4])] == [0]
-    with pytest.raises(ValueError):
-        contacts(ball, ball_row, row=1)
+    assert [c.j for c in DeepGrooveBallContact.from_bearing(ball, ball_row, races=("inner",), elements=[0, 4])] == [0]
+    with pytest.raises(ValueError, match="row applies"):
+        DeepGrooveBallContact.from_bearing(ball, ball_row, row=1)
 
 
-def test_multirow_result_gives_global_angle(ball, ball_row):
-    from axisforge.results import BallBearingResult
-    res = BallBearingResult.single(ball_row, label="b", delta_r=0.0, delta_a=0.0, psi=0.0, phi_Fr=0.5,
-                                   Fr_xz=0.0, Fr_xy=0.0, Fa=0.0, n_iter=1, residual=0.0, ok=True)
-    loc = contacts(ball, res, races=("inner",), elements="max")[0].location
-    assert loc["phi_global_rad"] == pytest.approx(res.phi_j_global(0)[0])
+def test_bearing_result_gives_global_angle(ball, ball_result):
+    c = DeepGrooveBallContact.from_bearing(ball, ball_result, races=("inner",), elements="max")[0]
+    assert c.phi_global_rad == pytest.approx(ball_result.phi_j_global(0)[0])
+    assert DeepGrooveBallContact.from_bearing(ball, ball_result.rows[0], races=("inner",))[0].phi_global_rad is None
 
 
-def test_record_keys_must_not_overlap(ball):
-    c = contacts(ball, load=1.0, races=("inner",))[0]
-    assert {"element", "subtype", "race", "label", "case_hash"} <= set(c.record())
-    bad = Contact("bearing", "X", {"label": "clash"}, c.case)
-    with pytest.raises(ValueError, match="overlap"):
-        bad.record()
+def test_analysis_result_of_the_solver_is_accepted(ball, ball_result):
+    """``SolverBase.solve`` returns a ``BearingAnalysisResult`` per label; the bridge reads its load distribution."""
+    analysis = BearingAnalysisResult(label="b", load_distribution=ball_result)
+    assert ([_key(c) for c in DeepGrooveBallContact.from_bearing(ball, analysis)]
+            == [_key(c) for c in DeepGrooveBallContact.from_bearing(ball, ball_result)])
 
 
-def test_load_or_result_not_both(ball, ball_row):
-    with pytest.raises(ValueError):
-        contacts(ball, ball_row, load=1.0)
-    with pytest.raises(ValueError):
-        contacts(ball)
+@pytest.mark.parametrize("call, match", [
+    (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, replace(res, ok=False, residual=12.0)),
+     "not converged"),
+    (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, replace(res, label="other")), "not of bearing"),
+    (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, res, alpha=0.1), "alpha applies to load= only"),
+    (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, res, load=1.0), "either result"),
+    (lambda ball, res: DeepGrooveBallContact.from_bearing(ball), "either result"),
+    (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, load=1.0, row=1), "row applies to result= only"),
+    (lambda ball, res: DeepGrooveBallContact.from_bearing(
+        ball, replace(res, rows=(replace(res.rows[0], Q_j=0.0 * res.rows[0].Q_j),)),
+        elements="max"), "no loaded element"),
+    (lambda ball, res: DeepGrooveBallContact.from_bearing(ball, replace(res.rows[0], Q_j=0.0 * res.rows[0].Q_j)),
+     "no loaded element"),
+])
+def test_from_bearing_refuses(ball, ball_result, call, match):
+    with pytest.raises(ValueError, match=match):
+        call(ball, ball_result)
 
 
-def test_kinematics_only_when_speeds_are_given(ball):
-    assert contacts(ball, load=100.0)[0].kinematics == {}
-    k = contacts(ball, load=100.0, n_inner_rpm=3000.0)[0].kinematics
-    g = ball.Dw * math.cos(ball.alpha_0) / ball.Dpw
-    assert k["u_e_m_per_s"] == pytest.approx(31e-3 / 4 * (1 - g**2) * 3000 * 2 * math.pi / 60)
-    assert k["u_e_m_per_s"] == entrainment_speed(ball.Dpw, ball.Dw, ball.alpha_0, 3000.0, 0.0)
+# Single-row geometry of each AxisForge family, the values of AxisForge's own family tests
+# (axisforge/core/machine_elements/bearings/families/tests/conftest.py); multi-row families take
+# a list of rows. A new AxisForge family fails the test below until it has an entry here.
+_FAMILY_GEOMETRY = {
+    "DeepGrooveBallFamily": dict(Dw=7.0, Dpw=31.0, Z=9, s=0.010),
+    "AngularContactFamily": dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=25.0),
+    "SelfAligningBallFamily": dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=25.0),
+    "ThrustBallSingleRowFamily": dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=90.0),
+    "ThrustBallMultiRowFamily": dict(rows=[dict(Dw=8.0, Dpw=40.0, Z=12, alpha_0_deg=90.0)] * 2),
+    "CylindricalRollerFamily": dict(Dwe=5.0, Lwe=5.0, Dpw=31.0, Z=14, n_s=50, s=0.010),
+    "ThrustCylindricalRollerFamily": dict(Dwe=8.0, Lwe=8.0, Dpw=72.5, Z=18, s=0.01, n_s=40, alpha_0_deg=90.0),
+    "RollerThrustMultiRowFamily": dict(rows=[dict(Dwe=8.0, Lwe=8.0, Dpw=72.5, Z=18, s=0.01, n_s=40,
+                                                  alpha_0_deg=90.0)] * 2),
+}
+_CLASSES = (DeepGrooveBallContact, AngularContactBallContact, CylindricalRollerContact)
 
 
-# ---- reference, grid, measurements ----------------------------------------------------------
+@pytest.mark.parametrize("name", sorted(available_families()))
+def test_every_axisforge_family_has_one_class_or_none(name):
+    """Each family in AxisForge ``available_families()``: the one bridge class of that family gives contacts with a
+    valid Hertz solution, and every other class refuses the bearing with a TypeError naming both families; a family
+    without a class (thrust, self-aligning, multi-row: not now) is refused by all three. A family AxisForge itself
+    cannot assemble is skipped (an AxisForge bug, not the bridge)."""
+    geometry = _FAMILY_GEOMETRY[name]
+    contact = "rows" not in geometry and "ThrustCylindrical" not in name     # these take no contact constants
+    arrangement = "thrust" if "Thrust" in name else "non-locating" if "Cylindrical" in name else "locating"
+    try:
+        bearing = _bearing(available_families()[name](), arrangement, contact=contact, **geometry)
+    except Exception as exc:                                              # noqa: BLE001
+        pytest.skip(f"AxisForge cannot assemble {name}: {type(exc).__name__}: {exc}")
+    owners = [cls for cls in _CLASSES if cls.family.__name__ == name]
+    assert len(owners) == (1 if name in ("DeepGrooveBallFamily", "AngularContactFamily",
+                                         "CylindricalRollerFamily") else 0)
+    for cls in _CLASSES:
+        if cls in owners:
+            cs = cls.from_bearing(bearing, load=100.0)
+            assert [c.race for c in cs] == ["inner", "outer"] and all(type(c) is cls for c in cs)
+            for c in cs:
+                hz = hertz(c)
+                assert hz.p0 > 0 and hz.b > 0 and hz.valid and (hz.line or hz.b <= hz.a)
+        else:
+            with pytest.raises(TypeError, match=f"{cls.__name__} takes a {cls.family.__name__} bearing, got {name}"):
+                cls.from_bearing(bearing, load=100.0)
 
-def test_hertz_matches_the_closed_forms():
-    """Circular point contact and line contact against Johnson (1985), ch. 4.
 
-    Contact modulus ``1/E* = (1 - nu1^2)/E1 + (1 - nu2^2)/E2``. Sphere of radius R on a flat, load Q:
-    ``a = (3 Q R / (4 E*))**(1/3)``, ``p0 = 3 Q / (2 pi a^2)``, ``delta = a^2 / R``. Cylinder of
-    radius R on a flat, load per length w: ``b = sqrt(4 w R / (pi E*))``, ``p0 = 2 w / (pi b)``; the
-    contact is infinite along the cylinder axis (y) and the approach is not defined (plane strain).
-    """
-    R, E, nu = 6.35e-3, (2.1e11, 0.7e11), (0.3, 0.33)        # [m], [Pa], [-]; two materials
-    e_star = 1.0 / ((1 - nu[0]**2) / E[0] + (1 - nu[1]**2) / E[1])
+def test_roller_refuses_alpha_laminae_without_result_and_two_rows(roller):
+    with pytest.raises(ValueError, match="alpha has no effect"):
+        CylindricalRollerContact.from_bearing(roller, load=100.0, alpha=0.1)
+    with pytest.raises(ValueError, match="laminae applies to result= only"):
+        CylindricalRollerContact.from_bearing(roller, load=100.0, laminae=True)
+    two_rows = _bearing(af_c.CylindricalRollerFamily(), "non-locating", Dwe=5.0, Lwe=5.0, Dpw=31.0, Z=14, n_s=50,
+                        s=0.010, i=2)
+    with pytest.raises(NotImplementedError, match="2-row bearing"):
+        CylindricalRollerContact.from_bearing(two_rows, load=100.0)
 
-    Q = 500.0                                                 # [N]
-    ref = hertz(ContactCase("sphere", r1=R, r2=math.inf, E=E, nu=nu, load=Q))
-    a = (3 * Q * R / (4 * e_star)) ** (1 / 3)
-    assert (ref["s_x_m"], ref["s_y_m"]) == pytest.approx((a, a), rel=1e-6)
-    assert ref["p0_Pa"] == pytest.approx(3 * Q / (2 * math.pi * a**2), rel=1e-6)
-    assert ref["delta_m"] == pytest.approx(a**2 / R, rel=1e-6)
 
-    w = 5.0e4                                                 # [N/m]
-    ref = hertz(ContactCase("cylinder", r1=(R, math.inf), r2=math.inf, E=E, nu=nu, load=w, line=True))
-    b = math.sqrt(4 * w * R / (math.pi * e_star))
-    assert ref["s_x_m"] == pytest.approx(b, rel=1e-9) and math.isinf(ref["s_y_m"])
-    assert ref["p0_Pa"] == pytest.approx(2 * w / (math.pi * b), rel=1e-9)
-    assert math.isnan(ref["delta_m"])
+def test_roller_raceway_is_not_re_evaluated_at_alpha_j(roller, roller_row):
+    """(Dpw -/+ Dwe)/2 has no angle: a roller row with alpha_j != 0 (0.3 rad, which AxisForge never gives: an
+    invariance check) leaves the raceway radii as stored."""
+    tilted = replace(roller_row, alpha_j=np.full_like(roller_row.alpha_j, 0.3))
+    c = CylindricalRollerContact.from_bearing(roller, tilted, races=("inner",), elements="max")[0]
+    assert c.body2.r[0] == pytest.approx(roller.r_inner[0] * MM, rel=1e-15) and c.alpha_rad == 0.3
+
+
+@pytest.mark.parametrize("race, sign", [("inner", +1.0), ("outer", -1.0)])
+def test_roller_bodies_are_the_cylinders(roller_10, race, sign):
+    """Roller (5, inf) mm and raceway (+/-(Dpw -/+ Dwe)/2, inf) = (30, inf) / (-40, inf) mm; profiles exact: the circle
+    along rolling, straight across; equal to the SweptCircleBody of the same radii, also on a turned frame."""
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=(race,))
+    assert c.body1.r == (5.0 * MM, math.inf)
+    assert c.body2.r == pytest.approx((sign * (70.0 - sign * 10.0) / 2 * MM, math.inf), rel=1e-15)
+    x = _X / 2
+    for body in (c.body1, c.body2):
+        for angle in (0.0, 0.4):
+            torus = SweptCircleBody(r=body.r, **STEEL)
+            np.testing.assert_allclose(body.profile(x, _Y, angle), torus.profile(x, _Y, angle), rtol=1e-12, atol=1e-18)
+    assert c.body2.profile(x, _Y)[0, 0] * sign < 0                    # convex inner falls away, concave outer rises
+
+
+def test_roller_contact_checks_its_bodies(roller_10):
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    for kw in (dict(body1=SweptCircleBody(r=c.body1.r, **STEEL)), dict(race="outer")):
+        with pytest.raises(ValueError, match="body1 must be its Roller and body2 its Raceway"):
+            replace(c, **kw)
+
+
+def test_row_of_the_other_kind_is_refused(ball, roller_row):
+    with pytest.raises(ValueError, match="line contact row, DeepGrooveBallContact a point contact"):
+        DeepGrooveBallContact.from_bearing(ball, roller_row)
+
+
+def test_bearing_without_elastic_constants_names_them():
+    bare = _bearing(af_c.DeepGrooveBallFamily(), "locating", contact=False, Dw=7.0, Dpw=31.0, Z=9, s=0.010)
+    with pytest.raises(ValueError, match="contact=ContactAnalysis.ISO16281 and e1, e2, nu1, nu2"):
+        DeepGrooveBallContact.from_bearing(bare, load=100.0)
+
+
+# ---- BearingContact checks -----------------------------------------------------------------------
+
+_RACE = dict(r=(28.65 * MM, -6.604 * MM), **STEEL)            # 6210 inner raceway at alpha 0 (local torus)
+
+
+class _BallOnRace(BearingContact):
+    """A bearing contact with any two bodies: the checks of BearingContact alone."""
+    line = False
+
+
+@pytest.mark.parametrize("race, kwargs, match", [
+    (_RACE, dict(race="middle", alpha_rad=0.0), "race must be"),
+    (_RACE, dict(race="inner", alpha_rad=math.pi / 2), r"\|alpha_rad\| must be"),
+    (_RACE, dict(race="inner", alpha_rad=-1.6), r"\|alpha_rad\| must be"),
+    (_RACE, dict(race="inner", alpha_rad=0.0, angle=0.1), "angle must be 0"),
+    (dict(r=(-50 * MM, 20 * MM), **STEEL), dict(race="inner", alpha_rad=0.0), "psi = 0 expected"),
+])
+def test_bearing_contact_checks(race, kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        _BallOnRace(body1=SweptCircleBody(r=6.35 * MM, **STEEL), body2=SweptCircleBody(**race), load=1.0, **kwargs)
+
+
+def test_bearing_contact_is_abstract():
+    with pytest.raises(TypeError, match="abstract"):
+        BearingContact(body1=SweptCircleBody(r=6.35 * MM, **STEEL),
+                       body2=SweptCircleBody(**_RACE), load=1.0, race="inner", alpha_rad=0.0)
+
+
+# ---- true ball raceway: the groove swept about the bearing axis (DeepGrooveBallContact) ------------
+
+# Dw 12.7, Dpw 70, groove 0.52 Dw [m] (D-0034 item 10; cowork's independent check of 2026-10-26 19:36)
+_DW, _DPW, _RG = 12.7 * MM, 70.0 * MM, 0.52 * 12.7 * MM
+
+
+def _raceway(race, alpha_deg):
+    """True raceway with the contact point at R_P = (Dpw -/+ Dw cos(alpha))/2 (ball centre on the pitch circle)."""
+    alpha = math.radians(alpha_deg)
+    sign = 1.0 if race == "inner" else -1.0
+    return DeepGrooveBallContact.Raceway(race=race, R_P=(_DPW - sign * _DW * math.cos(alpha)) / 2, r_g=_RG,
+                                         alpha=alpha, **STEEL)
+
+
+def _local_torus(body):
+    """The SweptCircleBody with the same principal radii: the local torus."""
+    return SweptCircleBody(r=body.r, **STEEL)
 
 
 @pytest.mark.parametrize("race", ["inner", "outer"])
-def test_independent_hertz_agrees_with_slippy(ball_6210, race):
-    """The judge (``references.contact.hertz_point``, Johnson ch. 4) against SlipPY's ``hertz_full``
-    on the bridge axes, for the elliptical contact of a ball with each raceway (the outer one has a
-    negative rolling radius). Two independent implementations of the same theory."""
-    case = contact_case(ball_6210, race, load=2436.0)         # [N], Q_max of the bearing at Fr = 5 kN
-    judge, ref = hertz_point(case.r1, case.r2, case.E, case.nu, case.load), hertz(case)
-    for key in ("p0_Pa", "s_x_m", "s_y_m", "delta_m"):
-        assert judge[key] == pytest.approx(ref[key], rel=1e-6), key
+def test_true_raceway_at_alpha_0_is_the_torus(race):
+    """At alpha = 0 the groove is swept about an axis at r_x = +/-R_P: the torus is exact. Equal at every node to
+    rel 1e-12; atol 1e-17 m is the rounding of the closed form (r - sqrt(r^2 - x^2) at r ~ 0.03 m)."""
+    X, Y = np.meshgrid(np.linspace(-0.3, 0.3, 7) * MM, np.linspace(-3.0, 3.0, 13) * MM, indexing="ij")
+    body = _raceway(race, 0.0)
+    np.testing.assert_allclose(body.profile(X, Y), _local_torus(body).profile(X, Y), rtol=1e-12, atol=1e-17)
 
-
-def test_axisforge_cp_is_hertz_with_a_rounded_constant(ball_6210):
-    """Implementation check, same theory: AxisForge's ``cp`` against the judge's Hertz approach.
-
-    This does not test whether Hertz holds; it tests that AxisForge codes the Hertz load-deflection
-    constant of a ball (``Q = cp delta**1.5``, delta = approach of the two raceways, ISO/TS 16281)
-    as the theory gives it, and that the bridge hands the judge the radii AxisForge used. With the
-    contact cases at the free angle alpha_0 (where AxisForge evaluates the curvatures), the judge
-    gives ``cp_judge = Q / (delta_inner + delta_outer)**1.5`` [N/mm^1.5], independent of Q.
-
-    Finding (flagged, not fixed): the Hertz approach rearranges to
-    ``Q = (pi sqrt(2) / 3) E' (T_i + T_e)**(-3/2) delta**1.5`` with pi sqrt(2)/3 = 1.48096, and
-    AxisForge has the constant 1.48 (``contact_models/iso16281.py:104``): cp is 0.065 % low, the
-    approach 0.043 % high. Whether ISO/TS 16281 prints 1.48 has not been checked. The test removes
-    the constant and requires the rest to agree to 1e-6.
-
-    Per raceway, ``PointContactStiffness`` is rebuilt from the bearing's public attributes (as
-    ``families/family.py`` does) and its curvature sum [1/mm] and ellipticity ``chi`` are compared
-    with the curvature sum of the bridge radii and the judge's semi-axis ratio.
-    """
-    b, Q = ball_6210, 2436.0                                  # [N]
-    stiffness = PointContactStiffness(b.Dw, b.Dpw, b.gamma, b.ri, b.re, b.alpha_0, b.e1, b.e2, b.nu1, b.nu2)
-    approach_mm = 0.0
-    for race in ("inner", "outer"):
-        case = contact_case(b, race, Q)                       # radii at alpha_0
-        judge = hertz_point(case.r1, case.r2, case.E, case.nu, case.load)
-        approach_mm += judge["delta_m"] * 1e3                 # [m] -> [mm], AxisForge length unit
-        assert _curvature_sum(case) * 1e-3 == pytest.approx(getattr(stiffness, f"curvature_sum_{race}"), rel=1e-6)
-        # a groove contact is long across rolling: chi = s_y / s_x >= 1
-        assert judge["s_y_m"] / judge["s_x_m"] == pytest.approx(getattr(stiffness, f"chi_{race}"), rel=1e-6)
-    cp_judge = Q / approach_mm**1.5                           # [N/mm^1.5]
-    assert b.cp * (math.pi * math.sqrt(2.0) / 3.0) / 1.48 / cp_judge == pytest.approx(1.0, rel=1e-6)
-
-
-@pytest.mark.parametrize("r1, x_longer", [((50e-3, 5e-3), True), ((5e-3, 50e-3), False)])
-def test_semi_axes_follow_the_relative_radii(r1, x_longer):
-    s_x, s_y = semi_axes(ContactCase("e", r1=r1, r2=math.inf, E=2.1e11, nu=0.3, load=100.0))
-    assert (s_x > s_y) is x_longer
-
-
-def test_line_axis_follows_the_cylinder():
-    s = semi_axes(ContactCase("c", r1=(5e-3, math.inf), r2=math.inf, E=2.1e11, nu=0.3, load=1e5, line=True))
-    assert math.isinf(s[1]) and math.isfinite(s[0])
-
-
-def test_grid_rolling_axis_and_dyadic_spacing(ball):
-    g = Grid.around(contact_case(ball, "inner", 300.0))
-    assert math.log2(g.h) == round(math.log2(g.h))
-    assert np.all(np.diff(g.X[:, 0]) > 0) and np.all(g.X[:, 0] == g.X[:, -1])
-    assert g.X[g.X.shape[0] // 2, 0] == 0.0 and g.Y[0, g.Y.shape[1] // 2] == 0.0
-
-
-def test_hand_built_grid_is_checked(ball):
-    g = Grid.around(contact_case(ball, "inner", 300.0))
-    assert Grid(X=g.X, Y=g.Y, h=g.h * (1 + 1e-12)).h > g.h            # not dyadic, within tolerance
-    for bad in (dict(X=g.X, Y=g.Y, h=2 * g.h),                        # wrong spacing
-                dict(X=g.Y, Y=g.X, h=g.h),                            # rolling along axis 1
-                dict(X=g.X, Y=g.Y[:, :-1], h=g.h),                    # shapes differ
-                dict(X=g.X[::-1], Y=g.Y, h=g.h),                      # rolling direction reversed
-                dict(X=g.X[::-1], Y=g.Y[:, ::-1], h=-g.h)):           # negative spacing
-        with pytest.raises(ValueError):
-            Grid(**bad)
-
-
-def test_measure_finds_hertz_semi_axes_below_one_node(ball):
-    case = contact_case(ball, "inner", 300.0)
-    g = Grid.around(case)
-    ref = hertz(case)
-    m = measure(ref["pressure"](g.X, g.Y), g.h)
-    assert abs(m["s_x_m"] - ref["s_x_m"]) < 0.5 * g.h and abs(m["s_y_m"] - ref["s_y_m"]) < 0.5 * g.h
-    assert m["apex_offset_nodes"] == 0.0
-
-
-def test_grid_beyond_the_body_raises():
-    case = ContactCase("tiny", r1=1e-4, r2=math.inf, E=2.1e11, nu=0.3, load=1e-3)
-    g = Grid.around(case, span_x=200.0, span_y=200.0)
-    with pytest.raises(ValueError):
-        pair(case, g)
-
-
-# ---- roughness -----------------------------------------------------------------------------
-
-def test_fractal_rms_and_seed():
-    a = rough.fractal((64, 32), 1e-6, sigma=0.2e-6, hurst=0.8, seed=1)
-    assert a.shape == (64, 32) and a.std() == pytest.approx(0.2e-6) and abs(a.mean()) < 1e-15
-    assert np.array_equal(a, rough.fractal((64, 32), 1e-6, sigma=0.2e-6, hurst=0.8, seed=1))
-
-
-def test_roughness_composite_and_two_profiles(ball):
-    import slippy.surface as s
-    case = contact_case(ball, "inner", 300.0)
-    g = Grid.around(case)
-    z_rough_1, z_rough_2 = np.full(g.X.shape, 1e-7), np.full(g.X.shape, 2e-7)
-    smooth = pair(case, g)
-    s1, s2 = pair(case, g, rough=(z_rough_1, z_rough_2))
-    assert np.allclose(s1.profile - smooth[0].profile, 3e-7) and np.allclose(s2.profile, 0.0)
-    t1, t2 = pair(case, g, build="two_profiles", rough=(z_rough_1, z_rough_2))
-    two = pair(case, g, build="two_profiles")
-    assert np.allclose(t1.profile - two[0].profile, 1e-7) and np.allclose(t2.profile - two[1].profile, 2e-7)
-    # every call makes new Elastic objects, so the properties are compared, not the objects;
-    # two different materials, so that a swap of the bodies would show
-    mixed = replace(case, E=(2.1e11, 0.7e11), nu=(0.3, 0.33))
-    for build in ("composite", "two_profiles"):
-        m1, m2 = (surface.material for surface in pair(mixed, g, build=build, rough=(z_rough_1, z_rough_2)))
-        assert (m1.E, m1.v, m2.E, m2.v) == (2.1e11, 0.3, 0.7e11, 0.33)
-    as_surface = pair(case, g, rough=(s.Surface(profile=z_rough_1, grid_spacing=g.h), z_rough_2))
-    assert np.array_equal(as_surface[0].profile, s1.profile)
-    for bad in (dict(rough=(np.zeros((3, 3)), None)),
-                dict(rough=(s.Surface(profile=z_rough_1, grid_spacing=2 * g.h), None)),
-                dict(build="equivalent")):
-        with pytest.raises(ValueError):
-            pair(case, g, **bad)
-
-
-# ---- static step, end to end ---------------------------------------------------------------
 
 @pytest.mark.parametrize("race", ["inner", "outer"])
-def test_static_step_end_to_end(ball, race, tmp_path):
-    """AxisForge bearing -> both builds -> SlipPY static BEM: p0 vs Hertz, builds agree, checks true."""
-    pytest.importorskip("pyfftw")
-    c = contacts(ball, load=300.0, races=(race,))[0]
-    g = Grid.around(c.case)
-    recs = {b: static_step.run(c, pair(c.case, g, build=b), g, tmp_path)[0]
-            for b in ("composite", "two_profiles")}
-    rc = recs["composite"]
-    assert rc["element"] == "bearing" and rc["race"] == race
-    assert abs(rc["err_p0"]) < 0.02
-    assert all(rc[k] for k in ("converged", "load_ok", "edge_clear", "margin_ok", "resolution_ok",
-                               "within_reference"))
-    assert recs["two_profiles"]["p0_Pa"] == pytest.approx(rc["p0_Pa"], rel=0.01)
+@pytest.mark.parametrize("alpha_deg", [25.0, 40.0])
+def test_true_raceway_on_the_axes_lines(race, alpha_deg):
+    """On x = 0 the section is the groove circle itself: equal to the local torus to 1e-12 m up to |y| = 3 mm.
+    OPEN SB-42: on y = 0 the true section is a plane section of the raceway inclined by alpha, not a circle: equal to
+    fourth order only (x^4); inner 40 deg: 1.0e-12 m at 0.1 mm, 5.1e-12 m at 0.15 mm (b of the 6210 contacts is
+    0.17-0.20 mm), so 6e-12 m up to |x| = 0.15 mm."""
+    body = _raceway(race, alpha_deg)
+    y = np.linspace(-3.0, 3.0, 13)[None, :] * MM
+    np.testing.assert_allclose(body.profile(0 * y, y), _local_torus(body).profile(0 * y, y), rtol=0, atol=1e-12)
+    x = np.linspace(-0.15, 0.15, 9)[:, None] * MM
+    np.testing.assert_allclose(body.profile(x, 0 * x), _local_torus(body).profile(x, 0 * x), rtol=0, atol=6e-12)
 
 
-def test_static_step_flags_a_short_domain(ball, tmp_path):
-    pytest.importorskip("pyfftw")
-    case = contact_case(ball, "inner", 300.0)
-    g = Grid.around(case, span_x=2.0)
-    rec, _ = static_step.run(case, pair(case, g), g, tmp_path)
-    assert rec["edge_clear"] and not rec["margin_ok"]
+@pytest.mark.parametrize("race, x_mm, y_mm, diff_um", [
+    ("inner", 0.15, 2.0, 0.0915), ("inner", 0.3, 3.0, 0.588), ("outer", 0.15, 2.0, 0.0526),
+])
+def test_true_raceway_against_the_local_torus_off_the_axes(race, x_mm, y_mm, diff_um):
+    """Cowork's independent check (2026-10-26 19:36, D-0034 item 10), alpha 40 deg: z_model - z_true (both SlipPY
+    sign) off the x and y axes, within 2 % of each value. +y_b is the meridian tangent cos(alpha) e_a - sin(alpha) e_r
+    on both raceways (DeepGrooveBallContact.Raceway); the difference is odd in y (an x^2 y term)."""
+    body = _raceway(race, 40.0)
+    x, y = np.full((1, 1), x_mm * MM), np.full((1, 1), y_mm * MM)
+    diff = (_local_torus(body).profile(x, y) - body.profile(x, y))[0, 0]
+    assert diff / 1e-6 == pytest.approx(diff_um, rel=0.02)
 
 
-def test_contact_case_hash_ignores_label():
-    a = ContactCase("x", r1=1e-3, r2=math.inf, E=2e11, nu=0.3, load=1.0)
-    assert a.case_hash() == ContactCase("y", r1=1e-3, r2=math.inf, E=2e11, nu=0.3, load=1.0).case_hash()
+@pytest.mark.parametrize("body", [DeepGrooveBallContact.Ball(Dw=_DW, **STEEL), _raceway("inner", 40.0),
+                                  _raceway("outer", 40.0), _raceway("outer", -25.0)],
+                         ids=["ball", "inner_40", "outer_40", "outer_-25"])
+def test_profile_agrees_with_r_near_the_contact_point(body):
+    """Body contract (Johnson 1985 Eq. (4.2a)): -profile = x^2/(2 r_x) + y^2/(2 r_y) + O(|x|^3) near the contact
+    point; at |x|, |y| <= 0.05 mm the third-order term is below 3e-3 of the two terms' magnitudes (they cancel where
+    r_x and r_y have opposite signs, so not of their sum; true raceway at 40 deg: 1.5e-3, of order y/r_g). Also on a
+    turned frame."""
+    x, y = _X / 40, _Y / 30
+    r_x, r_y = body.r
+    paraboloid, size = x**2 / (2 * r_x) + y**2 / (2 * r_y), x**2 / (2 * abs(r_x)) + y**2 / (2 * abs(r_y))
+    assert np.all(np.abs(-body.profile(x, y) - paraboloid) <= 3e-3 * size + 1e-20)
+    xb, yb = x * math.cos(0.7) + y * math.sin(0.7), -x * math.sin(0.7) + y * math.cos(0.7)
+    np.testing.assert_allclose(body.profile(x, y, 0.7), body.profile(xb, yb), rtol=1e-12, atol=1e-20)
 
 
-def test_contact_case_keeps_slippy_keys_and_the_saved_hash():
-    """E and nu go out under SlipPY's names, so the hash of the saved results does not change."""
-    # the ball_flat case of the hertz_vs_bem study: 12.7 mm steel ball on a steel flat, 500 N
-    case = ContactCase("ball_flat", r1=6.35e-3, r2=math.inf, E=210e9, nu=0.3, load=500.0)
-    assert {"moduli", "v"} <= set(case.to_dict()) and {"moduli", "v"} <= set(case.hertz_args())
-    assert case.case_hash() == "9ccc2ddabd085997"
+@pytest.mark.parametrize("y_mm", [7.0, -7.0])
+def test_node_off_the_true_raceway_raises(y_mm):
+    """Beyond the groove (|y| > r_g = 6.604 mm) the node has no root on the raceway."""
+    with pytest.raises(ValueError, match="beyond the inner raceway"):
+        _raceway("inner", 25.0).profile(np.zeros((1, 1)), np.full((1, 1), y_mm * MM))
+
+
+@pytest.mark.parametrize("race", ["inner", "outer"])
+@pytest.mark.parametrize("alpha_deg", [25.0, 40.0])
+def test_true_raceway_mirror_in_alpha(race, alpha_deg):
+    """profile(x, y) at -alpha equals profile(x, -y) at +alpha (Raceway docstring): guards the sense of y_b and of
+    the axial normal component."""
+    plus, minus = _raceway(race, alpha_deg), _raceway(race, -alpha_deg)
+    np.testing.assert_allclose(minus.profile(_X / 10, _Y), plus.profile(_X / 10, -_Y), rtol=1e-12, atol=1e-18)
+
+
+@pytest.mark.parametrize("race", ["inner", "outer"])
+def test_raceway_radii_equal_the_old_bodies(ball_6210, race):
+    """At alpha_0 the principal radii of the true raceway equal the C9 bodies: r_x = +/-(Dpw -/+ Dw cos a_0) /
+    (2 cos a_0) [mm -> m], outer negated, also AxisForge r_inner/r_outer as stored; r_y = -ri or -re; rel 1e-12.
+    At another angle they differ (groove fixed in the ring, SB-41): see the contact point tests below."""
+    a = ball_6210.alpha_0
+    (c,) = DeepGrooveBallContact.from_bearing(ball_6210, load=100.0, alpha=a, races=(race,))
+    s = 1.0 if race == "inner" else -1.0
+    r_g = ball_6210.ri if race == "inner" else ball_6210.re
+    old = (s * (ball_6210.Dpw - s * ball_6210.Dw * math.cos(a)) / (2 * math.cos(a)) * MM, -r_g * MM)
+    assert c.body2.r == pytest.approx(old, rel=1e-12) and c.body1.r == (ball_6210.Dw / 2 * MM,) * 2
+    stored = (ball_6210.r_inner if race == "inner" else ball_6210.r_outer)
+    assert c.body2.r == pytest.approx((s * stored[0] * MM, stored[1] * MM), rel=1e-12)
+
+
+def _solver_contact_point(bearing, race, alpha):
+    """Contact-point radius [mm] rebuilt from the solver's stored ``Ri`` and ``A`` at the operating angle ``alpha``
+    (the solver itself computes no contact point): the inner groove centre at ``Ri`` (ISO/TS 16281 4.2.2 Eq. (14)),
+    the outer one ``A cos(alpha_0)`` closer to the axis (the radial part of the centre distance A, Eq. (13), at zero
+    displacement: U_j of Eq. (15)), each fixed in its ring and measured from that ring's axis; the contact point
+    ri / re from the centre along the normal at ``alpha``. Untilted results only (psi = 0, SB-53)."""
+    if race == "inner":
+        return bearing.Ri - bearing.ri * math.cos(alpha)
+    return bearing.Ri - bearing.A * math.cos(bearing.alpha_0) + bearing.re * math.cos(alpha)
+
+
+@pytest.mark.parametrize("race, sign", [("inner", +1.0), ("outer", -1.0)])
+def test_contact_point_at_alpha_0_is_the_pitch_circle_formula(ball_6210, race, sign):
+    """Groove fixed in the ring (SB-41): at alpha_0 the contact point is R_P = (Dpw -/+ Dw cos(alpha_0)) / 2, the
+    ball centre on the pitch circle (AxisForge BallBearingGeometry r_bx at alpha_0), rel 1e-12; both ball families,
+    the 6210 at s = 0 and 0.015 mm (alpha_0 0 and 9.86 deg) and the 25 deg angular contact bearing."""
+    for cls, bearing in ((DeepGrooveBallContact, ball_6210), (AngularContactBallContact, _angular())):
+        (c,) = cls.from_bearing(bearing, load=100.0, races=(race,))
+        pitch = (bearing.Dpw - sign * bearing.Dw * math.cos(bearing.alpha_0)) / 2               # [mm]
+        assert c.alpha_rad == bearing.alpha_0 and c.body2.R_P == pytest.approx(pitch * MM, rel=1e-12)
+
+
+def _solved(case):
+    """(contact class, bearing, result) of the SB-41 table of the C10 summary: the 6210 at s = 0.015 mm under the
+    combined load of ``tests/cases/ball_6210``, or the 25 deg angular contact bearing under Fr = Fa = 5 kN."""
+    if case == "6210":
+        bearing = case_6210.build_bearing(0.015)
+        load = case_6210.LOADS["combined"]
+        cls, Fr, Fa = DeepGrooveBallContact, load["Fr"], load["Fa"]
+    else:
+        bearing, cls, Fr, Fa = _angular(), AngularContactBallContact, 5000.0, 5000.0
+    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=Fr, Fr_xy=0.0, Fa=Fa, delta_r_init=0.0,
+                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    assert result.ok
+    return cls, bearing, result
+
+
+@pytest.mark.parametrize("case, race, alpha_j_deg, R_P_mm", [
+    ("6210", "inner", 17.954, 28.967820), ("6210", "outer", 17.954, 41.032180),
+    ("angular", "inner", 27.489, 29.371795), ("angular", "outer", 27.489, 40.628205)])
+def test_contact_point_of_the_sb41_table(case, race, alpha_j_deg, R_P_mm):
+    """The four rows of the (i)/(ii) table of the C10 summary (80_Inbox/2026-10-26/slippy_bridge_bearing_families,
+    SB-41), most loaded ball j 0: R_P is column (ii), R_G - sign r_g cos(alpha_j) with R_G = Dpw/2 + sign (r_g -
+    Dw/2) cos(alpha_0) (ISO/TS 16281 4.2.2 Eq. (13)-(15)), here rebuilt from the solver's Ri and A, abs 1e-9 mm. The
+    regression check is the printed value: the table prints 6 decimals, so it is met to its rounding, 5e-7 mm (OPEN
+    SB-52). No published value exists for the groove-fixed R_P at alpha_j. Rolling radius r_x = sign R_P /
+    cos(alpha_j), rel 1e-12 (Meusnier, outer negated): a sign regression of Raceway.r."""
+    cls, bearing, result = _solved(case)
+    (c,) = cls.from_bearing(bearing, result, elements="max", races=(race,))
+    sign, r_g = (1.0, bearing.ri) if race == "inner" else (-1.0, bearing.re)
+    assert c.j == 0 and math.degrees(c.alpha_rad) == pytest.approx(alpha_j_deg, abs=5e-4)
+    assert c.body2.R_P / MM == pytest.approx(_solver_contact_point(bearing, race, c.alpha_rad), abs=1e-9)
+    assert c.body2.R_P / MM == pytest.approx(R_P_mm, abs=5e-7)
+    assert c.body2.r[0] == pytest.approx(sign * c.body2.R_P / math.cos(c.alpha_rad), rel=1e-12)
+
+
+@pytest.mark.parametrize("case", ["6210", "angular"])
+def test_contact_point_is_the_solvers(case):
+    """Every loaded ball: R_P of the bridge equals the contact-point radius rebuilt from the solver's stored Ri and A
+    (groove centres fixed in the rings, see _solver_contact_point), rel 1e-12. The operating angle recomputed from
+    the solver's displacements by Eq. (15), alpha_j = arctan2(A sin(alpha_0) + delta_a, A cos(alpha_0) + delta_r
+    cos(phi_j)) (psi = 0), equals the result's alpha_j: the centre-line direction is the solver's; the radial
+    positions of the centres are Eq. (14) (Ri) and Eq. (13) (A)."""
+    cls, bearing, result = _solved(case)
+    row = result.rows[0]
+    alpha = np.arctan2(bearing.A * np.sin(bearing.alpha_0) + result.delta_a,
+                       bearing.A * np.cos(bearing.alpha_0) + result.delta_r * np.cos(row.phi_j))
+    np.testing.assert_allclose(alpha, row.alpha_j, rtol=0, atol=1e-12)
+    cs = cls.from_bearing(bearing, result)
+    assert len(cs) == 2 * np.count_nonzero(row.Q_j > 0)
+    for c in cs:
+        assert c.body2.R_P / MM == pytest.approx(_solver_contact_point(bearing, c.race, alpha[c.j]), rel=1e-12)
+
+
+def test_deep_groove_class_refuses_two_rows_and_bad_indices(ball, ball_result):
+    """AxisForge's ISO solver returns one row of Z balls for i = 2 (Q_j of both rows): refused. A row or an element
+    index outside the result is named."""
+    two_rows = _bearing(af_c.DeepGrooveBallFamily(), "locating", Dw=7.0, Dpw=31.0, Z=9, s=0.010, i=2)
+    with pytest.raises(NotImplementedError, match="2-row bearing"):
+        DeepGrooveBallContact.from_bearing(two_rows, load=100.0)
+    with pytest.raises(ValueError, match="row 1 is not a row of result"):
+        DeepGrooveBallContact.from_bearing(ball, ball_result, row=1)
+    with pytest.raises(ValueError, match=r"must be indices in \[0, 9\)"):
+        DeepGrooveBallContact.from_bearing(ball, ball_result, elements=[-1])
+
+
+@pytest.mark.parametrize("cls", [DeepGrooveBallContact, AngularContactBallContact])
+def test_ball_contact_checks_its_bodies(ball, cls):
+    (c,) = cls.from_bearing(ball if cls is DeepGrooveBallContact else _angular(), load=100.0, races=("inner",))
+    for kw in (dict(body1=SweptCircleBody(r=c.body1.r, **STEEL)), dict(race="outer"), dict(alpha_rad=0.1)):
+        with pytest.raises(ValueError, match="body1 must be its Ball and body2 its Raceway"):
+            replace(c, **kw)
+
+
+# ---- AngularContactBallContact (AxisForge AngularContactFamily) -------------------------------------
+
+def _angular(alpha_0_deg=25.0, **kw):
+    """Angular contact ball bearing Dw 12.7, Dpw 70 mm (grooves 0.52 Dw, as the true-raceway checks), Z 15."""
+    return _bearing(af_c.AngularContactFamily(), "locating", catalog=dict(d=50.0, D=90.0, b=20.0), Dw=12.7, Dpw=70.0,
+                    Z=15, alpha_0_deg=alpha_0_deg, **kw)
+
+
+@pytest.mark.parametrize("alpha_0_deg", [25.0, 40.0])
+def test_angular_contact_raceways_are_the_true_raceways(alpha_0_deg):
+    """from_bearing at alpha_0 builds the true raceways of the checks above (Dw 12.7, Dpw 70, 0.52 Dw): the same
+    profiles, so cowork's off-axis values hold through the angular contact class; r = AxisForge r_inner/r_outer
+    (outer negated) at alpha_0."""
+    bearing = _angular(alpha_0_deg)
+    for c in AngularContactBallContact.from_bearing(bearing, load=1000.0):
+        assert isinstance(c.body2, AngularContactBallContact.Raceway) and c.alpha_rad == bearing.alpha_0
+        np.testing.assert_allclose(c.body2.profile(_X / 10, _Y), _raceway(c.race, alpha_0_deg).profile(_X / 10, _Y),
+                                   rtol=1e-12, atol=1e-18)
+        stored, sign = (bearing.r_inner, 1.0) if c.race == "inner" else (bearing.r_outer, -1.0)
+        assert c.body2.r == pytest.approx((sign * stored[0] * MM, stored[1] * MM), rel=1e-12)
+        assert hertz(c).valid and c.psi == 0.0
+
+
+def test_angular_contacts_of_a_real_iso16281_solve():
+    """Fr = Fa = 5 kN on the 25 deg bearing: alpha_j of the most loaded ball 27.49 deg; curvature sum of ISO/TS
+    16281 4.2.1 Eq. (5)-(6) form, (1/Dw)(4 - 1/f) + sign cos(alpha_j)/R_P, at alpha_j (R-019; the standard uses the
+    nominal angle), inner +, outer -, R_P from the solver's groove centres (SB-41); it reduces to Eq. (5)-(6) at
+    alpha_0, where 2 g/(Dw (1 -/+ g)) of the standard is cos(alpha)/R_P with the ball centre on the pitch circle."""
+    bearing = _angular()
+    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=5000.0, Fr_xy=0.0, Fa=5000.0, delta_r_init=0.0,
+                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    assert result.ok
+    inner, outer = AngularContactBallContact.from_bearing(bearing, result, elements="max")
+    assert math.degrees(inner.alpha_rad) == pytest.approx(27.489, abs=0.001) and inner.load == outer.load
+    for sign, c in ((+1.0, inner), (-1.0, outer)):
+        R_P = _solver_contact_point(bearing, c.race, c.alpha_rad)                                  # [mm]
+        iso = (4.0 - 1.0 / 0.52) / (bearing.Dw * MM) + sign * math.cos(c.alpha_rad) / (R_P * MM)    # [1/m]
+        assert c.kappa_max + c.kappa_min == pytest.approx(iso, rel=1e-12) and c.label == f"b_{c.race}_e{c.j}"
+
+
+@pytest.mark.parametrize("Fa", [0.0, -5000.0])
+def test_angular_contact_on_the_relieved_side_is_refused(Fa):
+    """AxisForge solves the symmetric groove: Fa = 0 gives alpha_j = 0, Fa = -5 kN the mirror alpha_j = -27.49 deg,
+    both ok = True (C10c reviews). A single-row angular contact bearing carries neither (OPEN SB-45); also a given
+    alpha of the other sign."""
+    bearing = _angular()
+    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=5000.0, Fr_xy=0.0, Fa=Fa, delta_r_init=0.0,
+                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    assert result.ok and np.all(result.rows[0].alpha_j[result.rows[0].Q_j > 0] <= 1e-12)
+    with pytest.raises(ValueError, match="relieved side"):
+        AngularContactBallContact.from_bearing(bearing, result)
+    with pytest.raises(ValueError, match="relieved side"):
+        AngularContactBallContact.from_bearing(bearing, load=100.0, alpha=-bearing.alpha_0)
+
+
+def test_angular_contact_class_refuses_two_rows():
+    with pytest.raises(NotImplementedError, match="2-row bearing"):
+        AngularContactBallContact.from_bearing(_angular(i=2), load=100.0)
+
+
+# ---- mesh: Grid around a contact and the step arguments (mesh/grid.py) ----------------------------
+
+def _ellipse(a_mm, b_mm, psi=0.0):
+    """A HertzResult with only the ellipse that sizes the grid set (mm -> m; a = inf for a line); the other
+    values are placeholders, Grid.around does not read them."""
+    line = math.isinf(a_mm)
+    return HertzResult(p0=1.0, a=a_mm * MM, b=b_mm * MM, psi=psi, delta=math.nan, b_over_a=0.0 if line else b_mm / a_mm,
+                       E_star=1.0, size_ratio=0.0, valid=True, line=line)
+
+
+@pytest.mark.parametrize("race, a_mm, b_mm, n_x, n_y", [("inner", 1.5307, 0.1666, 90, 264),
+                                                         ("outer", 1.4877, 0.2025, 110, 256)])
+def test_grid_of_the_6210_contacts(race, a_mm, b_mm, n_x, n_y):
+    """BR3 section 5: 6210, Q 1000 N; h = b/10 rounded down to 2^-16 m, n = 2 ceil(span s / h) + 2."""
+    (c,) = _6210_contacts(races=(race,))
+    grid = Grid.around(c, _ellipse(a_mm, b_mm))
+    assert grid.h == 2.0**-16 and grid.X.shape == (n_x, n_y)
+    assert grid.step_args(c) == {"normal_load": 1000.0}
+
+
+def test_grid_origin_on_the_centre_node():
+    """The contact centre is node (n_x//2, n_y//2); the +x side is the short one and still reaches span_x b."""
+    (c,) = _6210_contacts(races=("inner",))
+    grid = Grid.around(c, _ellipse(1.5307, 0.1666))
+    n_x, n_y = grid.X.shape
+    assert grid.X[n_x // 2, 0] == 0.0 and grid.Y[0, n_y // 2] == 0.0
+    assert grid.X.max() >= SPAN_X_0 * 0.1666 * MM and -grid.X.min() > grid.X.max()
+
+
+def test_grid_of_a_roller_line_contact(roller_10):
+    """BR3 section 5: roller line contact b 0.0688 mm -> h 2^-18 m, n_x 148, n_y 16; period 16 h = 61.04 um;
+    load on the strip 100 000 N/m x period = 6.10 N."""
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    grid = Grid.around(c, _ellipse(math.inf, 0.0688))
+    assert grid.h == 2.0**-18 and grid.X.shape == (148, 16)
+    assert grid.length_y_m == 16 * 2.0**-18
+    assert grid.step_args(c, max_it=50) == {"normal_load": pytest.approx(1e5 * 16 * 2.0**-18, rel=1e-12),
+                                            "periodic_geometry": True, "periodic_axes": (False, True),
+                                            "max_it": 50}
+
+
+def test_grid_of_the_fzg_h501_line_contact():
+    """BR2: FZG H501 at C, b 0.08519 mm -> h 2^-17, n_x 92, n_y 16; 75 697.52 N/m on 16 h = 9.24 N."""
+    c = _Line(body1=SweptCircleBody(r=(14.20546 * MM, math.inf), **STEEL),
+              body2=SweptCircleBody(r=(21.30819 * MM, math.inf), **STEEL),
+              load=75697.52)
+    grid = Grid.around(c, _ellipse(math.inf, 0.08519))
+    assert grid.h == 2.0**-17 and grid.X.shape == (92, 16)
+    assert grid.step_args(c)["normal_load"] == pytest.approx(75697.52 * 16 * 2.0**-17, rel=1e-12)
+
+
+def test_grid_covers_a_rotated_ellipse():
+    """Two equal crossed cylinders at 0.8 rad: psi = 0.4 (the bisector). The domain covers the bounding box of
+    the ellipse (b along psi, a across it), found here by sampling its boundary."""
+    cyl = SweptCircleBody(r=(10 * MM, math.inf), **STEEL)
+    c = _Point(body1=cyl, body2=cyl, load=1.0, angle=0.8)
+    assert c.psi == pytest.approx(0.4, rel=1e-12)
+    a, b = 1.0 * MM, 0.2 * MM
+    t = np.linspace(0.0, 2 * math.pi, 100001)
+    x = b * np.cos(t) * math.cos(c.psi) - a * np.sin(t) * math.sin(c.psi)
+    y = b * np.cos(t) * math.sin(c.psi) + a * np.sin(t) * math.cos(c.psi)
+    grid = Grid.around(c, _ellipse(a / MM, b / MM, psi=c.psi))
+    for coord, extent, span in ((grid.X, x.max(), SPAN_X_0), (grid.Y, y.max(), 1.3)):
+        assert coord.max() >= span * extent and coord.max() - grid.h < span * extent + 1e-12   # tight on +side
+    assert grid.X.max() > 2 * SPAN_X_0 * b                                    # wider than the unrotated b
+
+
+def test_grid_spacing_is_dyadic_and_never_coarser():
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
+    assert Grid.around(c, _ellipse(0.2, 0.1), h=3e-6).h == 2.0**-19          # 1.9 um <= 3 um
+    assert Grid.around(c, _ellipse(0.2, 0.1), h=2.0**-19).h == 2.0**-19
+
+
+@pytest.mark.parametrize("ellipse, h, match", [
+    (_ellipse(0.2, 0.0), None, "minor semi-axis b"),
+    (_ellipse(0.2, math.nan), None, "minor semi-axis b"),
+    (_ellipse(0.2, 0.1), -1e-6, "h must be positive"),
+    (_ellipse(0.2, 0.1), math.inf, "h must be positive"),
+    (_ellipse(math.inf, 0.1), None, "finite major semi-axis"),
+])
+def test_grid_around_refuses(ellipse, h, match):
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
+    with pytest.raises(ValueError, match=match):
+        Grid.around(c, ellipse, h=h)
+
+
+_h = 2.0**-20
+_x, _y = np.meshgrid(np.arange(4) * _h, np.arange(3) * _h, indexing="ij")
+
+
+@pytest.mark.parametrize("X, Y, h, match", [
+    (_x, _y[:, :2], _h, "same shape"),
+    (_x, _y, 0.0, "h must be positive"),
+    (_x / _h * 1e-6, _y / _h * 1e-6, 1e-6, "power of two"),                    # consistent but not dyadic
+    (_x.T, _y.T, _h, "X must vary only along axis 0"),                         # axes swapped
+    (_x, _y, 2 * _h, "step of X"),
+    (_x, 2 * _y, _h, "step of Y"),
+])
+def test_hand_built_grid_is_checked(X, Y, h, match):
+    with pytest.raises(ValueError, match=match):
+        Grid(X=X, Y=Y, h=h)
+
+
+@pytest.mark.parametrize("contrary", [{"periodic_geometry": False}, {"periodic_axes": (False, False)},
+                                      {"periodic_axes": True}])
+def test_step_args_refuses_a_non_periodic_line(roller_10, contrary):
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    grid = Grid.around(c, _ellipse(math.inf, 0.0688))
+    with pytest.raises(ValueError, match="a line contact needs"):
+        grid.step_args(c, **contrary)
+
+
+def test_step_args_refuses_another_load():
+    """The load of the bridge is contact.load (one source): normal_load from the caller is refused (C11)."""
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=1.0)
+    with pytest.raises(ValueError, match="normal_load not accepted"):
+        Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, normal_load=1.0)
+
+
+@pytest.mark.parametrize("kwargs", [{"interference": 1e-6}, {"mean_gap": 2e-6, "method": "rey"},
+                                    {"off_set_x": 3e-6}, {"off_set_y": -3e-6}],
+                         ids=["interference", "mean_gap", "off_set_x", "off_set_y"])
+def test_step_args_passes_slippy_options_through(kwargs):
+    """C11 (José, 2026-10-27): the SlipPY options reach StaticStep unchanged; with interference or mean_gap the load
+    is an output, so no normal_load; with only an offset the load is still contact.load (SlipPY StaticStep,
+    static_step.py:140-142: exactly one of normal_load, interference, mean_gap)."""
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=7.0)
+    args = Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, **kwargs)
+    displacement = "interference" in kwargs or "mean_gap" in kwargs
+    assert args == (kwargs if displacement else {"normal_load": 7.0, **kwargs})
+
+
+def test_step_args_line_with_interference_keeps_the_periodic_flags(roller_10):
+    """A line contact under interference control: the line-contact flags stay (they define the contact), no load."""
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    args = Grid.around(c, _ellipse(math.inf, 0.0688)).step_args(c, interference=1e-6)
+    assert args == {"interference": 1e-6, "periodic_geometry": True, "periodic_axes": (False, True)}
+
+
+def test_step_args_point_with_periodic_flags_keeps_the_full_load():
+    c = _Point(body1=SweptCircleBody(**_BALL), body2=SweptCircleBody(**_FLAT), load=7.0)
+    args = Grid.around(c, _ellipse(0.2, 0.1)).step_args(c, periodic_geometry=True, periodic_axes=(True, True))
+    assert args == {"normal_load": 7.0, "periodic_geometry": True, "periodic_axes": (True, True)}
+
+
+# ---- results: HertzResult and StaticResult, data only (results/) ---------------------------------
+
+def _hertz(a, b, psi=0.0, line=False, p0=1e9):
+    return HertzResult(p0=p0, a=a, b=b, psi=psi, delta=math.nan if line else 1e-6, b_over_a=0.0 if line else b / a,
+                       E_star=115e9, size_ratio=0.05, valid=True, line=line)
+
+
+def test_hertz_pressure_on_a_rotated_ellipse():
+    """Johnson 1985 p. 95 (elliptical pressure, from Eq. (3.58)): p0 at the centre, 0 at b along psi and at a across it, p0 sqrt(3)/2 at b/2."""
+    a, b, psi = 1.0 * MM, 0.2 * MM, 0.4
+    hz = _hertz(a, b, psi)
+    along, across = np.array([math.cos(psi), math.sin(psi)]), np.array([-math.sin(psi), math.cos(psi)])
+    pts = np.array([[0.0, 0.0], b * along, -b * along, a * across, 0.5 * b * along, 1.01 * b * along])
+    p = hz.pressure(pts[:, 0], pts[:, 1])
+    assert p[0] == hz.p0
+    assert p[1:4] == pytest.approx(0.0, abs=1e-6 * hz.p0)
+    assert p[4] == pytest.approx(hz.p0 * math.sqrt(0.75), rel=1e-12) and p[5] == 0.0
+
+
+def test_hertz_pressure_of_a_line_is_a_strip():
+    """Johnson 1985 Eq. (4.44): p0 sqrt(1 - (x/b)^2), independent of y (a = inf)."""
+    hz = _hertz(math.inf, 0.1 * MM, line=True)
+    X, Y = np.meshgrid(np.linspace(-0.15, 0.15, 7) * MM, np.linspace(-5.0, 5.0, 4) * MM, indexing="ij")
+    p = hz.pressure(X, Y)
+    np.testing.assert_array_equal(p, p[:, :1] * np.ones_like(p))
+    np.testing.assert_allclose(p[:, 0], hz.p0 * np.sqrt(np.clip(1 - (X[:, 0] / (0.1 * MM))**2, 0, None)), rtol=1e-12)
+
+
+def test_hertz_pressure_integrates_to_the_load():
+    """Johnson 1985 Eq. (4.27): P = (2/3) p0 pi a b, summed on a fine grid over an ellipse turned by 0.4 rad."""
+    hz = _hertz(1.0 * MM, 0.2 * MM, psi=0.4)
+    h = 2e-6
+    x = np.arange(-1.1 * MM, 1.1 * MM, h)
+    X, Y = np.meshgrid(x, x, indexing="ij")
+    assert hz.pressure(X, Y).sum() * h**2 == pytest.approx(2 / 3 * hz.p0 * math.pi * hz.a * hz.b, rel=1e-3)
+
+
+def test_hertz_half_extents():
+    hz = _hertz(1.0 * MM, 0.2 * MM, psi=0.4)
+    assert hz.half_extents() == (math.hypot(0.2 * MM * math.cos(0.4), 1.0 * MM * math.sin(0.4)),
+                                 math.hypot(0.2 * MM * math.sin(0.4), 1.0 * MM * math.cos(0.4)))
+    assert _hertz(math.inf, 0.1 * MM, line=True).half_extents() == (0.1 * MM, math.inf)
+
+
+def test_hertz_record_keys():
+    assert list(_hertz(1.0 * MM, 0.2 * MM).record()) == ["p0_Pa", "a_m", "b_m", "psi_rad", "delta_m", "b_over_a",
+                                                        "E_star_Pa", "size_ratio", "valid", "line", "reason"]
+    assert list(_hertz(1.0 * MM, 0.2 * MM).record("_ref"))[:5] == ["p0_ref_Pa", "a_ref_m", "b_ref_m", "psi_ref_rad",
+                                                                   "delta_ref_m"]
+
+
+def _static_result(contact, grid, hz):
+    """A StaticResult filled by hand (the solver fills it in C6): Hertz pressure as the 'solution'."""
+    z1, z2 = contact.profiles(grid)
+    p = hz.pressure(grid.X, grid.Y)
+    return StaticResult(contact=contact, grid=grid, z1=z1, z2=z2, gap0=-(z1 + z2), load_applied=contact.load,
+                        period=math.nan, load_control="normal_load", load_found=contact.load,
+                        interference=math.nan, mean_gap=math.nan, off_set_x=math.nan, off_set_y=math.nan,
+                        use_frequency_domain=True, method="pk", tolerance=1e-9, converged=True,
+                        solve_time=0.1, p=p, delta=hz.delta, p0=float(p.max()), a=hz.a, b=hz.b,
+                        load=float(p.sum() * grid.h**2), apex_offset_nodes=0.0, hertz=hz, err_p0=0.0, err_a=0.0,
+                        err_b=0.0, err_delta=0.0, err_load=0.0, load_ok=True, edge_clear=True, margin_ok=True,
+                        resolution_ok=True, within_reference=True,
+                        commits={"axisforge": "abc", "slippy": "def"})
+
+
+def test_static_record_of_a_6210_contact():
+    """record(): every scalar, no arrays; identification from the contact's own fields; R_x = 1/kappa_max =
+    5.198 mm (BR1 section 5), R_y 165.1 mm; the Hertz values with _ref; missing commits 'unknown'."""
+    (c,) = _6210_contacts(races=("inner",))
+    hz = _hertz(1.5307 * MM, 0.1666 * MM, p0=1.88e9)
+    rec = _static_result(c, Grid.around(c, hz), hz).record()
+    assert all(v is None or isinstance(v, (bool, int, float, str)) for v in rec.values())
+    assert (rec["contact"], rec["label"], rec["line"], rec["race"], rec["alpha_rad"], rec["j"]) == (
+        "DeepGrooveBallContact", "6210_inner", False, "inner", 0.0, None)
+    assert rec["R_x_m"] / MM == pytest.approx(5.198, abs=0.0005) and rec["R_y_m"] / MM == pytest.approx(165.1, abs=0.05)
+    assert rec["r2_x_m"] == pytest.approx(28.65 * MM) and rec["r2_y_m"] == pytest.approx(-6.604 * MM)
+    assert rec["E1_Pa"] == 210e9 and rec["Q_N"] == 1000.0 and math.isnan(rec["w_N_per_m"])
+    assert math.isnan(rec["period_m"]) and rec["hertz_valid"] is True
+    assert (rec["n_x"], rec["n_y"], rec["h_m"]) == (90, 264, 2.0**-16)
+    assert rec["span_x"] >= SPAN_X_0 and rec["span_y"] >= 1.3
+    assert rec["p0_ref_Pa"] == 1.88e9 and rec["b_ref_m"] == 0.1666 * MM and rec["p0_Pa"] == pytest.approx(1.88e9)
+    assert (rec["commit_axisforge"], rec["commit_slippy"], rec["commit_design_studies"]) == ("abc", "def", "unknown")
+    for key in ("body1", "body2", "kappa_max", "p", "z1", "grid", "hertz", "psi_ref_rad", "E_star_ref_Pa",
+                "line_ref", "valid_ref", "load_contact"):
+        assert key not in rec
+
+
+def test_static_record_of_a_line_contact(roller_10):
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    hz = _hertz(math.inf, 0.0688 * MM, line=True)
+    rec = _static_result(c, Grid.around(c, hz), hz).record()
+    assert rec["R_y_m"] == math.inf and math.isnan(rec["span_y"]) and rec["span_x"] >= SPAN_X_0
+    assert rec["k"] is None and rec["x_mm"] is None and rec["contact"] == "CylindricalRollerContact"
+    assert rec["w_N_per_m"] == pytest.approx(1e5) and math.isnan(rec["Q_N"])
+
+
+# ---- solvers: Hertz from SlipPY hertz_full on the bridge axes (solvers/hertz.py) --------------------
+
+def test_hertz_of_the_6210_contacts():
+    """BR1 section 5, Q 1000 N, tolerances of the printed digits: inner / outer b 0.1666 / 0.2025 mm, a 1.5307 /
+    1.4877 mm, p0 1873 / 1585 MPa, delta 9.76 / 9.43 um; delta_i + delta_o = 19.20 um."""
+    inner, outer = (hertz(c) for c in _6210_contacts())
+    for hz, b, a, p0, delta in ((inner, 0.1666, 1.5307, 1873, 9.76), (outer, 0.2025, 1.4877, 1585, 9.43)):
+        assert hz.b / MM == pytest.approx(b, abs=0.00005) and hz.a / MM == pytest.approx(a, abs=0.00005)
+        assert hz.p0 / 1e6 == pytest.approx(p0, abs=0.5) and hz.delta / 1e-6 == pytest.approx(delta, abs=0.005)
+        assert hz.psi == 0.0 and not hz.line and hz.valid and hz.b_over_a == pytest.approx(b / a, abs=1e-4)
+    assert (inner.delta + outer.delta) / 1e-6 == pytest.approx(19.20, abs=0.005)
+
+
+def test_hertz_agrees_with_the_independent_judge():
+    """r02 ``hertz_point`` (D-0021, no SlipPY, no bridge) on the 6210 contacts."""
+    for c in _6210_contacts():
+        hz, ref = hertz(c), hertz_point(*c.body1.r, *c.body2.r, c.body1.E, c.body1.nu, c.body2.E, c.body2.nu, c.load)
+        assert hz.p0 == pytest.approx(ref.p0_Pa, rel=1e-6) and hz.delta == pytest.approx(ref.delta_m, rel=1e-6)
+        assert (hz.b, hz.a) == (pytest.approx(ref.b_m, rel=1e-6), pytest.approx(ref.a_m, rel=1e-6))
+
+
+def test_hertz_of_a_roller_line_contact(roller_10):
+    """BR1 section 5: roller 10 x 10 on Dpw 70, Q 1000 N inner: b 0.0688 mm, p0 925.7 MPa; no approach."""
+    hz = hertz(CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))[0])
+    assert hz.b / MM == pytest.approx(0.0688, abs=0.00005) and hz.p0 / 1e6 == pytest.approx(925.7, abs=0.05)
+    assert hz.line and hz.a == math.inf and math.isnan(hz.delta) and hz.b_over_a == 0.0
+
+
+def test_hertz_of_the_fzg_h501_line_contact():
+    """BR2 section 6: FZG H501 at C, rho 14.20546 / 21.30819 mm, E 206 000 MPa, nu 0.3, w 75 697.52 N/m:
+    p0 565.67 MPa."""
+    steel = dict(E=206e9, nu=0.3)
+    c = _Line(body1=SweptCircleBody(r=(14.20546 * MM, math.inf), **steel),
+              body2=SweptCircleBody(r=(21.30819 * MM, math.inf), **steel),
+              load=75697.52)
+    assert hertz(c).p0 / 1e6 == pytest.approx(565.67, abs=0.005)
+
+
+def test_hertz_of_the_6210_inner_integrates_to_Q():
+    """The Hertz pressure of the 6210 inner contact summed on a fine grid gives back Q = 1000 N."""
+    (c,) = _6210_contacts(races=("inner",))
+    hz = hertz(c)
+    h = hz.b / 100
+    X, Y = np.meshgrid(np.arange(-1.05 * hz.b, 1.05 * hz.b, h), np.arange(-1.05 * hz.a, 1.05 * hz.a, h),
+                       indexing="ij")
+    assert hz.pressure(X, Y).sum() * h**2 == pytest.approx(1000.0, rel=1e-3)
+
+
+# ---- solvers: surfaces and the static BEM solve (solvers/surfaces.py, solvers/static.py) ---------------
+
+def _bem(contact, tmp_path, *, use_frequency_domain=True, solve_kwargs=None, **around):
+    """Hertz once, the grid around it, and the static BEM solve with that Hertz (SlipPY files to tmp_path)."""
+    pytest.importorskip("pyfftw", reason="SlipPY plan_convolve needs pyfftw (R-128)")
+    hz = hertz(contact)
+    return solve(contact, Grid.around(contact, hz, **around), tmp_path, hertz_result=hz,
+                 use_frequency_domain=use_frequency_domain, **(solve_kwargs or {}))
+
+
+def _all_checks(res):
+    return all((res.converged, res.load_ok, res.edge_clear, res.margin_ok, res.resolution_ok, res.within_reference,
+                res.hertz_valid))
+
+
+@pytest.fixture
+def inner_6210():
+    """Ball on the 6210 inner raceway, Q 1000 N (BR1 section 5)."""
+    return _6210_contacts(races=("inner",))[0]
+
+
+def _tori():
+    """Two convex tori at 0.3 rad (psi = 0.113 rad), 100 N."""
+    return _Point(body1=SweptCircleBody(r=_T1, **STEEL),
+                  body2=SweptCircleBody(r=_T2, **STEEL), load=100.0, angle=_ANGLE, label="tori")
+
+
+def test_bem_of_the_6210_inner_contact(inner_6210, tmp_path):
+    """End to end on the default (frequency-domain) kernel: p0 within 1 %, b, a and the approach within 3 % of
+    Hertz; every check passes; the record carries the commits. The approach holds at the default span_y 1.3
+    only: the image error of the frequency kernel is not monotonic in the domain (R-046, R-509; span_y 2.0
+    gives +4.7 %)."""
+    res = _bem(inner_6210, tmp_path)
+    assert abs(res.err_p0) <= 0.01
+    for err in (res.err_b, res.err_a, res.err_delta):
+        assert abs(err) <= 0.03
+    assert _all_checks(res) and res.total_displacement_z.shape == res.grid.X.shape
+    rec = res.record()
+    assert all(isinstance(rec[f"commit_{k}"], str) for k in ("axisforge", "slippy", "design_studies"))
+
+
+def test_bem_of_the_true_raceway_against_the_local_torus(tmp_path):
+    """6210 inner at alpha 40 deg (given), Q 1000 N: BEM on the true raceway within 3 % of Hertz (p0 1 %), and within
+    0.1 % of the BEM on the local torus of the same radii (p0, approach, load). The odd x^2 y term of the true
+    raceway shifts and skews the pressure in y but changes p0 and the approach only to second order (C10b
+    physics-reviewer; slippy-expert measured +0.184 / +0.176 % p0 error, +0.958 % approach for both)."""
+    (true,) = _6210_contacts(alpha=math.radians(40.0), races=("inner",))
+    torus = _Point(body1=SweptCircleBody(r=true.body1.r, **STEEL), body2=SweptCircleBody(r=true.body2.r, **STEEL),
+                   load=1000.0)
+    res, ref = _bem(true, tmp_path / "true"), _bem(torus, tmp_path / "torus")
+    assert abs(res.err_p0) <= 0.01 and all(abs(e) <= 0.03 for e in (res.err_a, res.err_b, res.err_delta))
+    assert res.converged and res.load_ok and res.edge_clear
+    for key in ("p0", "delta", "load"):
+        assert getattr(res, key) == pytest.approx(getattr(ref, key), rel=1e-3)
+    rec = res.record()
+    assert (rec["body1_class"], rec["body2_class"]) == ("Ball", "Raceway")
+
+
+def test_bem_of_an_angular_contact(tmp_path):
+    """25 deg bearing, Fr = Fa = 5 kN, most loaded ball, inner (a/r_g 0.27): every check on the default grid; a is
+    about 2.2 % below Hertz, a physical conformity effect (the y^4 term of sphere and groove; slippy-expert C10c:
+    -2.18 %, falling as a^2 with the load), within the 3 % of rtol_reference."""
+    bearing = _angular()
+    result = ISO16281BallSolver().solve_contact(bearing, Fr_xz=5000.0, Fr_xy=0.0, Fa=5000.0, delta_r_init=0.0,
+                                                delta_a_init=0.0, psi=0.0, phi_Fr=0.0)
+    (c,) = AngularContactBallContact.from_bearing(bearing, result, elements="max", races=("inner",))
+    res = _bem(c, tmp_path)
+    assert _all_checks(res) and abs(res.err_p0) <= 0.01 and -0.03 <= res.err_a <= -0.015
+
+
+@pytest.mark.parametrize("make", ["inner_6210", "tori"])
+def test_bem_of_a_point_contact_on_the_spatial_kernel(make, inner_6210, tmp_path):
+    """The spatial (Boussinesq) kernel has no images, so the approach does not depend on the domain: p0 within
+    1 %, b, a and the approach within 3 % of Hertz."""
+    c = inner_6210 if make == "inner_6210" else _tori()
+    res = _bem(c, tmp_path, use_frequency_domain=False)
+    assert abs(res.err_p0) <= 0.01
+    for err in (res.err_b, res.err_a, res.err_delta):
+        assert abs(err) <= 0.03
+    assert _all_checks(res) and not res.use_frequency_domain
+
+
+def test_bem_of_a_roller_line_contact(roller_10, tmp_path):
+    """Roller 10 x 10 on Dpw 70, Q 1000 N inner (periodic strip): p0 within 1 %, b within 3 % of Hertz."""
+    res = _bem(CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))[0], tmp_path)
+    assert abs(res.err_p0) <= 0.01 and abs(res.err_b) <= 0.03 and _all_checks(res)
+    assert math.isnan(res.delta) and res.a == math.inf and res.period == res.grid.length_y_m
+    assert res.load_applied == pytest.approx(1e5 * res.period, rel=1e-12)
+
+
+def test_bem_of_the_fzg_h501_tooth_contact(h501_C, tmp_path):
+    """FZG H501 at C (CylindricalGearContact from AxisForge, the two involute flanks, BR2 section 6): p0 within
+    1 %, b within 3 % of Hertz."""
+    res = _bem(h501_C, tmp_path)
+    assert abs(res.err_p0) <= 0.01 and abs(res.err_b) <= 0.03 and _all_checks(res)
+
+
+def test_bem_of_a_turned_point_contact(tmp_path):
+    """Two tori at 0.3 rad: the measured b along psi and a across it, p0 and the approach against Hertz (default
+    kernel and span_y; see the 6210 test for the approach)."""
+    res = _bem(_tori(), tmp_path)
+    assert abs(res.err_p0) <= 0.01
+    for err in (res.err_b, res.err_a, res.err_delta):
+        assert abs(err) <= 0.03
+    assert _all_checks(res)
+
+
+@pytest.mark.parametrize("angle", [0.3, -1.2, 0.8])
+def test_measure_on_the_hertz_field_along_psi(angle):
+    """Closed form: the measurement on the exact Hertz pressure of two tori turned by ``angle`` (psi != 0,
+    b/h >= 10) gives p0, b along psi and a across it within 1 %."""
+    c = _Point(body1=SweptCircleBody(r=_T1, **STEEL), body2=SweptCircleBody(r=_T2, **STEEL), load=100.0, angle=angle)
+    hz = hertz(c)
+    grid = Grid.around(c, hz)
+    assert hz.b / grid.h >= 10 and c.psi != 0.0
+    p0, b, a, _ = _measure(hz.pressure(grid.X, grid.Y), grid.h, c.psi, False)
+    assert p0 == pytest.approx(hz.p0, rel=0.01) and b == pytest.approx(hz.b, rel=0.01)
+    assert a == pytest.approx(hz.a, rel=0.01)
+
+
+def test_short_domain_is_flagged(inner_6210, tmp_path):
+    """span_x = 2 (half the default): margin_ok is False."""
+    assert not _bem(inner_6210, tmp_path, span_x=2.0).margin_ok
+
+
+def test_narrow_domain_is_flagged(inner_6210, tmp_path):
+    """span_y = 0.8: the contact is cut across rolling, pressure on the boundary: edge_clear is False."""
+    assert not _bem(inner_6210, tmp_path, span_y=0.8).edge_clear
+
+
+def test_tight_reference_tolerance_is_flagged(inner_6210, tmp_path):
+    assert not _bem(inner_6210, tmp_path, solve_kwargs={"rtol_reference": 1e-6}).within_reference
+
+
+def test_offset_of_the_surfaces_reaches_slippy(tmp_path):
+    """An offset is SlipPY's (C11): with periodic_geometry=True the field keeps the grid, the record carries the
+    offset and the peak leaves the centre node (to the minimum of the shifted gap: crossed cylinders at 45 deg on the
+    principal grid, off_set_x = s = 4 h along kappa_max: x* = (K1 + K2)^-1 K2 s = (4.83, 2.00) h, |x*| = 5.23 h, the
+    nearest node at 5.39, physics-reviewer C11a). Without periodic geometry SlipPY keeps only the overlap of the
+    surfaces (slippy/contact/_model_utils.py:137-150) and the smaller field is refused by solve."""
+    c = _crossed(math.pi / 4)
+    hz = hertz(c)
+    grid = Grid.around(c, hz, angle="principal")
+    res = _bem(c, tmp_path, angle="principal", solve_kwargs={"off_set_x": 4 * grid.h, "periodic_geometry": True})
+    rec = res.record()
+    assert rec["off_set_x_m"] == 4 * grid.h and math.isnan(rec["off_set_y_m"]) and rec["load_control"] == "normal_load"
+    assert abs(res.apex_offset_nodes - 5.23) <= 1.0 and res.load_ok and res.converged
+    with pytest.raises(ValueError, match="pressure field of shape"):
+        _bem(c, tmp_path, angle="principal", solve_kwargs={"off_set_x": 4 * grid.h})
+
+
+@pytest.mark.parametrize("use_frequency_domain", [True, False])
+def test_interference_control_gives_back_the_load(use_frequency_domain, tmp_path):
+    """C11 test 2: crossed cylinders at 45 deg (R 10 mm, 100 N, principal grid) solved by pk at Q, then by SlipPY's
+    BCCG at the approach found (StaticStep(interference=...), _step_utils.py:437): the load found is Q within 1 %,
+    p0 and b equal within 1 %, the control recorded, the Hertz reference at the found load. Measured (C11a): load
+    100 N -> 99.99999998 N (frequency kernel), 100.00000002 N (spatial); p0 and b equal to 1e-9. pk and BCCG on the
+    same operator: a self-consistency test, not of the kernel's accuracy; delta is the input echoed by SlipPY
+    (_step_utils.py:442)."""
+    kw = dict(angle="principal", use_frequency_domain=use_frequency_domain)
+    c = _crossed(math.pi / 4)
+    ref = _bem(c, tmp_path, **kw)
+    res = _bem(c, tmp_path, solve_kwargs={"interference": ref.delta}, **kw)
+    assert ref.load_control == "normal_load" and ref.load_found == pytest.approx(100.0, rel=1e-3)
+    assert res.load_found == pytest.approx(100.0, rel=0.01)
+    assert res.p0 == pytest.approx(ref.p0, rel=0.01) and res.b == pytest.approx(ref.b, rel=0.01)
+    assert res.delta == ref.delta and res.converged and _all_checks(res)
+    rec = res.record()
+    assert (rec["load_control"], rec["interference_m"], rec["load_found_N"]) == ("interference", ref.delta,
+                                                                                 res.load_found)
+    assert math.isnan(rec["load_applied_N"]) and math.isnan(rec["err_load"]) and math.isnan(rec["mean_gap_m"])
+    assert rec["Q_N"] == 100.0                                  # the contact's nominal load keeps its meaning
+    assert res.hertz.p0 == pytest.approx(hertz(replace(c, load=res.load_found)).p0, rel=1e-12)
+    assert res.err_p0 == pytest.approx(res.p0 / res.hertz.p0 - 1.0, rel=1e-12)
+
+
+def test_interference_control_of_a_line_contact(tmp_path):
+    """C11 test 3: two parallel cylinders R 10 / 20 mm, 1e5 N/m. The approach of the pk solve (SlipPY's definition,
+    the mean of gap0 + displacement over the loaded nodes, _step_utils.py:406) given back as interference: the load
+    per unit length is load_found / period and the Hertz reference is at that load. Self-consistency on one grid: the
+    approach of a line is a number of its grid and kernel (Johnson 1985, 4.2(c))."""
+    c = _Line(body1=SweptCircleBody(r=(10 * MM, math.inf), **STEEL), body2=SweptCircleBody(r=(20 * MM, math.inf),
+                                                                                           **STEEL),
+              load=1e5, label="line")
+    ref = _bem(c, tmp_path)
+    loaded = ref.p > 0
+    approach = float(np.mean((ref.gap0 + ref.total_displacement_z)[loaded]))
+    res = _bem(c, tmp_path, solve_kwargs={"interference": approach})
+    w_found = res.load_found / res.period
+    assert w_found == pytest.approx(1e5, rel=0.01) and res.load_control == "interference"
+    assert res.hertz.p0 == pytest.approx(hertz(replace(c, load=w_found)).p0, rel=1e-12)
+    assert res.hertz.b == pytest.approx(hertz(replace(c, load=w_found)).b, rel=1e-12)
+    assert abs(res.err_p0) <= 0.01 and abs(res.err_b) <= 0.03 and res.converged
+
+
+def test_an_option_slippy_refuses_raises_slippys_error(inner_6210, tmp_path):
+    """C11 test 4: mean_gap with method "pk" reaches SlipPY, which refuses it (StaticStep, static_step.py:143-145);
+    the bridge adds no check of its own."""
+    with pytest.raises(ValueError, match="pk and double methods don't support mean gap"):
+        _bem(inner_6210, tmp_path, solve_kwargs={"mean_gap": 1e-6, "method": "pk"})
+
+
+@pytest.mark.parametrize("flag", [True, False])
+def test_kernel_flag_reaches_both_materials(inner_6210, flag):
+    s1, s2 = surface_pair(inner_6210, Grid.around(inner_6210, hertz(inner_6210)), name=f"kernel_{flag}",
+                          use_frequency_domain=flag)
+    assert s1.material.use_frequency is flag and s2.material.use_frequency is flag
+    assert s1.profile.shape == s2.profile.shape and s1.grid_spacing == 2.0**-16
+
+
+def test_line_contact_refuses_the_spatial_kernel(roller_10):
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    with pytest.raises(ValueError, match="finite strip"):
+        surface_pair(c, Grid.around(c, hertz(c)), name="line_spatial", use_frequency_domain=False)
+
+
+# ---- grid angle: a grid turned by gamma from the bridge axes (mesh/grid.py, C9) -------------------------------
+
+_R_CYL = 10 * MM                                   # [m] crossed cylinders, Johnson 1985 p. 86
+
+
+def _crossed(angle):
+    """Two equal steel cylinders R = 10 mm (axes along y), body 2 at ``angle``, 100 N: b/h = 14.8 on the default
+    grid, size_ratio 0.019."""
+    cyl = SweptCircleBody(r=(_R_CYL, math.inf), **STEEL)
+    return _Point(body1=cyl, body2=cyl, load=100.0, angle=angle, label="crossed")
+
+
+@pytest.mark.parametrize("use_frequency_domain", [True, False])
+def test_crossed_cylinders_at_45_deg_on_the_bridge_and_principal_grids(use_frequency_domain, tmp_path):
+    """Two equal cylinders crossed at 45 deg: kappa_max,min = (1 +- sqrt(2)/2)/R (Johnson 1985 p. 86: A, B =
+    (1 -+ 1/sqrt 2)/2R, kappa = 2A, 2B); psi = 22.5 deg, the bisector of the cylinder axes, derived from Eqs.
+    (4.1)-(4.3) with K = (1/R) [[3/2, 1/2], [1/2, 1/2]] (Mohr circle) and Fig. 4.1, p. 86.
+
+    Solved on the bridge grid (gamma = 0, measured on interpolated cuts at psi) and on the principal grid
+    (gamma = psi, measured on grid lines): p0, a, b and the load agree within 1 % between the two and each is
+    within 3 % of Hertz; psi (from bridge x) is recorded the same, only grid_angle_rad differs. The 1 % is a
+    discretisation bound at b/h 14.8 (b: 0.73 % frequency kernel, 0.44 % spatial, C9 review); with the frequency
+    kernel it also holds the images, whose lattice turns with the grid (R-509). A wrong rotation shows as tens of %.
+    The approach is global and insensitive to the edge: the same on both grids within 1e-3 on the spatial kernel."""
+    c = _crossed(math.pi / 4)
+    assert c.kappa_max == pytest.approx((1 + math.sqrt(2) / 2) / _R_CYL, rel=1e-12)
+    assert c.kappa_min == pytest.approx((1 - math.sqrt(2) / 2) / _R_CYL, rel=1e-12)
+    assert c.psi == pytest.approx(math.radians(22.5), rel=1e-12)
+    bridge, principal = (_bem(c, tmp_path / str(k), use_frequency_domain=use_frequency_domain, angle=angle)
+                         for k, angle in enumerate((0.0, "principal")))
+    assert (bridge.grid.angle, principal.grid.angle) == (0.0, c.psi)
+    assert bridge.hertz.b / bridge.grid.h >= 10 and principal.grid.h == bridge.grid.h
+    for key in ("p0", "a", "b", "load"):
+        assert getattr(principal, key) == pytest.approx(getattr(bridge, key), rel=0.01), key
+    if not use_frequency_domain:
+        assert principal.delta == pytest.approx(bridge.delta, rel=1e-3)
+    for res in (bridge, principal):
+        assert all(abs(err) <= 0.03 for err in (res.err_p0, res.err_a, res.err_b)) and _all_checks(res)
+    rec_b, rec_p = bridge.record(), principal.record()
+    assert rec_b["psi_rad"] == rec_p["psi_rad"] == c.psi
+    assert (rec_b["grid_angle_rad"], rec_p["grid_angle_rad"]) == (0.0, c.psi)
+
+
+def test_crossed_cylinders_at_minus_45_deg(tmp_path):
+    """Body 2 at -45 deg gives Kxy < 0, psi = -22.5 deg. The sign of psi is the bridge convention (positive from x
+    toward y, as Contact.angle); Johnson Eq. (4.5) holds only cos 2 alpha and does not fix it. The solve on the
+    principal grid at -22.5 deg checks that Contact.psi and Body.profile agree: a mismatch would put the cuts 45 deg
+    off the ellipse."""
+    c = _crossed(-math.pi / 4)
+    assert c.psi == pytest.approx(math.radians(-22.5), rel=1e-12)
+    res = _bem(c, tmp_path, use_frequency_domain=False, angle="principal")
+    assert res.grid.angle == c.psi
+    assert all(abs(err) <= 0.03 for err in (res.err_p0, res.err_a, res.err_b)) and _all_checks(res)
+
+
+def test_principal_grid_of_the_6210_inner_contact_is_the_bridge_grid(inner_6210, tmp_path):
+    """psi = 0 (bearing): angle="principal" gives gamma = 0, the same grid and the same solution (rel 1e-12: two
+    SlipPY solves, pyfftw may plan them differently)."""
+    bridge, principal = (_bem(inner_6210, tmp_path / str(k), angle=angle)
+                         for k, angle in enumerate((0.0, "principal")))
+    assert principal.grid.angle == 0.0
+    np.testing.assert_array_equal(principal.grid.X, bridge.grid.X)
+    np.testing.assert_allclose(principal.p, bridge.p, rtol=1e-12, atol=0.0)
+    for key in ("p0", "a", "b", "delta"):
+        assert getattr(principal, key) == pytest.approx(getattr(bridge, key), rel=1e-12, abs=0.0), key
+
+
+@pytest.mark.parametrize("gamma", [0.5, -1.2, math.pi / 2])
+def test_profiles_and_hertz_on_a_turned_grid(gamma):
+    """A node at grid coordinates (Xg, Yg) lies at bridge (Xg cos g - Yg sin g, Xg sin g + Yg cos g): there each
+    body's profile is Body.profile at its own angle on the bridge axes, and the Hertz pressure is the bridge one
+    (rel 1e-12)."""
+    c = _tori()
+    hz = hertz(c)
+    grid = Grid.around(c, hz, angle=gamma)
+    cg, sg = math.cos(gamma), math.sin(gamma)
+    X_b, Y_b = grid.X * cg - grid.Y * sg, grid.X * sg + grid.Y * cg
+    z1, z2 = c.profiles(grid)
+    np.testing.assert_allclose(z1, c.body1.profile(X_b, Y_b), rtol=1e-12, atol=1e-24)
+    np.testing.assert_allclose(z2, c.body2.profile(X_b, Y_b, c.angle), rtol=1e-12, atol=1e-24)
+    np.testing.assert_allclose(hz.pressure(grid.X, grid.Y, grid.angle), hz.pressure(X_b, Y_b), rtol=1e-12, atol=1e-6)
+
+
+def test_principal_grid_half_extents_are_the_semi_axes():
+    assert _hertz(1.0 * MM, 0.2 * MM, psi=0.4).half_extents(0.4) == (0.2 * MM, 1.0 * MM)
+
+
+def test_line_contact_on_a_turned_grid_is_refused(roller_10):
+    """The strip of a line contact is periodic along grid y: its line must lie there (gamma = psi = 0)."""
+    (c,) = CylindricalRollerContact.from_bearing(roller_10, load=1000.0, races=("inner",))
+    hz = hertz(c)
+    assert Grid.around(c, hz, angle="principal").angle == 0.0
+    with pytest.raises(ValueError, match="line along grid y"):
+        Grid.around(c, hz, angle=0.1).step_args(c)
+
+
+@pytest.mark.parametrize("angle", [-math.pi / 2, 2.0])
+def test_grid_angle_is_checked(angle):
+    g = Grid.around(_tori(), hertz(_tori()))
+    with pytest.raises(ValueError, match="angle must be in"):
+        Grid(X=g.X, Y=g.Y, h=g.h, angle=angle)
+
+
+def test_grid_around_refuses_an_unknown_angle_name():
+    with pytest.raises(ValueError, match="'principal'"):
+        Grid.around(_tori(), hertz(_tori()), angle="major")
+
+
+# ---- gears: AxisForge cylindrical pair -> CylindricalGearContact (core/machine_elements/gears.py, C12b) -----
+
+_TEST_STEEL = "test_steel_206GPa"     # an AxisForge material registered for the gear tests
+
+
+def _register_test_steel():
+    """Register ``_TEST_STEEL`` (E 206 000 MPa, nu 0.3) once per process (AxisForge has no unregister)."""
+    from axisforge.core.materials import IsotropicElastic, Material, available_materials, register
+    if _TEST_STEEL not in available_materials():
+        register(Material(material_id=_TEST_STEEL, density=7.85e3,
+                          elastic=IsotropicElastic(E=206000.0, poisson_ratio=0.3)))
+
+
+def _gear_pair(material_id=_TEST_STEEL, z2=40):
+    """A 20/z2 spur pair, module 2 mm, face width 20 mm (z2 < 0: an internal ring); ``_TEST_STEEL`` is
+    registered, other ids are not."""
+    _register_test_steel()
+    from axisforge.core.machine_elements.gears import CylindricalFamily, CylindricalGearData, Gear, GearPair
+    family = CylindricalFamily()
+    z1 = 20 if z2 > 0 else 24
+    return GearPair.assemble(
+        family, gear1=Gear.assemble(family, CylindricalGearData(2.0, z1, b=20.0, material_id=material_id)),
+        gear2=Gear.assemble(family, CylindricalGearData(2.0, z2, b=20.0, material_id=material_id)),
+        label="internal" if z2 < 0 else "")
+
+
+def _point(contacts, label):
+    (c,) = [c for c in contacts if c.point == label]
+    return c
+
+
+@pytest.fixture
+def fzg_h501():
+    """FZG H501 pair of ``tests/cases/fzg_gears``, T1 60.75 N m: (case, pair, F_bn [N])."""
+    cc = fzg_gears
+    pair = cc.build_pair("H501")
+    return cc, pair, cc.FAMILY.mesh_forces(pair, 60.75, rot1=+1).F_bn_N
+
+
+@pytest.fixture
+def h501_C(fzg_h501):
+    """The H501 contact at the pitch point C, gear 1 driving, E 206 000 MPa, nu 0.3 (the case's)."""
+    cc, pair, F_bn_N = fzg_h501
+    return _point(CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=F_bn_N, E=cc.GEAR_E_MPA,
+                                                   nu=cc.GEAR_NU), "C")
+
+
+@pytest.fixture
+def c40_k9(fzg_c40):
+    """C40 at K9 (wheel torque 323.27 N m, T1 = 215.51 N m, R-124), the case's driver (gear 1): (case, pair,
+    F_bn [N], the contacts A..E)."""
+    cc, pair = fzg_c40
+    F_bn_N = cc.FAMILY.mesh_forces(pair, cc.WHEEL_TORQUE_NM["K9"] * pair.gear1.z / pair.gear2.z, rot1=+1).F_bn_N
+    return cc, pair, F_bn_N, CylindricalGearContact.from_pair(pair, driver=cc.DRIVER, F_bn_N=F_bn_N,
+                                                               E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+
+
+def test_fzg_h501_at_C_against_the_hand_check(fzg_h501, h501_C):
+    """BR2 section 6, independent hand check (ISO 21771 geometry, ISO 6336-2 forces, Johnson 1985 Eq. (4.43),
+    (4.45)): F_bn 1847.109 N, rho1_n 14.20546 mm, rho2_n 21.30819 mm, w = F_bn / l_sum = 75 697.52 N/m,
+    3 tooth pairs, share 0.9717558, Hertz p0 565.67 MPa (the radii of the flanks at the point under AxisForge's
+    equal line load, not the ISO 6336-2 sigma_H). Unchanged from ToothContact (C12b test 10)."""
+    cc, pair, F_bn_N = fzg_h501
+    c = h501_C
+    assert F_bn_N == pytest.approx(1847.109, abs=0.0005)
+    assert isinstance(c, CylindricalGearContact) and c.line and (c.label, c.point, c.driver) == ("H501_C", "C", "gear1")
+    assert isinstance(c.body1, InvoluteFlank) and isinstance(c.body2, InvoluteFlank)
+    assert c.body1.r == pytest.approx((14.20546 * MM, math.inf), rel=1e-6)
+    assert c.body2.r == pytest.approx((21.30819 * MM, math.inf), rel=1e-6)
+    assert (c.body1.E, c.body2.E, c.body1.nu) == (206000.0e6, 206000.0e6, 0.3)
+    assert c.load == pytest.approx(75697.52, rel=1e-6)                          # [N/m]
+    assert (c.n_pairs, c.share) == (3, pytest.approx(0.9717558, rel=1e-6)) and type(c.n_pairs) is int
+    assert c.l_sum_mm == pytest.approx(24.40118, rel=1e-6) and c.load == pytest.approx(F_bn_N / c.l_sum_mm / MM)
+    assert c.g_y_mm == pytest.approx(0.0, abs=1e-9) and c.dy1_mm == pytest.approx(pair.dl1, rel=1e-12)
+    given = f"given:{cc.STEEL_ID}"                 # an id that AxisForge does not have, kept visible
+    assert (c.material1, c.material2, c.z2) == (given, given, pair.gear2.z)
+    assert hertz(c).p0 / 1e6 == pytest.approx(565.67, abs=0.005)
+
+
+@pytest.mark.parametrize("which", ["H501", "internal"])
+def test_gear_contact_radii_at_C_are_axisforge_curvature_radii(request, which):
+    """C11b, kept: the bridge takes the normal-plane radii from AxisForge (pair_values_at -> curvature_radii,
+    D-0018, D-0032): at C the body radii equal CylindricalFamily.curvature_radii(pair, 0) rho1_n, rho2_n (signed:
+    the ring concave) within 1e-12, and the stored segments T1C / cos(beta_b), T2C / cos(beta_b) (ISO 21771 Eq.
+    (81), (82)); g_y = 0 within 1e-9 mm."""
+    if which == "H501":
+        cc, pair, F_bn_N = request.getfixturevalue("fzg_h501")
+        kw = dict(E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    else:
+        pair, F_bn_N, kw = _gear_pair(z2=-60), 1000.0, {}            # the radii do not depend on the load
+    c = _point(CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=F_bn_N, **kw), "C")
+    r = CylindricalFamily.curvature_radii(pair, 0.0)
+    assert c.body1.r[0] / MM == pytest.approx(float(r["rho1_n_mm"]), rel=1e-12)
+    assert c.body2.r[0] / MM == pytest.approx(float(r["rho2_n_mm"]), rel=1e-12)
+    cos_betab = math.cos(pair.gear1.betab)
+    assert c.body1.r[0] / MM == pytest.approx(pair.T1C / cos_betab, rel=1e-12)
+    assert c.body2.r[0] / MM == pytest.approx(pair.T2C / cos_betab, rel=1e-12)
+    assert np.sign(c.body2.r[0]) == np.sign(pair.gear2.z) and c.g_y_mm == pytest.approx(0.0, abs=1e-9)
+
+
+def test_path_points_of_both_drivers(fzg_h501):
+    """points="path" (the old path_diameters): gear 2 driving swaps A <-> E and B <-> D, C stays; with gear 1
+    driving A is the active root 2 rA1 (d_Nf1), E the tip da1, C the operating pitch diameter dl1; the sense of the
+    entrainment along bridge x is -1 with gear 1 driving, +1 with gear 2 (SB-68)."""
+    cc, pair, F_bn_N = fzg_h501
+    kw = dict(F_bn_N=F_bn_N, E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    cs = {d: CylindricalGearContact.from_pair(pair, driver=d, **kw) for d in ("gear1", "gear2")}
+    d1, d2 = ({c.point: c.dy1_mm for c in cs[d]} for d in ("gear1", "gear2"))
+    assert (d2["A"], d2["B"], d2["C"], d2["D"], d2["E"]) == (d1["E"], d1["D"], d1["C"], d1["B"], d1["A"])
+    assert d1["A"] == pytest.approx(2 * pair.rA1, rel=1e-12) and d1["E"] == pytest.approx(pair.gear1.da, rel=1e-12)
+    assert d1["C"] == pytest.approx(pair.dl1, rel=1e-12)
+    assert d1["A"] < d1["C"] < d1["E"]           # B and D need not bracket C (internal 24/-60)
+    for driver, sense in (("gear1", -1), ("gear2", 1)):
+        assert {c.entrainment_sign_x for c in cs[driver]} == {sense}
+
+
+@pytest.mark.parametrize("driver", ["gear1", "gear2"])
+@pytest.mark.parametrize("which", ["H501", "internal"])
+def test_from_pair_agrees_with_contact_inputs(fzg_h501, driver, which):
+    """At each step of AxisForge ``contact_inputs`` (9 steps A..E for the driver), dy1 = 2 sqrt((T1C + g_y)^2
+    + rb1^2) gives the same rho1_n, rho2_n and w through ``pair_values_at`` and ``load_sharing``: no hidden
+    'pinion = gear 1' assumption in AxisForge. FZG H501 (helical) and an internal spur pair 24/-60."""
+    cc, pair, F_bn_N = fzg_h501
+    material = dict(E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    if which == "internal":
+        pair, material = _gear_pair(z2=-60), {}
+    inputs = contact_inputs(pair, driver, 1500.0, F_bn_N, n_points=9)
+    dy1 = 2.0 * np.sqrt((pair.T1C + inputs["g_y_mm"]) ** 2 + pair.gear1.rb ** 2)
+    cs = CylindricalGearContact.from_pair(pair, points=list(dy1), driver=driver, F_bn_N=F_bn_N, **material)
+    np.testing.assert_allclose([c.body1.r[0] / MM for c in cs], inputs["rho1_n_mm"], rtol=1e-9)
+    np.testing.assert_allclose([c.body2.r[0] / MM for c in cs], inputs["rho2_n_mm"], rtol=1e-9)
+    np.testing.assert_allclose([c.load * MM for c in cs], inputs["w_N_per_mm"], rtol=1e-9)
+    np.testing.assert_allclose([c.g_y_mm for c in cs], inputs["g_y_mm"], rtol=1e-9, atol=1e-12)
+    assert [c.n_pairs for c in cs] == [int(n) for n in inputs["n_pairs"]]
+
+
+def test_internal_pair_contacts():
+    """C12b test 7: internal spur pair z 24/-60, mn 2 mm: from_pair along the path; the ring flank is concave
+    (r[0] < 0, rho_t < 0, its tip inside its root end), the relative curvature stays positive and Hertz solves
+    at every point."""
+    pair = _gear_pair(z2=-60)
+    cs = CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=1000.0)
+    for c in cs:
+        ring = c.body2
+        assert ring.r[0] < 0.0 < c.kappa_max and ring.rho_t < 0 and c.z2 == -60 and math.isfinite(hertz(c).p0)
+        assert ring.r_tip == pair.gear2.ra * MM < ring.r_root == pair.gear2.rf * MM
+    # closed form at C (spur, x = 0, so d_w = m z): rho_C = (d_w / 2) sin(alpha_wt), alpha_wt = 20 deg
+    c = cs[2]
+    assert c.body1.r[0] / MM == pytest.approx(24.0 * math.sin(math.radians(20.0)), rel=1e-9)     # 8.2085 mm
+    assert c.body2.r[0] / MM == pytest.approx(-60.0 * math.sin(math.radians(20.0)), rel=1e-9)    # -20.521 mm
+    assert [c.label for c in cs] == ["internal_A", "internal_B", "internal_C", "internal_D", "internal_E"]
+    assert cs[0].d_end_tip_2_m == pytest.approx(0.0, abs=1e-12)        # A: on the inner tip circle of the ring
+
+
+def test_helical_contact_values(fzg_h501):
+    """C12b test 8: H501 at its five points with n1 1500 rpm: rho_n = rho_t / cos(beta_b) for both flanks, share,
+    l, l_sum and n_pairs from load_sharing, zeta1, zeta2, Kg and the kinematics from pair_values_at (one call; the
+    speeds equal surface_speeds at g_y)."""
+    cc, pair, F_bn_N = fzg_h501
+    cs = CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=F_bn_N, n1_rpm=1500.0, E=cc.GEAR_E_MPA,
+                                          nu=cc.GEAR_NU)
+    g_y = np.array([c.g_y_mm for c in cs])
+    sharing, speeds = load_sharing(pair, g_y), CylindricalFamily.surface_speeds(pair, g_y, 1500.0)
+    values = CylindricalFamily.pair_values_at(pair, [c.dy1_mm for c in cs])
+    cos_betab = math.cos(pair.gear1.betab)
+    for i, c in enumerate(cs):
+        assert c.beta_b_rad == pair.gear1.betab and c.body2.beta_b == pair.gear1.betab
+        for body in (c.body1, c.body2):
+            assert body.r[0] == pytest.approx(body.rho_t / cos_betab, rel=1e-15)
+        assert (c.share, c.l_mm, c.l_sum_mm, c.n_pairs) == (sharing["share"][i], sharing["l_mm"][i],
+                                                          sharing["l_sum_mm"][i], sharing["n_pairs"][i])
+        assert (c.zeta1, c.zeta2, c.Kg) == (values["zeta1"][i], values["zeta2"][i], values["Kg"][i])
+        k = c.kinematics
+        for name in ("ue", "vg", "u1", "u2"):
+            assert getattr(k, name) == pytest.approx(float(speeds[f"{name}_m_per_s"][i]), rel=1e-12)
+    assert CylindricalGearContact.from_pair(pair, driver="gear1", F_bn_N=F_bn_N, E=cc.GEAR_E_MPA,
+                                            nu=cc.GEAR_NU)[0].kinematics is None
+
+
+def test_given_load_mode():
+    """C12b test 9: load = w [N/m] given: one contact per point, each with that load; share, l, l_sum and n_pairs
+    nan."""
+    pair = _gear_pair()
+    cs = CylindricalGearContact.from_pair(pair, driver="gear2", load=2.5e5)
+    assert [c.point for c in cs] == list("ABCDE") and all(c.load == 2.5e5 for c in cs)
+    assert all(math.isnan(v) for c in cs for v in (c.share, c.l_mm, c.l_sum_mm, c.n_pairs))
+
+
+def test_gear_material_source_and_default_labels():
+    """E, nu from the AxisForge material (the contact names the material_id); a scalar or sequence dy1 gets the
+    label ``dy1=<value>``; ``label`` replaces the prefix."""
+    pair = _gear_pair()
+    d = _point(CylindricalGearContact.from_pair(pair, driver="gear1", load=1e5), "C").dy1_mm
+    (c,) = CylindricalGearContact.from_pair(pair, points=d, driver="gear1", F_bn_N=1000.0)
+    assert (c.material1, c.material2, c.body1.E) == (_TEST_STEEL, _TEST_STEEL, 206000.0e6)
+    assert c.point == f"dy1={d:.6g}" and c.label == f"gear_dy1={d:.6g}"
+    assert CylindricalGearContact.from_pair(pair, points={"C": d}, driver="gear1", load=1e5,
+                                            label="run7")[0].label == "run7_C"
+    for material_id, recorded in (("", "given"), ("typo_steel", "given:typo_steel")):
+        (c,) = CylindricalGearContact.from_pair(_gear_pair(material_id), points=[d], driver="gear1", F_bn_N=1000.0,
+                                                E=(206000.0, 210000.0), nu=(0.3, 0.29))
+        assert (c.material1, c.material2, c.body2.E, c.body2.nu) == (recorded, recorded, 210000.0e6, 0.29)
+
+
+@pytest.mark.parametrize("change, match", [
+    ("off_path_low", "off the path"),
+    ("off_path_high", "off the path"),
+    ("driver", "driver must be"),
+    ("colon", "no ':'"),
+    ("F_bn", "F_bn_N must be positive"),
+    ("both_loads", "either F_bn_N or load"),
+    ("no_load", "either F_bn_N or load"),
+    ("points", "points must be 'path'"),
+    ("material_given", "given only for a gear without one"),
+    ("material_missing", "has no AxisForge material"),
+    ("material_format", "must be"),
+])
+def test_from_pair_refuses(change, match):
+    pair = _gear_pair("" if change in ("material_missing", "material_format") else _TEST_STEEL)
+    d = {c.point: c.dy1_mm for c in CylindricalGearContact.from_pair(_gear_pair(), driver="gear1", load=1e5)}
+    kwargs = dict(points=[d["C"]], F_bn_N=1000.0, driver="gear1")
+    kwargs.update({"off_path_low": dict(points=[d["A"] * (1 - 1e-6)]), "off_path_high": dict(points=[d["E"] * (1 + 1e-6)]),
+                   "driver": dict(driver="pinion"), "colon": dict(points={"t:1": d["C"]}),
+                   "F_bn": dict(F_bn_N=0.0), "both_loads": dict(load=1e5), "no_load": dict(F_bn_N=None),
+                   "points": dict(points="A..E"), "material_given": dict(E=(206000.0, None), nu=(0.3, None)),
+                   "material_format": dict(E=206000.0, nu=(0.3, 0.3))}.get(change, {}))
+    with pytest.raises(ValueError, match=match):
+        CylindricalGearContact.from_pair(pair, **kwargs)
+
+
+def test_from_pair_refuses_another_family():
+    """As the bearing classes: the exact AxisForge family, a stand-in pair of another family is refused."""
+    pair = SimpleNamespace(family=SimpleNamespace(), label="other")
+    with pytest.raises(TypeError, match="takes a CylindricalFamily pair"):
+        CylindricalGearContact.from_pair(pair, driver="gear1", load=1e5)
+
+
+def test_pair_beyond_a_base_tangent_point():
+    """Pairs assembled with check=False (SB-59): external 10/10 with x +0.6/-0.6 ends beyond T2 (T2E < 0): the
+    points before T2 are translated, E (beyond T2: rho2_t < 0 on an external gear, no involute) is refused point
+    by point; with x -0.6/+0.6 the path starts beyond T1 (T1A < 0) and the pair is refused whole (dy1 folds such a
+    point onto its mirror)."""
+    from axisforge.core.machine_elements.gears import CylindricalGearData, Gear, GearPair
+    family = CylindricalFamily()
+
+    def pair(x1, x2):
+        gears = [Gear.assemble(family, CylindricalGearData(2.0, 10, x=x, b=20.0, material_id=""), check=False)
+                 for x in (x1, x2)]
+        return GearPair.assemble(family, gear1=gears[0], gear2=gears[1], check=False)
+
+    kw = dict(driver="gear1", F_bn_N=1000.0, E=(206000.0, 206000.0), nu=(0.3, 0.3))
+    beyond_T2 = pair(0.6, -0.6)
+    assert beyond_T2.T2E < 0 <= beyond_T2.T1A
+    d = 2.0 * math.hypot(beyond_T2.T1C + CylindricalFamily.path_points(beyond_T2, "gear1")["A"], beyond_T2.gear1.rb)
+    assert CylindricalGearContact.from_pair(beyond_T2, points={"A": d}, **kw)[0].body2.rho_t > 0
+    with pytest.raises(ValueError, match="beyond the base-tangent point T2"):
+        CylindricalGearContact.from_pair(beyond_T2, **kw)
+    beyond_T1 = pair(-0.6, 0.6)
+    assert beyond_T1.T1A < 0
+    with pytest.raises(ValueError, match="beyond the base-tangent point T1"):
+        CylindricalGearContact.from_pair(beyond_T1, **kw)
+
+
+def test_cylindrical_gear_contact_checks():
+    """Hand-built contacts: the bodies must be the two InvoluteFlank toward tip / root (the equivalent cylinders
+    are refused), of one beta_b, rho1 > 0, the sign of rho2 that of z2."""
+    steel = dict(E=206e9, nu=0.3)
+    fields = dict(load=1e5, point="C", dy1_mm=40.0, dy2_mm=80.0, g_y_mm=0.0, share=1.0, l_mm=20.0, l_sum_mm=20.0,
+                  n_pairs=1, driver="gear1", material1="given", material2="given", zeta1=0.0, zeta2=0.0, Kg=0.0)
+    f1, f2 = (InvoluteFlank(**_FLANKS[k], **steel) for k in ("gear1", "gear2"))
+    ring = InvoluteFlank(**_FLANKS["ring"], **steel)
+    c = CylindricalGearContact(body1=f1, body2=f2, z2=40, **fields)
+    assert c.kappa_max > 0 and c.entrainment_sign_x == -1 and c.d_end_tip_2_m == f2.d_end_tip_m and c.kinematics is None
+    assert CylindricalGearContact(body1=f1, body2=ring, z2=-60, **fields).kappa_max > 0
+    cylinder = SweptCircleBody(r=f2.r, **steel)
+    with pytest.raises(ValueError, match="must be the InvoluteFlank"):
+        CylindricalGearContact(body1=f1, body2=cylinder, z2=40, **fields)
+    with pytest.raises(ValueError, match="must be the InvoluteFlank"):
+        CylindricalGearContact(body1=f2, body2=f2, z2=40, **fields)
+    with pytest.raises(ValueError, match="has not the sign of z2"):
+        CylindricalGearContact(body1=f1, body2=f2, z2=-60, **fields)
+    with pytest.raises(ValueError, match="same beta_b"):
+        CylindricalGearContact(body1=f1, body2=replace(f2, beta_b=0.1), z2=40, **fields)
+    with pytest.raises(ValueError, match="driver must be"):
+        CylindricalGearContact(body1=f1, body2=f2, z2=40, **{**fields, "driver": "pinion"})
+
+
+def test_hertz_of_a_gear_contact_reports_the_flank_ends(c40_k9):
+    """C12b item 3: the Hertz reference carries the four ends in half-widths; at A (on the tip of gear 2) and E (on
+    the tip of gear 1) one of them is 0 < 1, so the reference is not valid, with the reason; B, C, D are valid.
+    C40 at K9: d_end/b at A 128.4 / 4.69 / 0 / 154.4 (tip 1, root 1, tip 2, root 2)."""
+    *_, cs = c40_k9
+    for c in cs:
+        hz = hertz(c)
+        assert set(hz.ends_over_b) == {"d_end_tip_1_over_b", "d_end_root_1_over_b", "d_end_tip_2_over_b",
+                                       "d_end_root_2_over_b"}
+        assert hz.valid == (c.point in "BCD") and (hz.reason == "") == hz.valid
+    A = hertz(cs[0])
+    assert A.ends_over_b["d_end_root_1_over_b"] == pytest.approx(4.687, abs=5e-4)
+    assert A.ends_over_b["d_end_tip_2_over_b"] == pytest.approx(0.0, abs=1e-9) and "d_end_tip_2_over_b" in A.reason
+    assert "d_end_tip_1_over_b" in hertz(cs[4]).reason
+
+
+def test_bem_of_the_fzg_c40_gear_contact_at_C(c40_k9, tmp_path):
+    """C12b test 5: C40 at C, K9, solved with pk: the two involute flanks give p0 and b of the two equivalent
+    cylinders (the old ToothContact: same radii, load and grid) within 0.5 % (the prompt), here within 1e-4.
+    Measured: p0 829.883 / 829.865 MPa, b 0.1223587 / 0.1223564 mm (+0.002 %, +0.002 %): the gap error of the flanks
+    (+0.5 % at -b, -0.4 % at +b) is odd, so p0 and b change only at its second order (physics-reviewer C12b). Its
+    sign shows in the pressure centroid: +9.5e-4 b, toward the smaller gap (+x), against 0 for the cylinders.
+    Every check passes; the record carries the new fields."""
+    *_, cs = c40_k9
+    c = cs[2]
+    cylinders = _Line(body1=SweptCircleBody(r=c.body1.r, E=c.body1.E, nu=c.body1.nu),
+                      body2=SweptCircleBody(r=c.body2.r, E=c.body2.E, nu=c.body2.nu), load=c.load, label="cyl_C")
+    res, ref = _bem(c, tmp_path / "flank"), _bem(cylinders, tmp_path / "cyl")
+    assert res.p0 == pytest.approx(ref.p0, rel=1e-4) and res.b == pytest.approx(ref.b, rel=1e-4)
+    centroid = [(r.p[:, 0] * r.grid.X[:, 0]).sum() / r.p[:, 0].sum() / r.hertz.b for r in (res, ref)]
+    assert 5e-4 < centroid[0] < 2e-3 and abs(centroid[1]) < 1e-9
+    assert _all_checks(res)
+    rec = res.record()
+    assert (rec["contact"], rec["body1_class"], rec["body2_class"]) == ("CylindricalGearContact", "InvoluteFlank",
+                                                                        "InvoluteFlank")
+    assert rec["entrainment_sign_x"] == -1 and math.isnan(rec["ue_m_per_s"]) and rec["hertz_reason"] == ""
+    assert rec["d_end_tip_1_over_b_ref"] == pytest.approx(43.644, abs=5e-3)
+    assert rec["d_end_tip_1_m"] == c.d_end_tip_1_m and rec["zeta1"] == c.zeta1
+
+
+def test_bem_of_a_gear_contact_at_the_tip_edge(c40_k9, tmp_path):
+    """C12b test 6: C40 at K9, a point past A by half the Hertz half-width at A along the path (d_end_tip_2 / b =
+    0.30): it solves; the Hertz reference is not valid (the reason recorded) and the pressure peak lies on the side
+    of the tip of gear 2 (-x). Measured: peak at x = -0.262 b (the tip at -0.301 b), p0 3.08 GPa against Hertz 0.87
+    GPa (edge contact, mesh-dependent: 4.16 / 5.87 GPa at h/2, h/4 (slippy-expert C12b); every check of the solve
+    passes, only hertz_valid says it, SB-70; no value asserted beyond the side)."""
+    cc, pair, F_bn_N, cs = c40_k9
+    g_y = cs[0].g_y_mm + 0.5 * hertz(cs[0]).b / MM
+    (c,) = CylindricalGearContact.from_pair(pair, points={"A+": 2.0 * math.hypot(pair.T1C + g_y, pair.gear1.rb)},
+                                            driver=cc.DRIVER, F_bn_N=F_bn_N, E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    res = _bem(c, tmp_path)
+    rec = res.record()
+    assert res.converged and not res.hertz_valid and "d_end_tip_2_over_b" in rec["hertz_reason"]
+    assert rec["d_end_tip_2_over_b_ref"] < 1
+    x_peak = res.grid.X[np.unravel_index(np.argmax(res.p), res.p.shape)]
+    assert -c.d_end_tip_2_m <= x_peak < 0
+
+
+# ---- gears: the involute flank as a body (InvoluteFlank, C12a) --------------------------------------
+
+def _involute_frame(rb, t, u):
+    """Independent parametric involute (ISO 21771 4.3.7-4.3.8): the points of roll angle ``u`` of the involute of
+    base radius ``rb`` on the tangent axes at roll angle ``t`` (x along increasing roll, z away from the
+    base-tangent point) [m]."""
+    point = lambda v: rb * np.array([np.cos(v) + v * np.sin(v), np.sin(v) - v * np.cos(v)])
+    d = point(u) - point(t)[:, None]
+    return d.T @ np.array([math.cos(t), math.sin(t)]), d.T @ np.array([math.sin(t), -math.cos(t)])
+
+
+def _second_order(flank, x):
+    """Coefficient of x_b^2 in the profile from its even part at x and x/2, the x^4 term removed (Richardson)."""
+    even = [flank.profile(np.array([s, -s]), np.zeros(2)).mean() / s**2 for s in (x, x / 2)]
+    return (4 * even[1] - even[0]) / 3
+
+
+# a spur flank of each kind: gear 1 (+x_b toward its tip), an external gear 2 and a ring (+x_b toward their roots)
+_FLANKS = {"gear1": dict(rb=33.83 * MM, rho_t=13.97 * MM, beta_b=0.0, r_tip=41.23 * MM, r_root=33.83 * MM,
+                         toward_tip=True),
+           "gear2": dict(rb=50.74 * MM, rho_t=20.96 * MM, beta_b=0.0, r_tip=59.18 * MM, r_root=50.74 * MM,
+                         toward_tip=False),
+           "ring": dict(rb=56.38 * MM, rho_t=-20.52 * MM, beta_b=0.0, r_tip=58.0 * MM, r_root=62.5 * MM,
+                        toward_tip=False)}
+
+
+@pytest.mark.parametrize("kind", list(_FLANKS))
+def test_spur_flank_is_the_involute(kind):
+    """C12a test 1: the spur profile equals an independent parametric involute within 1e-12 m on both sides of the
+    point (gear 1, external gear 2, ring), independent of y_b; its second order is -x^2 / (2 rho_n) within 1e-6
+    at |x| = 1e-3 rho (x^4 term removed; the even part alone is 1.7e-6 off there, the involute's own x^4 term)."""
+    f = InvoluteFlank(**_FLANKS[kind], **STEEL)
+    rb, rho = f.rb, f.rho_t
+    t = abs(rho) / rb
+    u = t + np.linspace(-0.04, 0.04, 21)
+    x, z = _involute_frame(rb, t, u)
+    sign = math.copysign(1.0, rho)
+    sigma = sign * (1.0 if f.toward_tip else -1.0)           # roll angle grows toward an external tip / a ring root
+    X = np.repeat((sigma * x)[:, None], 3, axis=1)
+    Y = np.repeat(np.array([[-5.0, 0.0, 7.0]]) * MM, len(u), axis=0)
+    np.testing.assert_allclose(f.profile(X, Y), np.repeat((sign * z)[:, None], 3, axis=1), rtol=0, atol=1e-12)
+    assert f.r == (rho, math.inf)
+    assert _second_order(f, 1e-3 * abs(rho)) == pytest.approx(-1 / (2 * rho), rel=1e-6)
+
+
+def test_flank_radius_is_axisforge_curvature_radii(fzg_h501):
+    """C12a test 1: built the AxisForge way at a point of the helical H501 (g_y = 2 mm, beta_b 14.08 deg), r[0]
+    equals curvature_radii rho_n = rho_t / cos(beta_b) of each gear within 1e-12."""
+    _, pair, _ = fzg_h501
+    g_y = 2.0
+    r = CylindricalFamily.curvature_radii(pair, g_y)
+    assert pair.gear1.betab > 0.2
+    for gear, key, toward_tip in ((pair.gear1, "1", True), (pair.gear2, "2", False)):
+        f = InvoluteFlank(rb=gear.rb * MM, rho_t=float(r[f"rho{key}_t_mm"]) * MM, beta_b=pair.gear1.betab,
+                          r_tip=gear.ra * MM, r_root=gear.rb * MM, toward_tip=toward_tip, **STEEL)
+        assert f.r[0] / MM == pytest.approx(float(r[f"rho{key}_n_mm"]), rel=1e-12)
+
+
+def _hoehn_fzg_c():
+    """Hoehn FZG type C of the evidence (z 16/24, m 4.5, alpha 20 deg, a 91.5, da 82.46 / 118.36 mm): rb1, rb2,
+    ra1, ra2, T1T2, T1C [mm] (ISO 21771 Eq. (19), (54) at a, (81), (87))."""
+    m, alpha, z1, z2, a = 4.5, math.radians(20.0), 16, 24, 91.5
+    rb1, rb2 = z1 * m * math.cos(alpha) / 2, z2 * m * math.cos(alpha) / 2
+    alpha_w = math.acos((z1 + z2) * m * math.cos(alpha) / (2 * a))
+    return rb1, rb2, 82.46 / 2, 118.36 / 2, a * math.sin(alpha_w), rb1 * math.tan(alpha_w)
+
+
+def test_involute_flanks_against_the_cylinders_fzg_c():
+    """C12a test 2: the evidence table (80_Inbox/2026-10-27/gear_flank_check: Hoehn FZG C, not the FEUP C40 of the
+    case; T1 302 N m, w = F_bn / 14 mm, the whole load on one pair, E 210 GPa, nu 0.3, E* = E / (2 (1 - nu^2))). Gap
+    error of the two InvoluteFlank bodies against the two cylinders (SweptCircleBody) at +-b, +-2b: within 0.2
+    percentage points of the table on the flanks. The table continues the involutes past their ends; the bridge
+    does not: A is on the tip circle of gear 2 (-b, -2b fall away), E on that of gear 1 (+b, +2b fall away). With
+    the tips moved out the bridge gives the table there too, except A -2b, past the base circle of gear 1 (the
+    table's interpolation stops at its last sample, 0.30 mm below A)."""
+    rb1, rb2, ra1, ra2, T1T2, T1C = _hoehn_fzg_c()
+    rho1 = {"A": T1T2 - math.sqrt(ra2**2 - rb2**2), "C": T1C, "E": math.sqrt(ra1**2 - rb1**2)}
+    w = 302e3 / rb1 / 14.0                                                           # [N/mm]
+    E_star = 210e3 / (2 * (1 - 0.3**2))                                              # [MPa]
+    table = {"A": (10.59, -6.73, 5.22, -11.65), "C": (0.51, -0.43, 1.11, -0.78), "E": (-1.76, 2.07, -3.29, 4.55)}
+    # nodes past an end (-b, +b, -2b, +2b), the tips as drawn and moved out by 5 %
+    past = {1.0: {"A": [True, False, True, False], "C": [False] * 4, "E": [False, True, False, True]},
+            1.05: {"A": [False, False, True, False], "C": [False] * 4, "E": [False] * 4}}
+    for point, r1 in rho1.items():
+        r2 = T1T2 - r1
+        b = math.sqrt(4 * w / (math.pi * E_star) / (1 / r1 + 1 / r2))                 # Hertz half-width [mm]
+        s = np.array([-b, b, -2 * b, 2 * b]) * MM
+        cylinders = -sum(SweptCircleBody(r=(r * MM, math.inf), **STEEL).profile(s, 0 * s) for r in (r1, r2))
+        for grow in (1.0, 1.05):
+            flanks = (InvoluteFlank(rb=rb1 * MM, rho_t=r1 * MM, beta_b=0.0, r_tip=grow * ra1 * MM, r_root=rb1 * MM,
+                                    toward_tip=True, **STEEL),
+                      InvoluteFlank(rb=rb2 * MM, rho_t=r2 * MM, beta_b=0.0, r_tip=grow * ra2 * MM, r_root=rb2 * MM,
+                                    toward_tip=False, **STEEL))
+            gap = -sum(f.profile(s, 0 * s) for f in flanks)
+            # on both flanks: x_b between the end behind and the end ahead (+x_b toward the tip or the root)
+            on = np.all([(-f.d_end_root_m <= s) & (s <= f.d_end_tip_m) if f.toward_tip
+                         else (-f.d_end_tip_m <= s) & (s <= f.d_end_root_m) for f in flanks], axis=0)
+            error = (gap - cylinders) / cylinders * 100
+            np.testing.assert_allclose(error[on], np.array(table[point])[on], rtol=0, atol=0.2)
+            assert np.all(gap[~on] >= InvoluteFlank.SAG_PAST_END)                   # past an end: no material
+            assert list(~on) == past[grow][point]
+
+
+# fsolve warns at the base circle, where its Jacobian is singular (dx/du = 0); the result is checked below
+@pytest.mark.filterwarnings("ignore:The iteration is not making good progress:RuntimeWarning")
+@pytest.mark.parametrize("hand", [1, -1])
+def test_helical_flank_section(hand):
+    """C12a test 3: the helical profile equals the section of the involute helicoid by the plane normal to the
+    contact line, found here by brute force in 3D (fsolve), within 1e-12 m, for both hands and over the whole flank
+    (nodes on its root end, the base circle, and its tip included: the section points there lie on the base and tip
+    cylinders); beta_b -> 0 gives the spur profile within 1e-12 m; the second order is -x^2 / (2 rho_n),
+    rho_n = rho_t / cos(beta_b), within 1e-6 (H501-like)."""
+    from scipy.optimize import fsolve
+    rb, beta_b, t, ra = 33.907 * MM, hand * 0.245674, 0.42, 40.2 * MM
+    kw = dict(rb=rb, rho_t=rb * t, r_tip=ra, r_root=rb, toward_tip=True, **STEEL)
+    f = InvoluteFlank(beta_b=beta_b, **kw)
+    k = math.tan(beta_b) / rb                                     # twist of the transverse sections [rad/m]
+
+    def S(u, w):                                                  # the helicoid: the involute at u, turned by k w
+        p = rb * np.array([math.cos(u) + u * math.sin(u), math.sin(u) - u * math.cos(u)])
+        c, s = math.cos(k * w), math.sin(k * w)
+        return np.array([c * p[0] - s * p[1], s * p[0] + c * p[1], w])
+
+    P0, T = S(t, 0.0), np.array([math.cos(t), math.sin(t), 0.0])
+    N = np.cross(T, (S(t, 1e-7) - S(t, -1e-7)) / 2e-7)
+    N /= np.linalg.norm(N)
+    L = np.cross(N, T)                                            # the contact line (generator)
+
+    def section(x, u0):
+        """(u, w) of the section point at abscissa x and its height [m]."""
+        q = fsolve(lambda q: [(S(*q) - P0) @ L, (S(*q) - P0) @ T - x], [u0, 0.0], xtol=1e-12)
+        return q, (S(*q) - P0) @ N
+
+    xs = np.concatenate([np.linspace(-1.5, 1.5, 7) * MM, [-f.d_end_root_m, f.d_end_tip_m]])
+    found = [section(x, max(t + x / (rb * t), 1e-3)) for x in xs]
+    np.testing.assert_allclose(f.profile(xs, 0 * xs), [z for _, z in found], rtol=0, atol=1e-12)
+    radius = [np.hypot(*S(*q)[:2]) for q, _ in found[-2:]]       # the ends on the base and tip cylinders
+    np.testing.assert_allclose(radius, [rb, ra], rtol=1e-9)
+    spur, near = InvoluteFlank(beta_b=0.0, **kw), InvoluteFlank(beta_b=1e-7, **kw)
+    np.testing.assert_allclose(near.profile(xs[:7], 0 * xs[:7]), spur.profile(xs[:7], 0 * xs[:7]), rtol=0, atol=1e-12)
+    assert f.r[0] == pytest.approx(rb * t / math.cos(beta_b), rel=1e-15)
+    assert _second_order(f, 1e-3 * f.r[0]) == pytest.approx(-1 / (2 * f.r[0]), rel=1e-6)
+
+
+def test_flank_ends_at_C():
+    """C12a test 4: Hoehn FZG C (as test 2), gear 1 at C. The distances to the ends equal the hand values: the tip
+    point of roll angle sqrt(ra^2 - rb^2) / rb projected on the tangent at C, and the root end (base circle,
+    u = 0) at rb (1 - cos t), t = rho / rb (the arc length from the base circle, rho^2 / (2 rb), is 1.43 % longer).
+    Past each end the profile falls away (SAG_PAST_END below the lowest flank node); just inside it is the involute
+    (0.81 mm below the tangent plane at the tip, 5.2 mm from C)."""
+    rb1, _, ra1, _, _, T1C = _hoehn_fzg_c()
+    rb1, rho1, ra1 = rb1 * MM, T1C * MM, ra1 * MM
+    f = InvoluteFlank(rb=rb1, rho_t=rho1, beta_b=0.0, r_tip=ra1, r_root=rb1, toward_tip=True, **STEEL)
+    t, u_tip = rho1 / rb1, math.sqrt(ra1**2 - rb1**2) / rb1
+    x_end, z_end = _involute_frame(rb1, t, np.array([u_tip, 0.0]))          # the tip and the base circle
+    assert f.d_end_tip_m == pytest.approx(float(x_end[0]), rel=1e-12)
+    assert f.d_end_root_m == pytest.approx(rb1 * (1 - math.cos(t)), rel=1e-12)
+    assert rho1**2 / (2 * rb1) / f.d_end_root_m == pytest.approx(1.0143, abs=1e-4)
+    eps = 1e-9
+    x = np.array([f.d_end_tip_m + eps, f.d_end_tip_m - eps, -f.d_end_root_m - eps, -f.d_end_root_m + eps])
+    z = f.profile(x, 0 * x)
+    assert z[0] == z[2] == min(z[1], z[3]) - InvoluteFlank.SAG_PAST_END
+    np.testing.assert_allclose(z[[1, 3]], z_end, rtol=0, atol=1e-9)        # just inside: the involute at its ends
+    # gear 2 (+x_b toward its root): its tip is on the -x_b side
+    g = InvoluteFlank(**_FLANKS["gear2"], **STEEL)
+    z = g.profile(np.array([-g.d_end_tip_m - eps, g.d_end_root_m + eps, 0.0]), np.zeros(3))
+    assert z[0] == z[1] == -InvoluteFlank.SAG_PAST_END and z[2] == 0.0
+
+
+@pytest.mark.parametrize("change, match", [
+    (dict(rb=0.0), "rb must be positive"),
+    (dict(rho_t=0.0), "rho_t must be non-zero"),
+    (dict(beta_b=math.pi / 2), "beta_b"),
+    (dict(r_root=30.0 * MM), "end radii must be >= rb"),
+    (dict(r_tip=33.9 * MM, r_root=41.23 * MM), "needs r_tip > r_root"),
+    (dict(rho_t=30.0 * MM), "off the flank"),
+])
+def test_involute_flank_refuses(change, match):
+    with pytest.raises(ValueError, match=match):
+        InvoluteFlank(**{**_FLANKS["gear1"], **change}, **STEEL)
+
+
+# ---- FZG C40 on the bridge (tests/cases/fzg_gears) -------------------------------------
+
+@pytest.fixture
+def fzg_c40():
+    """The FZG C40 pair of the case; E 206 000 MPa and nu 0.3 are the case's assumption (``GEAR_E_MPA``,
+    ``GEAR_NU``: ISO 6336-2:2006 Table 1 generic steel, R-118 open), given to the bridge."""
+    cc = fzg_gears
+    return cc, cc.build_pair("C40")
+
+
+def _fzg_p_H_MPa(cc, pair, stage, points):
+    """Hertz p_H [MPa] of C40 at ``points`` for FZG ``stage``: wheel torque (R-124), the case's driver. "B+" is
+    the one-sided point DELTA_S_MM past B toward D (single contact for a spur pair)."""
+    z1, z2 = pair.gear1.z, pair.gear2.z
+    F_bn_N = cc.FAMILY.mesh_forces(pair, cc.WHEEL_TORQUE_NM[stage] * z1 / z2, rot1=+1).F_bn_N
+    g = CylindricalFamily.path_points(pair, cc.DRIVER)
+    g["B+"] = g["B"] + math.copysign(cc.DELTA_S_MM, g["E"] - g["A"])        # past B in the direction of travel
+    dy1 = {k: 2.0 * math.hypot(pair.T1C + g[k], pair.gear1.rb) for k in points}
+    contacts = CylindricalGearContact.from_pair(pair, points=dy1, driver=cc.DRIVER, F_bn_N=F_bn_N,
+                                                E=cc.GEAR_E_MPA, nu=cc.GEAR_NU)
+    # the Hertz pressure of the flank radii at the point (valid or not: at A the flank of gear 2 ends there)
+    return [hertz(c).p0 / 1e6 for c in contacts]                              # Pa -> MPa
+
+
+def test_fzg_ph_load_ratios(fzg_c40):
+    """V-GEAR-04 criterion P1: p_H(K7)/p_H(K5) = 685/498 = 1.3755, p_H(K9)/p_H(K5) = 874/498 = 1.7550, +-0.2 %.
+
+    Martins2015 Table 4 (``fzg_geometry_ph`` CSV L174, L184, L194). Hertz p_H grows as the square root of the
+    load whatever E and the point, so the ratio checks the stage torques and p ~ sqrt(w) only; 0.2 % is the
+    rounding of the printed integers (0.5/498 + 0.5/685 = 0.17 %).
+    """
+    cc, pair = fzg_c40
+    points = ["A", "B+", "C"]
+    p5, p7, p9 = (_fzg_p_H_MPa(cc, pair, stage, points) for stage in ("K5", "K7", "K9"))
+    for a, b, c in zip(p5, p7, p9):
+        assert b / a == pytest.approx(685.0 / 498.0, rel=2e-3)
+        assert c / a == pytest.approx(874.0 / 498.0, rel=2e-3)
+
+
+@pytest.mark.xfail(strict=False, reason="Q-09 / R-117 not ruled")
+def test_hypothesis_R117_ph_at_A_half_load(fzg_c40):
+    """Hypothesis R-117, not a pass criterion; the tolerance depends on E (R-118).
+
+    FEUP's p_H 498 MPa at K5 (Martins2015 Table 4, ``fzg_geometry_ph`` CSV L174) does not state its point. The
+    hypothesis: it is the Hertz pressure at A, where two tooth pairs share the load (share 0.5), with the
+    pinion driving (GL-30). E 206 GPa, nu 0.3 and the wheel d_a 118.54 (CSV L110, AxisForge from x) are
+    assumed; 210 GPa would give about +0.8 %.
+    """
+    cc, pair = fzg_c40
+    (p_A,) = _fzg_p_H_MPa(cc, pair, "K5", ["A"])
+    assert p_A == pytest.approx(498.0, rel=0.01)
+
+
+# ---- package: exports, sub-model data and the layer order ---------------------------------------------
+
+_LEVELS = ("core", "mesh", "roughness", "results", "solvers", "outputs")   # import order (D-0034 item 1; roughness R4-01)
+
+
+def _imports(path: Path, module: str) -> set[str]:
+    """Absolute names of every module imported by the file ``path`` (module name ``module``), including
+    the imports under ``if TYPE_CHECKING:``."""
+    import ast
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    package = module.split(".") if path.name == "__init__.py" else module.split(".")[:-1]
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = package[:len(package) - node.level + 1] if node.level else []
+            target = ".".join(base + ([node.module] if node.module else []))
+            names.add(target)
+            if node.module is None:                     # "from . import x": x is a module
+                names.update(f"{target}.{alias.name}" for alias in node.names)
+    return names
+
+
+def test_layer_order_of_the_contact_package():
+    """core imports nothing of mesh/roughness/results/solvers and no SlipPY; mesh no later level and no SlipPY;
+    roughness (SlipPY allowed) no results/solvers; results no solvers/SlipPY. Imports under TYPE_CHECKING are held
+    to the same rule (they name earlier levels only)."""
+    import slippy_bridge.contact as pkg
+    root = Path(pkg.__file__).parent
+    files = [p for p in sorted(root.rglob("*.py")) if len(p.relative_to(root).parts) > 1]
+    checked = 0
+    for path in files:                                   # contact/__init__.py (the exports) excluded
+        rel = path.relative_to(root)
+        level = rel.parts[0]
+        module = ".".join(("slippy_bridge", "contact", *rel.with_suffix("").parts))
+        later = _LEVELS[_LEVELS.index(level) + 1:]
+        forbidden = [f"slippy_bridge.contact.{name}" for name in later]
+        for name in _imports(path, module):
+            assert not any(name == f or name.startswith(f + ".") for f in forbidden), f"{module} imports {name}"
+            if level not in ("solvers", "roughness"):          # the levels that compute with SlipPY
+                assert name.split(".")[0] != "slippy", f"{module} imports SlipPY ({name})"
+        checked += 1
+    assert checked == len(files) >= 14
+
+
+def test_public_names_import_from_the_package():
+    import slippy_bridge.contact as pkg
+    for name in ("Body", "SweptCircleBody", "Contact", "Kinematics", "BearingContact", "DeepGrooveBallContact",
+                 "AngularContactBallContact", "CylindricalRollerContact", "InvoluteFlank", "GearContact",
+                 "CylindricalGearContact", "Grid",
+                 "SPAN_X_0", "HertzResult", "StaticResult", "hertz", "surface_pair", "solve"):
+        assert name in pkg.__all__ and getattr(pkg, name) is not None
+    assert pkg.solve is solve and pkg.CylindricalGearContact is CylindricalGearContact
+    for name in ("ToothContact", "gear_contacts", "path_diameters"):      # removed in C12b (no dispatcher)
+        assert not hasattr(pkg, name)
+
+
+def test_kinematics_data():
+    """ue is the MEAN entrainment speed (u1 + u2)/2, vg = u1 - u2; data only, finite real numbers; with u1 and
+    u2 given, the sum given as ue is refused (R-075)."""
+    from slippy_bridge.contact import Kinematics
+    k = Kinematics(ue=(3.0 + 1.0) / 2, vg=3.0 - 1.0, u1=3.0, u2=1.0)
+    assert (k.ue, k.vg, k.u1, k.u2) == (2.0, 2.0, 3.0, 1.0)
+    assert Kinematics(ue=1.0, vg=0.0).u1 is None
+    assert Kinematics(ue=np.float32(1.5), vg=np.float64(0.0)).ue == 1.5
+    for bad in (dict(ue=math.nan, vg=0.0), dict(ue=1.0, vg=math.inf), dict(ue=1.0, vg=0.0, u1="1"),
+                dict(ue=True, vg=0.0)):
+        with pytest.raises(ValueError, match="finite real number"):
+            Kinematics(**bad)
+    with pytest.raises(ValueError, match="ue is the MEAN"):
+        Kinematics(ue=3.0 + 1.0, vg=2.0, u1=3.0, u2=1.0)              # the sum given as ue
+    with pytest.raises(ValueError, match="vg = u1 - u2"):
+        Kinematics(ue=2.0, vg=-2.0, u1=3.0, u2=1.0)
+
+
+# ---- FZG C40 checks that do not use the bridge (tests/cases/fzg_gears) -------------
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="known gap GL-10: AxisForge 1.4624 vs printed 1.44")
+def test_fzg_c40_eps_alpha_known_gap():
+    """C40 transverse contact ratio: printed 1.44 (Fernandes2015b CSV L13 = Martins2015 L111), AxisForge 1.4624.
+
+    A known gap (GL-10) kept visible: it fails today with AssertionError; an XPASS would mean it closed.
+    """
+    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")
+    pair = fzg_gears.build_pair("C40")
+    assert pair.epslon_alpha == pytest.approx(1.44, abs=0.01)
+
+
+@pytest.mark.parametrize("stage, F_r_printed_N", [
+    ("K5", 790.0),                  # fzg_geometry_ph CSV L172
+    pytest.param("K7", 1495.0,      # CSV L182
+                 marks=pytest.mark.xfail(strict=True, raises=AssertionError,
+                                         reason="GL-41: 1494.50 vs 1495, 0.004 N over the print rounding")),
+    ("K9", 2432.0),                 # CSV L192
+])
+def test_fzg_c40_radial_force(stage, F_r_printed_N):
+    """P0 (GL-41, GL-45): C40 radial force F_r = F_tw tan(alpha_wt) against Martins2015 Table 4, within 0.5 N.
+
+    0.5 N is the rounding of the printed integer. The check covers the wheel -> pinion torque (T1 = T2 z1/z2,
+    R-124), the working pitch diameter and the working pressure angle; it needs no gear adapter.
+    """
+    pytest.importorskip("axisforge.solvers.machine_elements.gears.contact")
+    cc = fzg_gears
+    pair = cc.build_pair("C40")
+    T1_Nm = cc.WHEEL_TORQUE_NM[stage] * pair.gear1.z / pair.gear2.z            # CSV L168/178/188, on the wheel
+    F_r_N = cc.FAMILY.mesh_forces(pair, T1_Nm, rot1=+1).F_r_N
+    assert F_r_N == pytest.approx(F_r_printed_N, abs=0.5)

@@ -1,0 +1,61 @@
+case_id,kind,quantity,symbol,value,unit,condition,source_key,location,pdf_page,read_from,note
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,1.0000,-,alpha=1.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,1.1604,-,alpha=1.2500;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,text layer differs or is split (OCR); image reading used; text layer prints 1 for 4 (systematic OCR error in this table)
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,1.3101,-,alpha=1.5000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,1.4514,-,alpha=1.7500;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,"scan has a smudge in place of the decimal point (""1:4514""); read 1.4514; text layer garbled"
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,1.5858,-,alpha=2.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,2.0720,-,alpha=3.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,2.5007,-,alpha=4.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,2.8902,-,alpha=5.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,3.2505,-,alpha=6.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,3.5878,-,alpha=7.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,3.9065,-,alpha=8.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,4.2096,-,alpha=9.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,text layer differs or is split (OCR); image reading used; text layer prints 1 for 4 (systematic OCR error in this table)
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,4.4994,-,alpha=10.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,text layer differs or is split (OCR); image reading used; text layer prints 1 for 4 (systematic OCR error in this table)
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,5.7996,-,alpha=15.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,6.9287,-,alpha=20.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,7.9440,-,alpha=25.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,text layer differs or is split (OCR); image reading used; text layer prints 1 for 4 (systematic OCR error in this table)
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,8.8762,-,alpha=30.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,9.7442,-,alpha=35.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,text layer differs or is split (OCR); image reading used; text layer prints 1 for 4 (systematic OCR error in this table)
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,10.5605,-,alpha=40.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,11.3340,-,alpha=45.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,text layer differs or is split (OCR); image reading used; text layer prints 1 for 4 (systematic OCR error in this table)
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,12.0711,-,alpha=50.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,13.4557,-,alpha=60.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,text layer differs or is split (OCR); image reading used; text layer prints 1 for 4 (systematic OCR error in this table)
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,14.7430,-,alpha=70.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image,text layer differs or is split (OCR); image reading used; text layer prints 1 for 4 (systematic OCR error in this table)
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,15.9522,-,alpha=80.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,17.0969,-,alpha=90.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,reference,"ellipticity, exact (numerical, Hamrock-Anderson 1973)",k,18.1871,-,alpha=100.0000;Rx=1.0 cm,HamrockBrewe1983,Table 1,4,image+text-agree,
+V-DRY-02,parameter,applied load,F,1.00e+05,N,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,"printed ""1.00x10^5 N"""
+V-DRY-02,parameter,applied load,F,222.4111,N,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,printed 222.4111 N (note corrected by the librarian 2026-10-28)
+V-DRY-02,parameter,applied load,F,222.4111,N,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,printed 222.4111 N (note corrected by the librarian 2026-10-28)
+V-DRY-02,parameter,"principal radius solid a, x",r_ax,50.1900,cm,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,parameter,"principal radius solid a, x",r_ax,0.6350,cm,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,parameter,"principal radius solid a, x",r_ax,0.6350,cm,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,parameter,"principal radius solid a, y",r_ay,,cm,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,printed infinity symbol (flat / infinite radius); value left empty
+V-DRY-02,parameter,"principal radius solid a, y",r_ay,0.6350,cm,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,inf printed as symbol
+V-DRY-02,parameter,"principal radius solid a, y",r_ay,0.6350,cm,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,inf printed as symbol
+V-DRY-02,parameter,"principal radius solid b, x",r_bx,,cm,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,printed infinity symbol (flat / infinite radius); value left empty
+V-DRY-02,parameter,"principal radius solid b, x",r_bx,,cm,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,printed infinity symbol (flat / infinite radius); value left empty
+V-DRY-02,parameter,"principal radius solid b, x",r_bx,-3.8900,cm,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,inf printed as symbol; negative = concave
+V-DRY-02,parameter,"principal radius solid b, y",r_by,30.0000,cm,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,as printed (note corrected 2026-10-28)
+V-DRY-02,parameter,"principal radius solid b, y",r_by,,cm,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,printed infinity symbol (flat / infinite radius); value left empty
+V-DRY-02,parameter,"principal radius solid b, y",r_by,-0.6600,cm,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,inf printed as symbol; negative = concave
+V-DRY-02,reference,radius ratio Ry/Rx,alpha,0.5977,-,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,radius ratio Ry/Rx,alpha,1.0000,-,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,radius ratio Ry/Rx,alpha,22.0905,-,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"ellipticity, exact",k,0.7099,-,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"ellipticity, exact",k,1.0000,-,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"ellipticity, exact",k,7.3649,-,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"contact diameter y, exact",D_y,1.2801,cm,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"contact diameter y, exact",D_y,0.0426,cm,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"contact diameter y, exact",D_y,0.1842,cm,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"contact diameter x, exact",D_x,1.8032,cm,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"contact diameter x, exact",D_x,0.0426,cm,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"contact diameter x, exact",D_x,0.0250,cm,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"centre deformation, exact",delta,0.0089,cm,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"centre deformation, exact",delta,7.13e-04,cm,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"centre deformation, exact",delta,3.56e-04,cm,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"max Hertz stress, exact",sigma_max,8.27e+04,N/cm^2,application=wheel on rail;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"max Hertz stress, exact",sigma_max,2.34e+05,N/cm^2,application=ball on plane;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,reference,"max Hertz stress, exact",sigma_max,9.22e+04,N/cm^2,application=ball-outer-ring contact;E'=2.197e7 N/cm^2,HamrockBrewe1983,Table 5,6,image,
+V-DRY-02,parameter,case constant,E',2.197e+07,N/cm^2,Table 5 caption,HamrockBrewe1983,Table 5,6,image,

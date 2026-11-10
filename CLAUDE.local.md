@@ -33,7 +33,6 @@ This repository builds on two libraries; most helpers already exist there.
 - Solving: call AxisForge solvers directly; a study does not wrap them in its own solver layer.
 Known duplicates to remove when you touch these files (do not copy the pattern):
 `load_distribution/_common/reports.py::union_fields` (pass-through of `_format.union_fields`);
-`hertz_vs_bem/_common/outputs.py::write_results/read_results/_num` (hand-written CSV);
 `load_distribution/_common/plots.py::style_axes/style_legend` (duplicate the style sheet).
 
 ## Commands
@@ -51,7 +50,8 @@ Dry contact first (two confirming studies), then roughness and adhesion/wear, lu
 physics-reviewer -> José.
 
 ## Known drift (2026-10-10)
-- 145 result files (`data/`, `plots/`, `results/` inside study folders) are tracked, against the
-  git-ignored `results/` rule (D-0020). Do not add more; untracking them is José's call.
+- 48 result files (`load_distribution/clearance_and_alpha`, `iso16281_ball_contact/results`) are
+  tracked, against the git-ignored `results/` rule (D-0020); the `hertz_vs_bem` ones were untracked
+  on 2026-10-16. Do not add more; untracking the rest is José's call.
 - README sections "Dependency rules" (no `_common`), "Vault" (old vault path) predate D-0006 and the
   `Tese` vault.

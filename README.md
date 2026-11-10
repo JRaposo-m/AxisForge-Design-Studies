@@ -15,6 +15,7 @@ layer between the reader and the library being proven.
 ```
 references/     closed-form solutions — the independent judges (beams; Hertz, planned)
 slippy_bridge/  the only AxisForge -> SlipPY link: contact cases from AxisForge bearings, surfaces
+    contact/roughness (R4): superseded, redesign pending; see its README.
 validation/     AxisForge vs a known answer, criteria fixed before running
     _support/     reports, figures, convergence adapters — for the validation cases only
     shafts/  bearings/  gears/
